@@ -1,5 +1,5 @@
 name: almely_randevu
-description: "Türkiye'nin Tek Nokta Randevu Portalı - AlmEly Super App"
+description: "Türkiye'nin Tek Nokta Randevu Portalı - almely_randevu"
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -10,25 +10,20 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # İkonlar
-  cupertino_icons: ^1.0.6
-
-  # Konum Servisleri
-  geolocator: ^10.1.0
-  geocoding: ^2.1.1
-
-  # Harita ve HTTP (Gelecekteki API bağlantıları için)
-  google_maps_flutter: ^2.5.3
-  http: ^1.1.0
+  geolocator: ^13.0.2
+  geocoding: ^3.0.0
+  http: ^1.6.0
+  cupertino_icons: ^1.0.9
+  google_maps_flutter: ^2.16.0
+  firebase_core: ^4.6.0
+  cloud_firestore: ^6.2.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^3.0.0
+  flutter_lints: ^5.0.0
 
 flutter:
   uses-material-design: true
-
-  # Asset tanımlamaları (Resimlerin görünmesi için burası şart)
   assets:
     - assets/AlmEly.png

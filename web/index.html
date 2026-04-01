@@ -1,5 +1,4 @@
-<!DOCTYPE html>
-<html>
+<html lang="tr">.
 <head>
   <!--
     If you are serving your web app in a path other than the root, change the
@@ -23,17 +22,40 @@
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="almely_super_app">
+  <meta name="apple-mobile-web-app-title" content="AlmEly Randevu Portalı">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
 
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
 
-  <title>almely_super_app</title>
+  <title>AlmEly Randevu Portalı</title>
   <link rel="manifest" href="manifest.json">
+
+  <script>
+    // Chrome'da geolocation API'sini Dart'a konnekt et
+    function getWebLocation(onSuccess, onError) {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          function(position) {
+            onSuccess(position.coords.latitude, position.coords.longitude);
+          },
+          function(error) {
+            onError(error.message || "Konum alınamadı");
+          },
+          {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 0
+          }
+        );
+      } else {
+        onError("Tarayıcı geolocation desteklemiyor");
+      }
+    }
+  </script>
 </head>
 <body>
-<script src="https://maps.googleapis.com/maps/api/js?key=BURAYA_ANAHTAR_GELECEK&v=quarterly"></script>  <!--
+  <!--
     You can customize the "flutter_bootstrap.js" script.
     This is useful to provide a custom configuration to the Flutter loader
     or to give the user feedback during the initialization process.

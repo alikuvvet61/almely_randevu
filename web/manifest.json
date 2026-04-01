@@ -1,6 +1,6 @@
 {
-    "name": "almely_super_app",
-    "short_name": "almely_super_app",
+    "name": "AlmEly Randevu Portalı",
+    "short_name": "AlmEly Randevu Portalı",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

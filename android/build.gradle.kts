@@ -15,9 +15,7 @@ subprojects {
     val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
     project.layout.buildDirectory.value(newSubprojectBuildDir)
 }
-subprojects {
-    project.evaluationDependsOn(":app")
-}
+// Removed subprojects { project.evaluationDependsOn(":app") } as it causes issues with plugin evaluation
 
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
