@@ -37,14 +37,12 @@ class AlmElyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'AlmEly Randevu Portalı',
       theme: ThemeData(colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue), useMaterial3: true),
-      // 'const' sildik, çünkü alt sayfalarda controller'lar var
-      home: GirisSecimSayfasi(),
+      home: const GirisSecimSayfasi(),
     );
   }
 }
 
 class GirisSecimSayfasi extends StatelessWidget {
-  // super.key olarak düzeltildi
   const GirisSecimSayfasi({super.key});
 
   @override
@@ -88,7 +86,6 @@ class GirisSecimSayfasi extends StatelessWidget {
 }
 
 class KullaniciGirisSayfasi extends StatefulWidget {
-  // Hatalı super.cite : 1 yerine super.key yapıldı
   const KullaniciGirisSayfasi({super.key});
   @override
   State<KullaniciGirisSayfasi> createState() => _KullaniciGirisSayfasiState();
@@ -109,7 +106,6 @@ class _KullaniciGirisSayfasiState extends State<KullaniciGirisSayfasi> {
 }
 
 class AnaSayfa extends StatelessWidget {
-  // Hatalı super.cite : 1 yerine super.key yapıldı
   const AnaSayfa({super.key});
 
   final List<Map<String, dynamic>> kategoriler = const [
@@ -138,10 +134,34 @@ class AnaSayfa extends StatelessWidget {
             child: StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance.collection('esnaflar').where('kategori', isEqualTo: katAd).snapshots(),
               builder: (context, snapshot) {
-                if (snapshot.hasError) return const Center(child: Text("Hata oluştu."));
+                if (snapshot.hasError) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.error_outline, color: Colors.red, size: 40),
+                        const SizedBox(height: 10),
+                        Text("Veri çekilirken hata: ${snapshot.error}"),
+                      ],
+                    ),
+                  );
+                }
                 if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+                
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  return const Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.search_off, color: Colors.grey, size: 40),
+                        SizedBox(height: 10),
+                        Text("Henüz esnaf bulunamadı."),
+                      ],
+                    ),
+                  );
+                }
+
                 final docs = snapshot.data!.docs;
-                if (docs.isEmpty) return const Center(child: Text("Henüz esnaf yok."));
                 return ListView.builder(
                   itemCount: docs.length,
                   itemBuilder: (context, i) {
@@ -185,7 +205,6 @@ class AnaSayfa extends StatelessWidget {
 }
 
 class AdminPanelSayfasi extends StatefulWidget {
-  // Hatalı super.cite : 1 yerine super.key yapıldı
   const AdminPanelSayfasi({super.key});
   @override
   State<AdminPanelSayfasi> createState() => _AdminPanelSayfasiState();
@@ -203,7 +222,6 @@ class _AdminPanelSayfasiState extends State<AdminPanelSayfasi> {
   String _secilenKategori = 'Kuaför';
   String _gpsDurum = "Konumu Getir";
 
-  // EKSİK OLAN TEMİZLE FONKSİYONU EKLENDİ
   void _temizle() {
     _adController.clear();
     _telController.clear();
@@ -215,7 +233,6 @@ class _AdminPanelSayfasiState extends State<AdminPanelSayfasi> {
     _gpsDurum = "Konumu Getir";
   }
 
-  // ÇİFT YAZILAN DİSPOSE DÜZELTİLDİ
   @override
   void dispose() {
     _adController.dispose();
@@ -244,7 +261,7 @@ class _AdminPanelSayfasiState extends State<AdminPanelSayfasi> {
       });
       if (!mounted) return;
       Navigator.pop(context);
-      _temizle(); // Artık hata vermez
+      _temizle();
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Esnaf Kaydedildi!"), backgroundColor: Colors.green));
 
       setState(() {
@@ -254,15 +271,38 @@ class _AdminPanelSayfasiState extends State<AdminPanelSayfasi> {
     } catch (e) { debugPrint("Kayıt hatası: $e"); }
   }
 
-  // --- ADRES VE KONUM SİSTEMİ (EN GÜNCEL HALİ) ---
   Future<void> _konumZorla(StateSetter setModalState) async {
-    setModalState(() => _gpsDurum = "Uydulara bağlanılıyor...");
+    setModalState(() => _gpsDurum = "İzinler kontrol ediliyor...");
+    
     try {
+      bool servisAcikMi = await Geolocator.isLocationServiceEnabled();
+      if (!servisAcikMi) {
+        setModalState(() => _gpsDurum = "Konum servisi kapalı!");
+        return;
+      }
+
+      LocationPermission izin = await Geolocator.checkPermission();
+      if (izin == LocationPermission.denied) {
+        izin = await Geolocator.requestPermission();
+        if (izin == LocationPermission.denied) {
+          setModalState(() => _gpsDurum = "İzin reddedildi.");
+          return;
+        }
+      }
+      
+      if (izin == LocationPermission.deniedForever) {
+        setModalState(() => _gpsDurum = "Ayarlardan izin verin.");
+        return;
+      }
+
+      setModalState(() => _gpsDurum = "Uydulara bağlanılıyor...");
+      
       Position pos = await Geolocator.getCurrentPosition(
         locationSettings: kIsWeb
             ? const LocationSettings(accuracy: LocationAccuracy.best)
             : AndroidSettings(accuracy: LocationAccuracy.bestForNavigation, forceLocationManager: true, intervalDuration: const Duration(seconds: 1)),
       );
+      
       if (!mounted) return;
       setModalState(() {
         _latController.text = pos.latitude.toString();
@@ -270,7 +310,10 @@ class _AdminPanelSayfasiState extends State<AdminPanelSayfasi> {
         _gpsDurum = "Adres alınıyor...";
       });
       await _adresDtaylariniCek(pos.latitude, pos.longitude, setModalState);
-    } catch (e) { if (mounted) setModalState(() => _gpsDurum = "Hata!"); }
+    } catch (e) { 
+      debugPrint("Konum alma hatası: $e");
+      if (mounted) setModalState(() => _gpsDurum = "Hata!"); 
+    }
   }
 
   Future<void> _adresDtaylariniCek(double lat, double lon, StateSetter setModalState) async {
@@ -281,7 +324,6 @@ class _AdminPanelSayfasiState extends State<AdminPanelSayfasi> {
         final data = json.decode(utf8.decode(response.bodyBytes));
         final addr = data['address'];
 
-        // DETAYLI ADRES SIRALAMASI
         String mekan = data['display_name'].split(',')[0];
         String mahalle = addr['suburb'] ?? addr['neighbourhood'] ?? addr['village'] ?? "";
         String sokak = addr['road'] ?? addr['street'] ?? "";
@@ -369,10 +411,25 @@ class _AdminPanelSayfasiState extends State<AdminPanelSayfasi> {
           const Padding(padding: EdgeInsets.symmetric(vertical: 8), child: Text("KAYITLI ESNAFLAR", style: TextStyle(fontWeight: FontWeight.bold))),
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance.collection('esnaflar').orderBy('kayitTarihi', descending: true).snapshots(),
+              stream: FirebaseFirestore.instance.collection('esnaflar').snapshots(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+                
+                if (snapshot.hasError) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.cloud_off, color: Colors.red, size: 50),
+                        const SizedBox(height: 10),
+                        Text("Veriler yüklenemedi: ${snapshot.error}"),
+                      ],
+                    ),
+                  );
+                }
+
                 if (!snapshot.hasData || snapshot.data!.docs.isEmpty) return const Center(child: Text("Henüz esnaf kaydı yok."));
+                
                 return ListView.builder(
                   itemCount: snapshot.data!.docs.length,
                   itemBuilder: (context, i) {
@@ -410,7 +467,13 @@ class AdminGirisSayfasi extends StatelessWidget {
     body: Padding(padding: const EdgeInsets.all(25), child: Column(children: [
       const TextField(decoration: InputDecoration(labelText: "Hızlı Giriş Aktif", border: OutlineInputBorder())),
       const SizedBox(height: 25),
-      ElevatedButton(onPressed: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (c) => const AdminPanelSayfasi())), style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 50)), child: const Text("Giriş Yap")),
+      ElevatedButton(onPressed: () {
+        try {
+          Navigator.pushReplacement(context, MaterialPageRoute(builder: (c) => const AdminPanelSayfasi()));
+        } catch (e) {
+          debugPrint("Yönetici Paneline Geçiş Hatası: $e");
+        }
+      }, style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 50)), child: const Text("Giriş Yap")),
     ])),
   );
 }
