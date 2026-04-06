@@ -2,7 +2,7 @@ plugins {
     id("com.android.application")
     id("kotlin-android")
     id("com.google.gms.google-services")
-    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
+    // Flutter Gradle Plugin, Android ve Kotlin'den sonra gelmelidir.
     id("dev.flutter.flutter-gradle-plugin")
 }
 
@@ -16,27 +16,31 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.example.almely_randevu"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // --- KRİTİK EKLEME ---
+        // AndroidManifest içindeki ${applicationName} hatasını manuel çözen placeholder.
+        // Bu satır sayesinde 'io.flutter.app.FlutterApplication' kullanmana gerek kalmaz.
+        manifestPlaceholders["applicationName"] = "android.app.Application"
     }
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
+            // Test aşamasında debug anahtarı kullanılıyor, canlıda kendi anahtarını eklemelisin.
             signingConfig = signingConfigs.getByName("debug")
         }
+    }
+}
+
+// Modern Kotlin derleme ayarları
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile>().configureEach {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
 }
 
