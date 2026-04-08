@@ -53,10 +53,8 @@ class _AdminEkraniState extends State<AdminEkrani> {
 
   Future<void> _konumAl(StateSetter setModalState) async {
     setModalState(() => _gpsDurum = "Konum alınıyor...");
-
     final sonuc = await _konumServisi.konumuVeAdresiGetir();
-
-    if (!mounted) return; // Context kontrolü için yeterli
+    if (!mounted) return;
 
     if (sonuc != null) {
       if (sonuc.containsKey('hata')) {
@@ -67,13 +65,7 @@ class _AdminEkraniState extends State<AdminEkrani> {
           _lonController.text = sonuc['boylam'] ?? "";
           _ilController.text = sonuc['il'] ?? "";
           _ilceController.text = sonuc['ilce'] ?? "";
-
-          String gelenAdres = sonuc['tamAdres'] ?? "";
-
-          // EĞER Google hala Gelişim Sk. döndürüyorsa ama biz İran Cd. olduğunu biliyorsak:
-          // (Burada kullanıcıya manuel düzenleme şansı da vermiş oluyoruz)
-          _adresController.text = gelenAdres;
-
+          _adresController.text = sonuc['tamAdres'] ?? "";
           _gpsDurum = "Konum Tamam ✅";
         });
       }
@@ -100,81 +92,105 @@ class _AdminEkraniState extends State<AdminEkrani> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
+      backgroundColor: Colors.transparent,
       builder: (context) => StatefulBuilder(
-        builder: (context, setModalState) => Padding(
-          padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom, left: 20, right: 20, top: 20),
-          child: SingleChildScrollView(
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Text(esnaf == null ? "Yeni Esnaf Kaydı" : "Esnaf Düzenle", 
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blue)),
-              const SizedBox(height: 15),
-              DropdownButtonFormField<String>(
-                initialValue: _secilenKategori,
-                decoration: const InputDecoration(labelText: "Kategori", border: OutlineInputBorder()),
-                items: kategoriListesi.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
-                onChanged: (v) {
-                  if (v != null) {
-                    setModalState(() => _secilenKategori = v);
-                  }
-                },
-              ),
-              const SizedBox(height: 10),
-              TextField(controller: _adController, decoration: const InputDecoration(labelText: "İşletme Adı", border: OutlineInputBorder())),
-              const SizedBox(height: 10),
-              TextField(controller: _telController, decoration: const InputDecoration(labelText: "Telefon", border: OutlineInputBorder())),
-              const SizedBox(height: 10),
-              Row(children: [
-                Expanded(child: TextField(controller: _ilController, decoration: const InputDecoration(labelText: "İl", border: OutlineInputBorder()))),
-                const SizedBox(width: 10),
-                Expanded(child: TextField(controller: _ilceController, decoration: const InputDecoration(labelText: "İlçe", border: OutlineInputBorder()))),
-              ]),
-              const SizedBox(height: 10),
-              TextField(controller: _adresController, maxLines: 2, decoration: const InputDecoration(labelText: "Adres Bilgisi", border: OutlineInputBorder())),
-              const SizedBox(height: 15),
-              ElevatedButton.icon(
-                onPressed: () => _konumAl(setModalState), 
-                icon: const Icon(Icons.gps_fixed), 
-                label: Text(_gpsDurum),
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.blue.shade50, minimumSize: const Size(double.infinity, 50)),
-              ),
-              const SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: () async {
-                  final messenger = ScaffoldMessenger.of(context);
-                  final navigator = Navigator.of(context);
+        builder: (context, setModalState) {
+          double maxHeight = MediaQuery.of(context).size.height * 0.85;
 
-                  final yeniEsnaf = EsnafModeli(
-                    id: esnaf?.id ?? '',
-                    isletmeAdi: _adController.text,
-                    kategori: _secilenKategori,
-                    telefon: _telController.text,
-                    il: _ilController.text,
-                    ilce: _ilceController.text,
-                    adres: _adresController.text,
-                    konum: GeoPoint(double.tryParse(_latController.text) ?? 0, double.tryParse(_lonController.text) ?? 0),
-                  );
+          return SafeArea(
+            child: Padding(
+              padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+              child: Container(
+                constraints: BoxConstraints(maxHeight: maxHeight),
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
+                ),
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10))),
+                      const SizedBox(height: 15),
+                      Text(esnaf == null ? "Yeni Esnaf Kaydı" : "Esnaf Düzenle",
+                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blue)),
+                      const SizedBox(height: 15),
 
-                  if (esnaf == null) {
-                    await _firestoreServisi.esnafEkle(yeniEsnaf);
-                  } else {
-                    await _firestoreServisi.esnafGuncelle(esnaf.id, yeniEsnaf);
-                  }
-                  
-                  if (!context.mounted) return;
-                  navigator.pop();
-                  messenger.showSnackBar(SnackBar(
-                    content: Text(esnaf == null ? "Esnaf Kaydedildi!" : "Esnaf Güncellendi!"),
-                    backgroundColor: esnaf == null ? Colors.green : Colors.blue,
-                  ));
-                },
-                style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 55), backgroundColor: Colors.blue, foregroundColor: Colors.white),
-                child: Text(esnaf == null ? "Esnafı Kaydet" : "Değişiklikleri Kaydet"),
+                      DropdownButtonFormField<String>(
+                        initialValue: _secilenKategori,
+                        decoration: const InputDecoration(labelText: "Kategori", isDense: true, border: OutlineInputBorder()),
+                        items: kategoriListesi.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+                        onChanged: (v) {
+                          if (v != null) {
+                            setModalState(() => _secilenKategori = v);
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(controller: _adController, decoration: const InputDecoration(labelText: "İşletme Adı", isDense: true, border: OutlineInputBorder())),
+                      const SizedBox(height: 10),
+                      TextField(controller: _telController, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: "Telefon", isDense: true, border: OutlineInputBorder())),
+                      const SizedBox(height: 10),
+                      Row(children: [
+                        Expanded(child: TextField(controller: _ilController, decoration: const InputDecoration(labelText: "İl", isDense: true, border: OutlineInputBorder()))),
+                        const SizedBox(width: 10),
+                        Expanded(child: TextField(controller: _ilceController, decoration: const InputDecoration(labelText: "İlçe", isDense: true, border: OutlineInputBorder()))),
+                      ]),
+                      const SizedBox(height: 10),
+                      TextField(controller: _adresController, maxLines: 2, decoration: const InputDecoration(labelText: "Adres Bilgisi", isDense: true, border: OutlineInputBorder())),
+
+                      const SizedBox(height: 20),
+
+                      ElevatedButton.icon(
+                        onPressed: () => _konumAl(setModalState),
+                        icon: const Icon(Icons.gps_fixed),
+                        label: Text(_gpsDurum),
+                        style: ElevatedButton.styleFrom(backgroundColor: Colors.blue.shade50, minimumSize: const Size(double.infinity, 45)),
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      ElevatedButton(
+                        onPressed: () async {
+                          final messenger = ScaffoldMessenger.of(context);
+                          final navigator = Navigator.of(context);
+
+                          final yeniEsnaf = EsnafModeli(
+                            id: esnaf?.id ?? '',
+                            isletmeAdi: _adController.text,
+                            kategori: _secilenKategori,
+                            telefon: _telController.text,
+                            il: _ilController.text,
+                            ilce: _ilceController.text,
+                            adres: _adresController.text,
+                            konum: GeoPoint(double.tryParse(_latController.text) ?? 0, double.tryParse(_lonController.text) ?? 0),
+                          );
+
+                          if (esnaf == null) {
+                            await _firestoreServisi.esnafEkle(yeniEsnaf);
+                          } else {
+                            await _firestoreServisi.esnafGuncelle(esnaf.id, yeniEsnaf);
+                          }
+
+                          if (!context.mounted) return;
+                          navigator.pop();
+                          messenger.showSnackBar(SnackBar(content: Text(esnaf == null ? "Esnaf Kaydedildi!" : "Esnaf Güncellendi!"), backgroundColor: Colors.green));
+                        },
+                        style: ElevatedButton.styleFrom(
+                            minimumSize: const Size(double.infinity, 50),
+                            backgroundColor: Colors.blue,
+                            foregroundColor: Colors.white
+                        ),
+                        child: Text(esnaf == null ? "Esnafı Kaydet" : "Değişiklikleri Kaydet"),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-              const SizedBox(height: 20),
-            ]),
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -198,7 +214,6 @@ class _AdminEkraniState extends State<AdminEkrani> {
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
                 if (snapshot.hasError) return Center(child: Text("Hata: ${snapshot.error}"));
-
                 final tumEsnaflar = snapshot.data ?? [];
                 if (tumEsnaflar.isEmpty) return const Center(child: Text("Henüz esnaf kaydı yok."));
 
@@ -206,7 +221,6 @@ class _AdminEkraniState extends State<AdminEkrani> {
                   children: kategoriListesi.map((kat) {
                     final kategoriEsnaflari = tumEsnaflar.where((e) => e.kategori == kat).toList();
                     if (kategoriEsnaflari.isEmpty) return const SizedBox.shrink();
-
                     return ExpansionTile(
                       leading: Icon(_kategoriIkonuGetir(kat), color: Colors.blue),
                       title: Text("$kat (${kategoriEsnaflari.length})", style: const TextStyle(fontWeight: FontWeight.bold)),
@@ -214,14 +228,7 @@ class _AdminEkraniState extends State<AdminEkrani> {
                         margin: const EdgeInsets.symmetric(horizontal: 15, vertical: 5),
                         child: ListTile(
                           title: Text(esnaf.isletmeAdi, style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
-                          subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                            Row(children: [
-                              const Icon(Icons.phone, size: 16, color: Colors.green),
-                              const SizedBox(width: 5),
-                              Text(esnaf.telefon, style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
-                            ]),
-                            Text("Adres: ${esnaf.adres}"),
-                          ]),
+                          subtitle: Text("Tel: ${esnaf.telefon}\nAdres: ${esnaf.adres}"),
                           trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                             IconButton(icon: const Icon(Icons.edit, color: Colors.orange), onPressed: () => _esnafFormu(esnaf: esnaf)),
                             IconButton(icon: const Icon(Icons.delete_outline, color: Colors.red), onPressed: () => _firestoreServisi.esnafSil(esnaf.id)),

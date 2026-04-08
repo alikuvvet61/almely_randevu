@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../modeller/esnaf_modeli.dart';
+import '../widgets/ana_buton.dart';
 
 class EsnafDetayEkrani extends StatelessWidget {
   final EsnafModeli esnaf;
@@ -39,6 +40,7 @@ class EsnafDetayEkrani extends StatelessWidget {
             SizedBox(
               height: 300,
               child: GoogleMap(
+                key: UniqueKey(), // Haritayı tazeleyen ve beyaz ekranı çözen anahtar
                 initialCameraPosition: CameraPosition(
                   target: LatLng(esnaf.konum.latitude, esnaf.konum.longitude),
                   zoom: 15,
@@ -58,18 +60,20 @@ class EsnafDetayEkrani extends StatelessWidget {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            esnaf.isletmeAdi,
-                            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                          ),
-                          Text(
-                            esnaf.kategori,
-                            style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-                          ),
-                        ],
+                      Expanded( // Taşkınlıkları önlemek için eklendi
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              esnaf.isletmeAdi,
+                              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                            ),
+                            Text(
+                              esnaf.kategori,
+                              style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+                            ),
+                          ],
+                        ),
                       ),
                       // Hızlı Arama Butonu
                       CircleAvatar(
@@ -83,7 +87,7 @@ class EsnafDetayEkrani extends StatelessWidget {
                     ],
                   ),
                   const Divider(height: 40),
-                  
+
                   // Adres Detayı
                   const Text(
                     "Adres Bilgileri",
@@ -96,9 +100,9 @@ class EsnafDetayEkrani extends StatelessWidget {
                     title: Text("${esnaf.ilce}, ${esnaf.il}"),
                     subtitle: Text(esnaf.adres),
                   ),
-                  
+
                   const SizedBox(height: 20),
-                  
+
                   // İletişim Detayı
                   const Text(
                     "İletişim",
@@ -121,23 +125,16 @@ class EsnafDetayEkrani extends StatelessWidget {
           ],
         ),
       ),
-      // Alt Kısma Randevu Butonu (Gelecek özellik için hazırlık)
-      bottomNavigationBar: Padding(
-        padding: const EdgeInsets.all(15),
-        child: ElevatedButton(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.blue,
-            foregroundColor: Colors.white,
-            minimumSize: const Size(double.infinity, 55),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-          onPressed: () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text("Randevu sistemi çok yakında eklenecek!")),
-            );
-          },
-          child: const Text("HEMEN RANDEVU AL", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-        ),
+      bottomNavigationBar: AnaButon(
+        metin: "HEMEN RANDEVU AL",
+        onPressed: () {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("Randevu sistemi çok yakında eklenecek!"),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        },
       ),
     );
   }
