@@ -4,7 +4,9 @@ import '../modeller/esnaf_modeli.dart';
 import 'esnaf_detay_ekrani.dart';
 
 class AnaEkran extends StatelessWidget {
-  const AnaEkran({super.key});
+  AnaEkran({super.key});
+  // SERVİSİ BURAYA EKLEDİK (Sınıf düzeyinde olduğu için her yerden erişilebilir)
+  final FirestoreServisi firestoreServisi = FirestoreServisi();
 
   final List<Map<String, dynamic>> kategoriler = const [
     {'ad': 'Kuaför', 'ikon': Icons.content_cut, 'renk': Colors.orange},
@@ -16,60 +18,79 @@ class AnaEkran extends StatelessWidget {
   ];
 
   void _esnafListesiAc(BuildContext context, String katAd) {
-    final firestoreServisi = FirestoreServisi();
-
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
+      ),
       builder: (c) => Container(
         height: MediaQuery.of(context).size.height * 0.75,
         padding: const EdgeInsets.all(20),
-        child: Column(children: [
-          Container(width: 40, height: 5, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10))),
-          const SizedBox(height: 15),
-          Text("$katAd Esnafları", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          const Divider(),
-          Expanded(
-            child: StreamBuilder<List<EsnafModeli>>(
-              stream: firestoreServisi.kategoriyeGoreGetir(katAd),
-              builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return Center(child: Text("Hata: ${snapshot.error}"));
-                }
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                
-                final esnaflar = snapshot.data ?? [];
-                if (esnaflar.isEmpty) {
-                  return const Center(child: Text("Henüz esnaf bulunamadı."));
-                }
-
-                return ListView.builder(
-                  itemCount: esnaflar.length,
-                  itemBuilder: (context, i) {
-                    final esnaf = esnaflar[i];
-                    return ListTile(
-                      title: Text(esnaf.isletmeAdi),
-                      subtitle: Text("${esnaf.ilce} - ${esnaf.telefon}"),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () {
-                        // Detay sayfasına geçiş yapıyoruz
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => EsnafDetayEkrani(esnaf: esnaf),
-                          ),
-                        );
-                      },
-                    );
-                  },
-                );
-              },
+        child: Column(
+          children: [
+            // Sürükleme Çubuğu
+            Container(
+              width: 40,
+              height: 5,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
-          ),
-        ]),
+            const SizedBox(height: 15),
+            Text(
+              "$katAd Esnafları",
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const Divider(),
+            Expanded(
+              child: StreamBuilder<List<EsnafModeli>>(
+                // Servisi yukarıda tanımladığımız için burada direkt kullanıyoruz
+                stream: firestoreServisi.kategoriyeGoreGetir(katAd),
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    return Center(child: Text("Hata: ${snapshot.error}"));
+                  }
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+
+                  final esnaflar = snapshot.data ?? [];
+                  if (esnaflar.isEmpty) {
+                    return const Center(
+                      child: Text("Bu kategoride henüz esnaf bulunamadı."),
+                    );
+                  }
+
+                  return ListView.builder(
+                    itemCount: esnaflar.length,
+                    itemBuilder: (context, i) {
+                      final esnaf = esnaflar[i];
+                      return ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: Colors.blue.shade100,
+                          child: const Icon(Icons.store, color: Colors.blue),
+                        ),
+                        title: Text(esnaf.isletmeAdi),
+                        subtitle: Text("${esnaf.ilce} - ${esnaf.telefon}"),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => EsnafDetayEkrani(esnaf: esnaf),
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -77,26 +98,39 @@ class AnaEkran extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("AlmEly - Trabzon"), centerTitle: true),
+      appBar: AppBar(
+        title: const Text("AlmEly - Trabzon"),
+        centerTitle: true,
+        elevation: 0,
+      ),
       body: GridView.builder(
         padding: const EdgeInsets.all(15),
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2, 
-          crossAxisSpacing: 12, 
+          crossAxisCount: 2,
+          crossAxisSpacing: 12,
           mainAxisSpacing: 12,
+          childAspectRatio: 1.1, // Kartların yüksekliğini ayarladık
         ),
         itemCount: kategoriler.length,
         itemBuilder: (context, i) => InkWell(
           onTap: () => _esnafListesiAc(context, kategoriler[i]['ad']),
+          borderRadius: BorderRadius.circular(15),
           child: Card(
+            elevation: 4,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
             color: kategoriler[i]['renk'],
             child: Column(
-              mainAxisAlignment: MainAxisAlignment.center, 
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(kategoriler[i]['ikon'], size: 50, color: Colors.white),
+                Icon(kategoriler[i]['ikon'], size: 45, color: Colors.white),
+                const SizedBox(height: 10),
                 Text(
-                  kategoriler[i]['ad'], 
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                  kategoriler[i]['ad'],
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
                 ),
               ],
             ),

@@ -19,9 +19,18 @@ class KonumServisi {
         final data = json.decode(response.body);
 
         if (data['status'] == 'OK' && data['results'].isNotEmpty) {
-          var components = data['results'][0]['address_components'];
+          // Bazen ilk sonuç bir bina veya site adıdır ve cadde bilgisi içermez.
+          // İçinde "route" (cadde/sokak) bileşeni olan en alakalı sonucu bulalım.
+          var bestResult = data['results'][0];
+          for (var res in data['results']) {
+            if (_parcaBul(res['address_components'], "route").isNotEmpty) {
+              bestResult = res;
+              break;
+            }
+          }
 
-          // MAHALLE ICIN TUM OLASILIKLARI TARIYORUZ
+          var components = bestResult['address_components'];
+
           String mah = _parcaBul(components, "sublocality_level_1");
           if (mah.isEmpty) mah = _parcaBul(components, "neighborhood");
           if (mah.isEmpty) mah = _parcaBul(components, "sublocality");
@@ -53,20 +62,41 @@ class KonumServisi {
   String _formatliAdresOlustur(String m, String r, String h, String pk, String d, String p) {
     List<String> parcalar = [];
 
-    // Mahalle isminde gereksiz "Hastane ismi" gibi detaylar varsa temizleyip sadece mahalle ismini alalım
+    // 1. MAHALLE TEMİZLİĞİ
     if (m.isNotEmpty) {
-      String temizMah = m.split(',').last.replaceAll(RegExp(r' Mahallesi| Mah\.', caseSensitive: false), "").trim();
+      String temizMah = m.replaceAll(RegExp(r' Mahallesi| Mah\.', caseSensitive: false), "").trim();
       parcalar.add("$temizMah Mah.");
     }
 
-    // Sokak/Cadde bilgisini ekle
+    // 2. CADDE / SOKAK TEMİZLİĞİ
     if (r.isNotEmpty) {
-      parcalar.add(r.contains("Cad") || r.contains("Sok") || r.contains("Sk") ? r : "$r Sk.");
+      String temizCad = r.trim();
+      
+      // Eğer içinde Cad, Cd, Sok, Sk, Bulvar yoksa, 
+      // önce "Mahallesi" gibi ekleri temizleyip sonra "Sk." ekleyelim.
+      if (!temizCad.contains(RegExp(r'Cad|Cd|Sok|Sk|Bulvar|Yolu|Cd\.|Sk\.', caseSensitive: false))) {
+        temizCad = temizCad.replaceAll(RegExp(r' Mahallesi| Mah\.', caseSensitive: false), "").trim();
+        if (temizCad.isNotEmpty) {
+          temizCad = "$temizCad Sk.";
+        }
+      }
+
+      // Mahalle ismiyle cadde ismi aynıysa (temizlenmiş halleri) mükerrer eklemeyelim
+      String mLower = m.replaceAll(RegExp(r' Mahallesi| Mah\.', caseSensitive: false), "").trim().toLowerCase();
+      String rNameOnly = temizCad.replaceAll(RegExp(r' Sk\.| Sk| Cd\.| Cd| Cad\.| Caddesi| Bulvarı', caseSensitive: false), "").trim().toLowerCase();
+      
+      if (temizCad.isNotEmpty && mLower != rNameOnly) {
+        parcalar.add(temizCad);
+      }
     }
 
-    // Kapı Numarası
+    // 3. KAPI NUMARASI (No: No 5 hatasını engeller)
     if (h.isNotEmpty) {
-      parcalar.add("No: $h");
+      // "No", "No:", "No.", "№", "Number" gibi tüm varyasyonları ve sonrasındaki boşluk/noktaları temizle
+      String temizNo = h.replaceAll(RegExp(r'(No|No:|No\.|№|Number)[:\s\.]*', caseSensitive: false), "").trim();
+      if (temizNo.isNotEmpty) {
+        parcalar.add("No: $temizNo");
+      }
     }
 
     String anaGovde = parcalar.join(", ");
@@ -80,7 +110,9 @@ class KonumServisi {
         orElse: () => null,
       );
       return component != null ? component['long_name'] : "";
-    } catch (_) { return ""; }
+    } catch (e) {
+      return "";
+    }
   }
 
   Future<Map<String, String>> _nominatimYedek(Position pos) async {

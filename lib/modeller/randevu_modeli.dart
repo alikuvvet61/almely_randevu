@@ -8,6 +8,8 @@ class RandevuModeli {
   final String kullaniciTel;
   final DateTime tarih;
   final String saat;
+  final int sure; // Randevunun süresi (dakika)
+  final String hizmetAdi; // Seçilen hizmet
   final String durum; // 'Beklemede', 'Onaylandı', 'Reddedildi'
 
   RandevuModeli({
@@ -18,6 +20,8 @@ class RandevuModeli {
     required this.kullaniciTel,
     required this.tarih,
     required this.saat,
+    required this.sure,
+    required this.hizmetAdi,
     this.durum = 'Beklemede',
   });
 
@@ -31,6 +35,8 @@ class RandevuModeli {
       kullaniciTel: data['kullaniciTel'] ?? '',
       tarih: (data['tarih'] as Timestamp).toDate(),
       saat: data['saat'] ?? '',
+      sure: data['sure'] ?? 30,
+      hizmetAdi: data['hizmetAdi'] ?? '',
       durum: data['durum'] ?? 'Beklemede',
     );
   }
@@ -43,6 +49,8 @@ class RandevuModeli {
       'kullaniciTel': kullaniciTel,
       'tarih': Timestamp.fromDate(tarih),
       'saat': saat,
+      'sure': sure,
+      'hizmetAdi': hizmetAdi,
       'durum': durum,
     };
   }
