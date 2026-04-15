@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../modeller/esnaf_modeli.dart';
 import '../servisler/firestore_servisi.dart';
 import 'esnaf_paneli.dart'; // Panelin olduğu dosya yolu
 
@@ -14,8 +15,8 @@ class _EsnafGirisEkraniState extends State<EsnafGirisEkrani> {
   bool _loading = false;
   final _firestoreServisi = FirestoreServisi();
 
-  void _girisYap() async {
-    String tel = _telController.text.trim();
+  void _girisYap(String? telInput) async {
+    String tel = telInput ?? _telController.text.trim();
     if (tel.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Lütfen telefon numaranızı girin.")),
@@ -57,7 +58,7 @@ class _EsnafGirisEkraniState extends State<EsnafGirisEkrani> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text("AlmEly Esnaf Girişi")),
-      body: Padding(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(25.0),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -82,8 +83,35 @@ class _EsnafGirisEkraniState extends State<EsnafGirisEkrani> {
                 minimumSize: const Size(double.infinity, 55),
                 backgroundColor: Colors.indigo,
               ),
-              onPressed: _girisYap,
+              onPressed: () => _girisYap(null),
               child: const Text("Giriş Yap", style: TextStyle(color: Colors.white, fontSize: 18)),
+            ),
+            const SizedBox(height: 40),
+            const Divider(),
+            const Text("Hızlı Giriş (Geliştirme Modu)", style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 10),
+            StreamBuilder<List<EsnafModeli>>(
+              stream: _firestoreServisi.esnaflariGetir(),
+              builder: (context, snapshot) {
+                if (!snapshot.hasData) return const SizedBox();
+                final esnaflar = snapshot.data!;
+                return ListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: esnaflar.length,
+                  itemBuilder: (context, index) {
+                    final e = esnaflar[index];
+                    return Card(
+                      child: ListTile(
+                        title: Text(e.isletmeAdi),
+                        subtitle: Text(e.telefon),
+                        leading: const Icon(Icons.business, color: Colors.indigo),
+                        onTap: () => _girisYap(e.telefon),
+                      ),
+                    );
+                  },
+                );
+              },
             ),
           ],
         ),

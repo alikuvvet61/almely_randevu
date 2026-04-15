@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import '../servisler/firestore_servisi.dart';
 import '../modeller/esnaf_modeli.dart';
 import 'esnaf_detay_ekrani.dart';
+import 'kullanici_randevu_ekrani.dart';
 
 class AnaEkran extends StatelessWidget {
-  AnaEkran({super.key});
-  // SERVİSİ BURAYA EKLEDİK (Sınıf düzeyinde olduğu için her yerden erişilebilir)
+  final String? kullaniciTel;
+  AnaEkran({super.key, this.kullaniciTel});
+  
   final FirestoreServisi firestoreServisi = FirestoreServisi();
 
   final List<Map<String, dynamic>> kategoriler = const [
@@ -29,7 +31,6 @@ class AnaEkran extends StatelessWidget {
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
-            // Sürükleme Çubuğu
             Container(
               width: 40,
               height: 5,
@@ -46,7 +47,6 @@ class AnaEkran extends StatelessWidget {
             const Divider(),
             Expanded(
               child: StreamBuilder<List<EsnafModeli>>(
-                // Servisi yukarıda tanımladığımız için burada direkt kullanıyoruz
                 stream: firestoreServisi.kategoriyeGoreGetir(katAd),
                 builder: (context, snapshot) {
                   if (snapshot.hasError) {
@@ -79,7 +79,10 @@ class AnaEkran extends StatelessWidget {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (context) => EsnafDetayEkrani(esnaf: esnaf),
+                              builder: (context) => EsnafDetayEkrani(
+                                esnaf: esnaf, 
+                                kullaniciTel: kullaniciTel
+                              ),
                             ),
                           );
                         },
@@ -101,41 +104,88 @@ class AnaEkran extends StatelessWidget {
       appBar: AppBar(
         title: const Text("AlmEly - Trabzon"),
         centerTitle: true,
-        elevation: 0,
+        actions: [
+          if (kullaniciTel != null)
+            IconButton(
+              icon: const Icon(Icons.calendar_month, color: Colors.blue),
+              tooltip: "Randevularım",
+              onPressed: () => Navigator.push(
+                context, 
+                MaterialPageRoute(builder: (c) => KullaniciRandevuEkrani(telefon: kullaniciTel!))
+              ),
+            ),
+        ],
       ),
-      body: GridView.builder(
-        padding: const EdgeInsets.all(15),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
-          childAspectRatio: 1.1, // Kartların yüksekliğini ayarladık
-        ),
-        itemCount: kategoriler.length,
-        itemBuilder: (context, i) => InkWell(
-          onTap: () => _esnafListesiAc(context, kategoriler[i]['ad']),
-          borderRadius: BorderRadius.circular(15),
-          child: Card(
-            elevation: 4,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-            color: kategoriler[i]['renk'],
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(kategoriler[i]['ikon'], size: 45, color: Colors.white),
-                const SizedBox(height: 10),
-                Text(
-                  kategoriler[i]['ad'],
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
+      body: Column(
+        children: [
+          if (kullaniciTel != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
+              child: InkWell(
+                onTap: () => Navigator.push(
+                  context, 
+                  MaterialPageRoute(builder: (c) => KullaniciRandevuEkrani(telefon: kullaniciTel!))
+                ),
+                child: Container(
+                  padding: const EdgeInsets.all(15),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(15),
+                    border: Border.all(color: Colors.blue.shade100),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.calendar_today, color: Colors.blue),
+                      SizedBox(width: 15),
+                      Expanded(
+                        child: Text(
+                          "Randevularım",
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.blue),
+                        ),
+                      ),
+                      Icon(Icons.arrow_forward_ios, size: 16, color: Colors.blue),
+                    ],
                   ),
                 ),
-              ],
+              ),
+            ),
+          Expanded(
+            child: GridView.builder(
+              padding: const EdgeInsets.all(15),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+                childAspectRatio: 1.1,
+              ),
+              itemCount: kategoriler.length,
+              itemBuilder: (context, i) => InkWell(
+                onTap: () => _esnafListesiAc(context, kategoriler[i]['ad']),
+                borderRadius: BorderRadius.circular(15),
+                child: Card(
+                  elevation: 4,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                  color: kategoriler[i]['renk'],
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(kategoriler[i]['ikon'], size: 45, color: Colors.white),
+                      const SizedBox(height: 10),
+                      Text(
+                        kategoriler[i]['ad'],
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }

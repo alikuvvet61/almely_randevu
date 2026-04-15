@@ -9,6 +9,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
 
   geolocator: ^13.0.2
   geocoding: ^3.0.0
@@ -18,6 +20,7 @@ dependencies:
   firebase_core: ^4.6.0
   cloud_firestore: ^6.2.0
   url_launcher: ^6.3.1
+  intl: ^0.20.2
 
 dev_dependencies:
   flutter_test:

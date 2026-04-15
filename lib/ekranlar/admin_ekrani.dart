@@ -22,15 +22,13 @@ class _AdminEkraniState extends State<AdminEkrani> {
   final _adresController = TextEditingController();
   final _latController = TextEditingController();
   final _lonController = TextEditingController();
-  final _hizmetTanimController = TextEditingController();
+  final _kategoriAdController = TextEditingController();
+  final _iptalNedeniController = TextEditingController();
 
-  String _secilenKategori = 'Kuaför';
-  String _hizmetKategori = 'Kuaför';
+  String _secilenKategori = ''; 
   String _gpsDurum = "Konumu Getir";
-  final List<String> kategoriListesi = ['Kuaför', 'Taksi', 'Halı Saha', 'Oto Yıkama', 'Restoran', 'Düğün Salonu'];
-
-  // Düzenleme modu için değişkenler
-  String? _duzenlenenHizmetId;
+  
+  String? _duzenlenenKategoriId;
 
   @override
   void dispose() {
@@ -41,13 +39,138 @@ class _AdminEkraniState extends State<AdminEkrani> {
     _adresController.dispose();
     _latController.dispose();
     _lonController.dispose();
-    _hizmetTanimController.dispose();
+    _kategoriAdController.dispose();
+    _iptalNedeniController.dispose();
     super.dispose();
   }
 
-  void _hizmetTanimlamaFormu() {
-    _duzenlenenHizmetId = null;
-    _hizmetTanimController.clear();
+  void _iptalNedenleriYonetimi() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => DefaultTabController(
+        length: 2,
+        child: StatefulBuilder(
+          builder: (context, setModalState) => Container(
+            constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.85),
+            decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
+            child: Column(
+              children: [
+                Container(margin: const EdgeInsets.only(top: 10), width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10))),
+                const TabBar(
+                  labelColor: Colors.orange,
+                  unselectedLabelColor: Colors.grey,
+                  indicatorColor: Colors.orange,
+                  tabs: [
+                    Tab(text: "Kullanıcı İptal"),
+                    Tab(text: "Esnaf İptal"),
+                  ],
+                ),
+                Expanded(
+                  child: TabBarView(
+                    children: [
+                      _iptalNedeniListeBolumu("kullanici"),
+                      _iptalNedeniListeBolumu("esnaf"),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _iptalNedeniListeBolumu(String tip) {
+    return Padding(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        children: [
+          TextField(
+            controller: _iptalNedeniController,
+            decoration: InputDecoration(
+              labelText: tip == "kullanici" ? "Müşteri İptal Nedeni Ekle" : "Esnaf İptal Nedeni Ekle", 
+              border: const OutlineInputBorder(),
+              suffixIcon: IconButton(
+                icon: const Icon(Icons.add_circle, color: Colors.orange),
+                onPressed: () async {
+                  if (_iptalNedeniController.text.isNotEmpty) {
+                    await _firestoreServisi.iptalNedeniEkle(tip, _iptalNedeniController.text);
+                    _iptalNedeniController.clear();
+                  }
+                },
+              ),
+            ),
+          ),
+          const Divider(height: 30),
+          Expanded(
+            child: StreamBuilder<List<String>>(
+              stream: _firestoreServisi.iptalNedenleriniGetir(tip),
+              builder: (context, snapshot) {
+                if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+                final nedenler = snapshot.data!;
+                return ListView.builder(
+                  itemCount: nedenler.length,
+                  itemBuilder: (context, index) {
+                    final neden = nedenler[index];
+                    return ListTile(
+                      title: Text(neden),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.edit, color: Colors.orange),
+                            onPressed: () => _iptalNedeniDuzenleDialog(tip, neden),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete, color: Colors.red),
+                            onPressed: () => _firestoreServisi.iptalNedeniSil(tip, neden),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _iptalNedeniDuzenleDialog(String tip, String eskiNeden) {
+    final controller = TextEditingController(text: eskiNeden);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Nedeni Düzenle"),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(border: OutlineInputBorder()),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Vazgeç")),
+          ElevatedButton(
+            onPressed: () async {
+              if (controller.text.isNotEmpty) {
+                await _firestoreServisi.iptalNedeniGuncelle(tip, eskiNeden, controller.text);
+                if (mounted) Navigator.pop(ctx);
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white),
+            child: const Text("Güncelle"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _kategoriYonetimiFormu() {
+    _duzenlenenKategoriId = null;
+    _kategoriAdController.clear();
 
     showModalBottomSheet(
       context: context,
@@ -55,113 +178,123 @@ class _AdminEkraniState extends State<AdminEkrani> {
       backgroundColor: Colors.transparent,
       builder: (context) => StatefulBuilder(
         builder: (context, setModalState) => Container(
-          padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.85),
           decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(_duzenlenenHizmetId == null ? "Hizmet Tanımlama (Admin)" : "Hizmeti Düzenle", 
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blue)),
-                const SizedBox(height: 20),
-                if (_duzenlenenHizmetId == null)
-                  DropdownButtonFormField<String>(
-                    value: _hizmetKategori,
-                    decoration: const InputDecoration(labelText: "Kategori", border: OutlineInputBorder()),
-                    items: kategoriListesi.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
-                    onChanged: (v) => setModalState(() => _hizmetKategori = v!),
-                  ),
-                const SizedBox(height: 15),
-                TextField(
-                  controller: _hizmetTanimController,
-                  decoration: const InputDecoration(labelText: "Hizmet Adı (Örn: Saç Kesimi)", border: OutlineInputBorder()),
-                ),
-                const SizedBox(height: 20),
-                Row(
-                  children: [
-                    if (_duzenlenenHizmetId != null)
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () {
-                            setModalState(() {
-                              _duzenlenenHizmetId = null;
-                              _hizmetTanimController.clear();
-                            });
-                          },
-                          child: const Text("Vazgeç"),
-                        ),
+          child: Column(
+            children: [
+              Container(margin: const EdgeInsets.only(top: 10), width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10))),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.fromLTRB(20, 10, 20, MediaQuery.of(context).viewInsets.bottom + 20),
+                  child: Column(
+                    children: [
+                      Text(_duzenlenenKategoriId == null ? "Kategori Yönetimi" : "Kategoriyi Düzenle", 
+                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.green)),
+                      const SizedBox(height: 20),
+                      TextField(
+                        controller: _kategoriAdController,
+                        decoration: const InputDecoration(labelText: "Kategori Adı (Örn: Berber)", border: OutlineInputBorder()),
                       ),
-                    if (_duzenlenenHizmetId != null) const SizedBox(width: 10),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: () async {
-                          if (_hizmetTanimController.text.isNotEmpty) {
-                            final scaffoldMessenger = ScaffoldMessenger.of(context);
-                            if (_duzenlenenHizmetId == null) {
-                              // Yeni Kayıt
-                              await _firestoreServisi.hizmetTanimEkle(_hizmetTanimController.text, _hizmetKategori);
-                              if (mounted) scaffoldMessenger.showSnackBar(const SnackBar(content: Text("Hizmet Tanımlandı")));
-                            } else {
-                              // Güncelleme
-                              await _firestoreServisi.hizmetTanimGuncelle(_duzenlenenHizmetId!, _hizmetTanimController.text);
-                              if (mounted) scaffoldMessenger.showSnackBar(const SnackBar(content: Text("Hizmet Güncellendi")));
-                            }
-                            
-                            setModalState(() {
-                              _hizmetTanimController.clear();
-                              _duzenlenenHizmetId = null;
-                            });
-                          }
-                        },
-                        style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 50), backgroundColor: Colors.blue, foregroundColor: Colors.white),
-                        child: Text(_duzenlenenHizmetId == null ? "Hizmet Kaydet" : "Güncelle"),
-                      ),
-                    ),
-                  ],
-                ),
-                const Divider(height: 40),
-                const Text("Tanımlı Hizmetler", style: TextStyle(fontWeight: FontWeight.bold)),
-                SizedBox(
-                  height: 250,
-                  child: StreamBuilder<List<Map<String, dynamic>>>(
-                    stream: _firestoreServisi.hizmetTanimlariniGetir(_hizmetKategori),
-                    builder: (context, snapshot) {
-                      if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-                      return ListView.builder(
-                        itemCount: snapshot.data!.length,
-                        itemBuilder: (context, index) {
-                          final h = snapshot.data![index];
-                          return ListTile(
-                            title: Text(h['ad']),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  icon: const Icon(Icons.edit, color: Colors.orange),
-                                  onPressed: () {
-                                    setModalState(() {
-                                      _duzenlenenHizmetId = h['id'];
-                                      _hizmetTanimController.text = h['ad'];
-                                    });
-                                  },
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.delete, color: Colors.red),
-                                  onPressed: () => _firestoreServisi.hizmetTanimSil(h['id']),
-                                ),
-                              ],
+                      const SizedBox(height: 15),
+                      Row(
+                        children: [
+                          if (_duzenlenenKategoriId != null)
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: () {
+                                  setModalState(() {
+                                    _duzenlenenKategoriId = null;
+                                    _kategoriAdController.clear();
+                                  });
+                                },
+                                child: const Text("Vazgeç"),
+                              ),
                             ),
+                          if (_duzenlenenKategoriId != null) const SizedBox(width: 10),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: () async {
+                                if (_kategoriAdController.text.isNotEmpty) {
+                                  if (_duzenlenenKategoriId == null) {
+                                    await _firestoreServisi.kategoriEkle(_kategoriAdController.text);
+                                  } else {
+                                    await _firestoreServisi.kategoriGuncelle(_duzenlenenKategoriId!, _kategoriAdController.text);
+                                  }
+                                  setModalState(() {
+                                    _kategoriAdController.clear();
+                                    _duzenlenenKategoriId = null;
+                                  });
+                                }
+                              },
+                              style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
+                              child: Text(_duzenlenenKategoriId == null ? "Ekle" : "Güncelle"),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const Divider(height: 30),
+                      const Text("Mevcut Kategoriler", style: TextStyle(fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 10),
+                      StreamBuilder<List<Map<String, dynamic>>>(
+                        stream: _firestoreServisi.kategorileriGetir(),
+                        builder: (context, snapshot) {
+                          if (!snapshot.hasData) return const CircularProgressIndicator();
+                          final kats = snapshot.data!;
+                          return ListView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: kats.length,
+                            itemBuilder: (context, index) {
+                              final kat = kats[index];
+                              return ListTile(
+                                title: Text(kat['ad']),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(Icons.edit, color: Colors.orange, size: 20),
+                                      onPressed: () {
+                                        setModalState(() {
+                                          _duzenlenenKategoriId = kat['id'];
+                                          _kategoriAdController.text = kat['ad'];
+                                        });
+                                      },
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.delete, color: Colors.red, size: 20),
+                                      onPressed: () => _confirmKategoriDelete(kat['id'], kat['ad']),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
                           );
                         },
-                      );
-                    },
+                      )
+                    ],
                   ),
-                )
-              ],
-            ),
+                ),
+              ),
+            ],
           ),
         ),
+      ),
+    );
+  }
+
+  void _confirmKategoriDelete(String id, String ad) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Kategoriyi Sil"),
+        content: Text("'$ad' kategorisini silmek istediğinize emin misiniz? Bu işlem bu kategorideki esnafların görünümünü etkileyebilir."),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text("İptal")),
+          TextButton(onPressed: () {
+            _firestoreServisi.kategoriSil(id);
+            Navigator.pop(context);
+          }, child: const Text("Sil", style: TextStyle(color: Colors.red))),
+        ],
       ),
     );
   }
@@ -174,7 +307,6 @@ class _AdminEkraniState extends State<AdminEkrani> {
     _adresController.clear();
     _latController.clear();
     _lonController.clear();
-    _secilenKategori = 'Kuaför';
     _gpsDurum = "Konumu Getir";
   }
 
@@ -244,24 +376,33 @@ class _AdminEkraniState extends State<AdminEkrani> {
                           style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blue)),
                       const SizedBox(height: 15),
 
-                      InputDecorator(
-                        decoration: const InputDecoration(
-                          labelText: "Kategori",
-                          contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                          border: OutlineInputBorder(),
-                        ),
-                        child: DropdownButtonHideUnderline(
-                          child: DropdownButton<String>(
-                            value: _secilenKategori,
-                            isExpanded: true,
-                            items: kategoriListesi.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
-                            onChanged: (v) {
-                              if (v != null) {
-                                setModalState(() => _secilenKategori = v);
-                              }
-                            },
-                          ),
-                        ),
+                      StreamBuilder<List<Map<String, dynamic>>>(
+                        stream: _firestoreServisi.kategorileriGetir(),
+                        builder: (context, snapshot) {
+                          if (!snapshot.hasData) return const SizedBox();
+                          final kats = snapshot.data!;
+                          if (kats.isEmpty) return const Text("Lütfen önce kategori tanımlayın.");
+
+                          if (_secilenKategori.isEmpty || !kats.any((k) => k['ad'] == _secilenKategori)) {
+                            _secilenKategori = kats[0]['ad'];
+                          }
+
+                          return InputDecorator(
+                            decoration: const InputDecoration(labelText: "Kategori", border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 10)),
+                            child: DropdownButtonHideUnderline(
+                              child: DropdownButton<String>(
+                                value: kats.any((k) => k['ad'] == _secilenKategori) ? _secilenKategori : kats[0]['ad'],
+                                isExpanded: true,
+                                items: kats.map((e) => DropdownMenuItem(value: e['ad'] as String, child: Text(e['ad'] as String))).toList(),
+                                onChanged: (v) {
+                                  if (v != null) {
+                                    setModalState(() => _secilenKategori = v);
+                                  }
+                                },
+                              ),
+                            ),
+                          );
+                        }
                       ),
                       const SizedBox(height: 10),
                       TextField(controller: _adController, decoration: const InputDecoration(labelText: "İşletme Adı", isDense: true, border: OutlineInputBorder())),
@@ -352,6 +493,29 @@ class _AdminEkraniState extends State<AdminEkrani> {
     );
   }
 
+  void _ajandalariSifirla() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Tüm Ajandaları Sıfırla"),
+        content: const Text("Tüm esnafların oluşturulmuş ajandaları silinecektir. Bu işlem geri alınamaz. Emin misiniz?"),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Vazgeç")),
+          TextButton(
+            onPressed: () async {
+              await _firestoreServisi.tumAjandalariTemizle();
+              if (context.mounted) {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Tüm ajandalar sıfırlandı.")));
+              }
+            },
+            child: const Text("Evet, Sıfırla", style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -363,14 +527,21 @@ class _AdminEkraniState extends State<AdminEkrani> {
         children: [
           Padding(
             padding: const EdgeInsets.all(15),
-            child: Row(
-              children: [
-                Expanded(child: _adminButonUst(Icons.add_business, 'Esnaf Ekle', Colors.blue, () => _esnafFormu())),
-                const SizedBox(width: 10),
-                Expanded(child: _adminButonUst(Icons.list_alt, 'Hizmet Tanımla', Colors.orange, () => _hizmetTanimlamaFormu())),
-                const SizedBox(width: 10),
-                Expanded(child: _adminButonUst(Icons.people, 'Üyeler', Colors.green, () {})),
-              ],
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  _adminButonUst(Icons.category, 'Kategoriler', Colors.green, () => _kategoriYonetimiFormu()),
+                  const SizedBox(width: 8),
+                  _adminButonUst(Icons.add_business, 'Esnaf Ekle', Colors.blue, () => _esnafFormu()),
+                  const SizedBox(width: 8),
+                  _adminButonUst(Icons.block, 'Randevu İptal\nNedenleri', Colors.orange, () => _iptalNedenleriYonetimi()),
+                  const SizedBox(width: 8),
+                  _adminButonUst(Icons.calendar_month, 'Ajandaları\nSıfırla', Colors.red, () => _ajandalariSifirla()),
+                  const SizedBox(width: 8),
+                  _adminButonUst(Icons.people, 'Üyeler', Colors.purple, () {}),
+                ],
+              ),
             ),
           ),
           const Divider(thickness: 1),
@@ -387,28 +558,44 @@ class _AdminEkraniState extends State<AdminEkrani> {
                 final tumEsnaflar = snapshot.data ?? [];
                 if (tumEsnaflar.isEmpty) return const Center(child: Text("Henüz esnaf kaydı yok."));
 
-                return ListView(
-                  children: kategoriListesi.map((kat) {
-                    final kategoriEsnaflari = tumEsnaflar.where((e) => e.kategori == kat).toList();
-                    if (kategoriEsnaflari.isEmpty) return const SizedBox.shrink();
-                    return ExpansionTile(
-                      leading: Icon(_kategoriIkonuGetir(kat), color: Colors.blue),
-                      title: Text("$kat (${kategoriEsnaflari.length})", style: const TextStyle(fontWeight: FontWeight.bold)),
-                      children: kategoriEsnaflari.map((esnaf) => Card(
-                        margin: const EdgeInsets.symmetric(horizontal: 15, vertical: 5),
-                        elevation: 0.5,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: BorderSide(color: Colors.grey.shade200)),
-                        child: ListTile(
-                          title: Text(esnaf.isletmeAdi, style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
-                          subtitle: Text("Tel: ${esnaf.telefon}\nAdres: ${esnaf.adres}", style: const TextStyle(fontSize: 12)),
-                          trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                            IconButton(icon: const Icon(Icons.edit, color: Colors.orange, size: 20), onPressed: () => _esnafFormu(esnaf: esnaf)),
-                            IconButton(icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20), onPressed: () => _confirmDelete(esnaf)),
-                          ]),
-                        ),
-                      )).toList(),
+                return StreamBuilder<List<Map<String, dynamic>>>(
+                  stream: _firestoreServisi.kategorileriGetir(),
+                  builder: (context, katSnapshot) {
+                    if (!katSnapshot.hasData) return const Center(child: CircularProgressIndicator());
+                    final kats = katSnapshot.data!.map((e) => e['ad'] as String).toList();
+                    
+                    if (kats.isEmpty) {
+                      return const Center(child: Text("Lütfen önce kategori ekleyin."));
+                    }
+
+                    return ListView.builder(
+                      itemCount: kats.length,
+                      itemBuilder: (context, index) {
+                        final kat = kats[index];
+                        final kategoriEsnaflari = tumEsnaflar.where((e) => e.kategori == kat).toList();
+                        
+                        return ExpansionTile(
+                          leading: Icon(_kategoriIkonuGetir(kat), color: Colors.blue),
+                          title: Text("$kat (${kategoriEsnaflari.length})", style: const TextStyle(fontWeight: FontWeight.bold)),
+                          children: kategoriEsnaflari.isEmpty 
+                            ? [const Padding(padding: EdgeInsets.all(10), child: Text("Bu kategoride kayıtlı esnaf yok.", style: TextStyle(fontSize: 12, color: Colors.grey)))]
+                            : kategoriEsnaflari.map((esnaf) => Card(
+                            margin: const EdgeInsets.symmetric(horizontal: 15, vertical: 5),
+                            elevation: 0.5,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: BorderSide(color: Colors.grey.shade200)),
+                            child: ListTile(
+                              title: Text(esnaf.isletmeAdi, style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
+                              subtitle: Text("Tel: ${esnaf.telefon}\nAdres: ${esnaf.adres}"),
+                              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                                IconButton(icon: const Icon(Icons.edit, color: Colors.orange, size: 20), onPressed: () => _esnafFormu(esnaf: esnaf)),
+                                IconButton(icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20), onPressed: () => _confirmDelete(esnaf)),
+                              ]),
+                            ),
+                          )).toList(),
+                        );
+                      },
                     );
-                  }).toList(),
+                  }
                 );
               },
             ),
@@ -454,15 +641,16 @@ class _AdminEkraniState extends State<AdminEkrani> {
     onPressed: t,
     style: ElevatedButton.styleFrom(
       backgroundColor: r,
-      padding: const EdgeInsets.symmetric(vertical: 10),
+      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      minimumSize: const Size(80, 60),
     ),
     child: Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(i, color: Colors.white, size: 18),
         const SizedBox(height: 4),
-        Text(b, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+        Text(b, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold)),
       ],
     ),
   );

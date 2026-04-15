@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 class AnaButon extends StatelessWidget {
   final String metin;
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed; // Burayı nullable yaptık (?)
   final Color renk;
 
   const AnaButon({
@@ -14,7 +14,6 @@ class AnaButon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // SafeArea'yı burada bir kez tanımlıyoruz, her ekranda koruma sağlıyor
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
@@ -25,6 +24,7 @@ class AnaButon extends StatelessWidget {
             foregroundColor: Colors.white,
             minimumSize: const Size(double.infinity, 50),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            disabledBackgroundColor: Colors.grey.shade300, // Pasif renk
           ),
           child: Text(metin, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
         ),

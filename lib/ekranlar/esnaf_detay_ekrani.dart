@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../modeller/esnaf_modeli.dart';
 import '../widgets/ana_buton.dart';
+import 'randevu_ekrani.dart';
 
 class EsnafDetayEkrani extends StatelessWidget {
   final EsnafModeli esnaf;
+  final String? kullaniciTel;
 
-  const EsnafDetayEkrani({super.key, required this.esnaf});
+  const EsnafDetayEkrani({super.key, required this.esnaf, this.kullaniciTel});
 
   // Telefon araması başlatma fonksiyonu
   Future<void> _aramaYap(String tel) async {
@@ -40,7 +43,7 @@ class EsnafDetayEkrani extends StatelessWidget {
             SizedBox(
               height: 300,
               child: GoogleMap(
-                key: UniqueKey(), // Haritayı tazeleyen ve beyaz ekranı çözen anahtar
+                key: UniqueKey(),
                 initialCameraPosition: CameraPosition(
                   target: LatLng(esnaf.konum.latitude, esnaf.konum.longitude),
                   zoom: 15,
@@ -60,7 +63,7 @@ class EsnafDetayEkrani extends StatelessWidget {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Expanded( // Taşkınlıkları önlemek için eklendi
+                      Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -75,7 +78,6 @@ class EsnafDetayEkrani extends StatelessWidget {
                           ],
                         ),
                       ),
-                      // Hızlı Arama Butonu
                       CircleAvatar(
                         backgroundColor: Colors.green,
                         radius: 25,
@@ -88,7 +90,6 @@ class EsnafDetayEkrani extends StatelessWidget {
                   ),
                   const Divider(height: 40),
 
-                  // Adres Detayı
                   const Text(
                     "Adres Bilgileri",
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
@@ -103,7 +104,6 @@ class EsnafDetayEkrani extends StatelessWidget {
 
                   const SizedBox(height: 20),
 
-                  // İletişim Detayı
                   const Text(
                     "İletişim",
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
@@ -128,12 +128,40 @@ class EsnafDetayEkrani extends StatelessWidget {
       bottomNavigationBar: AnaButon(
         metin: "HEMEN RANDEVU AL",
         onPressed: () {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text("Randevu sistemi çok yakında eklenecek!"),
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
+          // Ajanda Kontrolü
+          bool ajandaVarMi = false;
+          final bugunStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
+          
+          if (esnaf.aktifGunler != null && esnaf.aktifGunler!.isNotEmpty) {
+            for (var gunStr in esnaf.aktifGunler!) {
+              // gunStr formatı: "2024-05-20_Kanal"
+              String tarihKismi = gunStr.toString().split('_')[0];
+              if (tarihKismi.compareTo(bugunStr) >= 0) {
+                ajandaVarMi = true;
+                break;
+              }
+            }
+          }
+
+          if (ajandaVarMi) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => RandevuEkrani(
+                  esnaf: esnaf, 
+                  kullaniciTel: kullaniciTel
+                )
+              ),
+            );
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text("Ajanda bulunamadı!"),
+                backgroundColor: Colors.red,
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
         },
       ),
     );

@@ -1,12 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
-import 'ekranlar/esnaf_giris_ekrani.dart';// Giriş ekranı için şart
-import 'ekranlar/ana_ekran.dart'; // Müşteri ekranı için şart
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:intl/date_symbol_data_local.dart';
+import 'ekranlar/esnaf_giris_ekrani.dart';
+import 'ekranlar/ana_ekran.dart'; 
 import 'ekranlar/admin_ekrani.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Türkçe tarih formatlarını başlat
+  await initializeDateFormatting('tr_TR', null);
+
   try {
     if (kIsWeb) {
       await Firebase.initializeApp(
@@ -39,6 +45,15 @@ class AlmElyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
         useMaterial3: true,
       ),
+      // Türkçe Dil Desteği
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: const [
+        Locale('tr', 'TR'),
+      ],
       home: const GirisSecimSayfasi(),
     );
   }
@@ -69,7 +84,7 @@ class GirisSecimSayfasi extends StatelessWidget {
               const SizedBox(height: 15),
               _anaButon(context, "Esnaf Paneli", Colors.indigo, Colors.white, () {
                 Navigator.push(context, MaterialPageRoute(builder: (c) => const EsnafGirisEkrani()));
-              }), // Burada virgül ve parantez çok önemli
+              }),
               const SizedBox(height: 15),
               _anaButon(context, "Yönetici Girişi", Colors.white, Colors.blue, () {
                 Navigator.push(context, MaterialPageRoute(builder: (c) => const AdminGirisSayfasi()));
@@ -95,8 +110,21 @@ class GirisSecimSayfasi extends StatelessWidget {
   }
 }
 
-class KullaniciGirisSayfasi extends StatelessWidget {
+class KullaniciGirisSayfasi extends StatefulWidget {
   const KullaniciGirisSayfasi({super.key});
+
+  @override
+  State<KullaniciGirisSayfasi> createState() => _KullaniciGirisSayfasiState();
+}
+
+class _KullaniciGirisSayfasiState extends State<KullaniciGirisSayfasi> {
+  final TextEditingController _telController = TextEditingController();
+
+  @override
+  void dispose() {
+    _telController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -104,13 +132,27 @@ class KullaniciGirisSayfasi extends StatelessWidget {
     body: Padding(
       padding: const EdgeInsets.all(25),
       child: Column(children: [
-        const TextField(
-            decoration: InputDecoration(
-                labelText: 'Telefon (Hızlı Giriş)', border: OutlineInputBorder())),
+        TextField(
+            controller: _telController,
+            keyboardType: TextInputType.phone,
+            decoration: const InputDecoration(
+                labelText: 'Telefon (Hızlı Giriş)', 
+                hintText: '05xx xxx xx xx',
+                border: OutlineInputBorder())),
         const SizedBox(height: 25),
         ElevatedButton(
-          onPressed: () => Navigator.pushReplacement(
-              context, MaterialPageRoute(builder: (c) => AnaEkran())),
+          onPressed: () {
+            if (_telController.text.length >= 10) {
+              Navigator.pushReplacement(
+                context, 
+                MaterialPageRoute(builder: (c) => AnaEkran(kullaniciTel: _telController.text))
+              );
+            } else {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text("Lütfen geçerli bir telefon numarası girin."))
+              );
+            }
+          },
           style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 55)),
           child: const Text("Giriş Yap"),
         ),
@@ -118,6 +160,7 @@ class KullaniciGirisSayfasi extends StatelessWidget {
     ),
   );
 }
+
 class AdminGirisSayfasi extends StatelessWidget {
   const AdminGirisSayfasi({super.key});
 
