@@ -15,8 +15,13 @@ class EsnafModeli {
   final Map<String, dynamic>? calismaSaatleri;
   final List<dynamic>? hizmetler;
   final List<dynamic>? kanallar;
-  final List<dynamic>? personeller;
-  final List<dynamic>? aktifGunler; // Sadece "Oluştur" denilen günler buraya eklenir
+  final List<dynamic>? personeller; 
+  final List<dynamic>? aktifGunler; 
+  final String randevuOnayModu; // 'Otomatik' veya 'Manuel'
+  final bool ayniGunRandevuEngelle; // Aynı gün birden fazla randevu engelleme
+  final bool slotAralikliGoster; // Randevu saatlerini aralık (10:00-11:00) şeklinde göster
+  final bool personelSecimiZorunlu; // Randevu alırken personel seçimi zorunlu mu?
+  final bool randevularPersonelAdinaAlinsin; // Personel seçildiğinde personelin kanalı kullanılsın
 
   EsnafModeli({
     required this.id,
@@ -34,6 +39,11 @@ class EsnafModeli {
     this.kanallar,
     this.personeller,
     this.aktifGunler,
+    this.randevuOnayModu = 'Manuel',
+    this.ayniGunRandevuEngelle = false,
+    this.slotAralikliGoster = false,
+    this.personelSecimiZorunlu = false,
+    this.randevularPersonelAdinaAlinsin = false,
   });
 
   factory EsnafModeli.fromFirestore(DocumentSnapshot doc) {
@@ -53,8 +63,12 @@ class EsnafModeli {
       hizmetler: data['hizmetler'] ?? [],
       kanallar: data['kanallar'] ?? [],
       personeller: data['personeller'] ?? [],
-      // Sadece aktifGunler varsa alıyoruz, kapaliGunler fallback'ini sildik.
       aktifGunler: data['aktifGunler'] ?? [],
+      randevuOnayModu: data['randevuOnayModu'] ?? 'Manuel',
+      ayniGunRandevuEngelle: data['ayniGunRandevuEngelle'] ?? false,
+      slotAralikliGoster: data['slotAralikliGoster'] ?? false,
+      personelSecimiZorunlu: data['personelSecimiZorunlu'] ?? false,
+      randevularPersonelAdinaAlinsin: data['randevularPersonelAdinaAlinsin'] ?? false,
     );
   }
 
@@ -74,6 +88,11 @@ class EsnafModeli {
       'kanallar': kanallar,
       'personeller': personeller,
       'aktifGunler': aktifGunler,
+      'randevuOnayModu': randevuOnayModu,
+      'ayniGunRandevuEngelle': ayniGunRandevuEngelle,
+      'slotAralikliGoster': slotAralikliGoster,
+      'personelSecimiZorunlu': personelSecimiZorunlu,
+      'randevularPersonelAdinaAlinsin': randevularPersonelAdinaAlinsin,
     };
   }
 }

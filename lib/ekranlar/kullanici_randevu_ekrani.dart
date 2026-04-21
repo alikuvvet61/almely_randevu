@@ -75,10 +75,10 @@ class KullaniciRandevuEkrani extends StatelessWidget {
                             const Divider(height: 25),
                             _bilgiSatiri(Icons.event, "${DateFormat('dd MMMM yyyy', 'tr_TR').format(r.tarih)} - ${r.saat} randevunuz bulunmaktadır."),
                             _bilgiSatiri(Icons.content_cut, r.hizmetAdi),
-                            if (r.calisan_personel != null)
-                              _bilgiSatiri(Icons.person, "Personel: ${r.calisan_personel}"),
-                            if (r.randevu_kanali != null)
-                              _bilgiSatiri(Icons.layers, "Randevu Kanalı: ${r.randevu_kanali}"),
+                            if (r.calisanPersonel != null)
+                              _bilgiSatiri(Icons.person, "Personel: ${r.calisanPersonel}"),
+                            if (r.randevuKanali != null)
+                              _bilgiSatiri(Icons.layers, "Randevu Kanalı: ${r.randevuKanali}"),
                             
                             if (r.durum == 'İptal Edildi' && r.iptalNedeni != null)
                               Padding(
@@ -155,7 +155,7 @@ class KullaniciRandevuEkrani extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: renk.withOpacity(0.1),
+        color: renk.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: renk),
       ),

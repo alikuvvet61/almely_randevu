@@ -1,14 +1,64 @@
+# -------------------------------------------------------------------
+# ALMELY PROJECT - OPTIMIZED GITIGNORE FOR AI AGENTS & FLUTTER
+# -------------------------------------------------------------------
+
+# Flutter / Dart
+# -------------------------------------------------------------------
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+build/
+build_web/
+.metadata
+
+# Android
+# -------------------------------------------------------------------
+.gradle/
+captures/
+assets/debug-output.json
 gradle-wrapper.jar
-/.gradle
-/captures/
 /gradlew
 /gradlew.bat
 /local.properties
 GeneratedPluginRegistrant.java
 .cxx/
-
-# Remember to never publicly share your keystore.
-# See https://flutter.dev/to/reference-keystore
+*.keystore
+*.jks
 key.properties
-**/*.keystore
-**/*.jks
+
+# iOS / macOS
+# -------------------------------------------------------------------
+ios/.symlinks/
+ios/Pods/
+ios/DerivedData/
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+xcuserdata/
+DerivedData/
+.lsidx/
+Pods/
+/.build/
+
+# Web
+# -------------------------------------------------------------------
+.pnpm-debug.log*
+.yarn-integrity
+node_modules/
+
+# OS / IDE (Editor specific)
+# -------------------------------------------------------------------
+.DS_Store
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+.history/
+
+# Firebase / Secrets
+# -------------------------------------------------------------------
+# Eğer özel API anahtarların varsa buraya ekleyebilirsin
+# google-services.json

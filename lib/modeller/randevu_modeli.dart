@@ -11,8 +11,8 @@ class RandevuModeli {
   final int sure; // Randevunun süresi (dakika)
   final String hizmetAdi; // Seçilen hizmet
   final String durum; // 'Beklemede', 'Onaylandı', 'Reddedildi', 'İptal Edildi'
-  final String? randevu_kanali; // Örn: Koltuk 1, Oda 2
-  final String? calisan_personel; // Örn: Ahmet Yılmaz
+  final String? randevuKanali; // Örn: Koltuk 1, Oda 2
+  final String? calisanPersonel; // Örn: Ahmet Yılmaz
   final String? iptalNedeni;
 
   RandevuModeli({
@@ -26,8 +26,8 @@ class RandevuModeli {
     required this.sure,
     required this.hizmetAdi,
     this.durum = 'Beklemede',
-    this.randevu_kanali,
-    this.calisan_personel,
+    this.randevuKanali,
+    this.calisanPersonel,
     this.iptalNedeni,
   });
 
@@ -44,8 +44,8 @@ class RandevuModeli {
       sure: data['sure'] ?? 30,
       hizmetAdi: data['hizmetAdi'] ?? '',
       durum: data['durum'] ?? 'Beklemede',
-      randevu_kanali: data['randevu_kanali'],
-      calisan_personel: data['calisan_personel'],
+      randevuKanali: data['randevu_kanali'],
+      calisanPersonel: data['calisan_personel'],
       iptalNedeni: data['iptalNedeni'],
     );
   }
@@ -61,8 +61,8 @@ class RandevuModeli {
       'sure': sure,
       'hizmetAdi': hizmetAdi,
       'durum': durum,
-      'randevu_kanali': randevu_kanali,
-      'calisan_personel': calisan_personel,
+      'randevu_kanali': randevuKanali,
+      'calisan_personel': calisanPersonel,
       'iptalNedeni': iptalNedeni,
     };
   }

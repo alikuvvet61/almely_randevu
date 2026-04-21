@@ -8,6 +8,7 @@ import '../servisler/firestore_servisi.dart';
 import '../servisler/konum_servisi.dart';
 import 'esnaf_ajanda_ekrani.dart';
 import 'esnaf_randevu_onay_ekrani.dart';
+import 'esnaf_parametre_ekrani.dart';
 
 class EsnafPanelEkrani extends StatefulWidget {
   final EsnafModeli esnaf;
@@ -34,11 +35,12 @@ class _EsnafPanelEkraniState extends State<EsnafPanelEkrani> {
   late int slotAraligi;
   List<Map<String, dynamic>> hizmetler = [];
   List<String> kanallar = [];
-  List<String> personeller = [];
+  List<Map<String, dynamic>> personeller = [];
+  bool _personelOdakli = false;
 
   bool _degisiklikVar = false;
   
-  Map<String, bool> _calismaGunleri = {
+  final Map<String, bool> _calismaGunleri = {
     "Pazartesi": true,
     "Salı": true,
     "Çarşamba": true,
@@ -64,13 +66,20 @@ class _EsnafPanelEkraniState extends State<EsnafPanelEkrani> {
 
     hizmetler = List<Map<String, dynamic>>.from(widget.esnaf.hizmetler ?? []);
     kanallar = List<String>.from(widget.esnaf.kanallar ?? []);
-    personeller = List<String>.from(widget.esnaf.personeller ?? []);
+    _personelOdakli = widget.esnaf.randevularPersonelAdinaAlinsin;
+    
+    var gelenPersoneller = widget.esnaf.personeller ?? [];
+    personeller = gelenPersoneller.map((p) {
+      if (p is Map) return Map<String, dynamic>.from(p);
+      return {"isim": p.toString(), "kanal": ""};
+    }).toList();
 
     for (var h in hizmetler) {
       _hizmetSureControllerList.add(TextEditingController(text: h["sure"].toString()));
     }
 
-    slotAraligi = widget.esnaf.calismaSaatleri?['slotAraligi'] ?? 30;
+    slotAraligi = widget.esnaf.calismaSaatleri?['slotDakika'] ?? 
+                  widget.esnaf.calismaSaatleri?['slotAraligi'] ?? 30;
 
     String? acStr = widget.esnaf.calismaSaatleri?['acilis'];
     String? kapStr = widget.esnaf.calismaSaatleri?['kapanis'];
@@ -87,18 +96,21 @@ class _EsnafPanelEkraniState extends State<EsnafPanelEkrani> {
     }
   }
 
-  int _ebob(int a, int b) => b == 0 ? a : _ebob(b, a % b);
-
-  int _idealSlotHesapla() {
-    if (hizmetler.isEmpty) return 30;
-    List<int> sureler = hizmetler.map((h) => int.tryParse(h['sure'].toString()) ?? 30).toList();
-    int sonuc = sureler[0];
-    for (int i = 1; i < sureler.length; i++) {
-      sonuc = _ebob(sonuc, sureler[i]);
+  Future<void> _verileriTazele() async {
+    try {
+      final guncel = await _firestoreServisi.esnafGetir(widget.esnaf.id).first;
+      if (mounted) {
+        setState(() {
+          _personelOdakli = guncel.randevularPersonelAdinaAlinsin;
+          slotAraligi = guncel.calismaSaatleri?['slotDakika'] ?? 
+                        guncel.calismaSaatleri?['slotAraligi'] ?? 30;
+          acilisSaat = guncel.calismaSaatleri?['acilis'] ?? "09:00";
+          kapanisSaat = guncel.calismaSaatleri?['kapanis'] ?? "18:00";
+        });
+      }
+    } catch (e) {
+      debugPrint("Veri tazeleme hatası: $e");
     }
-    if (sonuc < 5) return 5;
-    if (sonuc > 60) return 60;
-    return sonuc;
   }
 
   String _getKanalAciklama() {
@@ -211,7 +223,7 @@ class _EsnafPanelEkraniState extends State<EsnafPanelEkrani> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text("Hizmeti Sil"),
+        title: const Icon(Icons.warning, color: Colors.orange, size: 40),
         content: Text("'${hizmetler[index]["isim"]}' hizmetini silmek istediğinize emin misiniz?"),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text("Vazgeç")),
@@ -232,19 +244,19 @@ class _EsnafPanelEkraniState extends State<EsnafPanelEkrani> {
     );
   }
 
-  void _listeElemaniEkle(String baslik, List<String> liste, String hint) {
+  void _kanalEkleFormu() {
     final controller = TextEditingController();
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text("$baslik Ekle"),
-        content: TextField(controller: controller, autofocus: true, decoration: InputDecoration(hintText: hint)),
+        title: const Text("Yeni Kanal Ekle"),
+        content: TextField(controller: controller, autofocus: true, decoration: InputDecoration(hintText: _getKanalAciklama())),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text("Vazgeç")),
           ElevatedButton(
             onPressed: () {
               if (controller.text.isNotEmpty) {
-                setState(() { liste.add(controller.text); _degisiklikVar = true; });
+                setState(() { kanallar.add(controller.text); _degisiklikVar = true; });
                 Navigator.pop(context);
               }
             },
@@ -255,42 +267,123 @@ class _EsnafPanelEkraniState extends State<EsnafPanelEkrani> {
     );
   }
 
-  void _listeElemaniDuzenle(String baslik, List<String> liste, int index) {
-    final controller = TextEditingController(text: liste[index]);
+  void _personelEkleFormu() {
+    final controller = TextEditingController();
+    String? seciliKanal = kanallar.isNotEmpty ? kanallar.first : null;
+    bool personelOdakli = _personelOdakli;
+    
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text("$baslik Düzenle"),
-        content: TextField(controller: controller, autofocus: true, decoration: InputDecoration(hintText: "$baslik adını girin")),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Vazgeç")),
-          ElevatedButton(
-            onPressed: () {
-              if (controller.text.isNotEmpty) {
-                setState(() { liste[index] = controller.text; _degisiklikVar = true; });
-                Navigator.pop(context);
-              }
-            },
-            child: const Text("Güncelle"),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) => AlertDialog(
+          title: const Text("Yeni Personel Ekle"),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(controller: controller, autofocus: true, decoration: const InputDecoration(hintText: "Personel adı")),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Text("Bağlı Olduğu Kanal", style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: personelOdakli ? Colors.blue : Colors.grey)),
+                  if (personelOdakli) const Text(" *", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                ],
+              ),
+              const SizedBox(height: 5),
+              DropdownButton<String>(
+                isExpanded: true,
+                hint: const Text("Kanal Seçin"),
+                value: personelOdakli ? seciliKanal : null,
+                disabledHint: const Text("Parametre Pasif"),
+                items: kanallar.map((k) => DropdownMenuItem(value: k, child: Text(k))).toList(),
+                onChanged: personelOdakli ? (v) => setModalState(() => seciliKanal = v!) : null,
+              ),
+              if (!personelOdakli) 
+                const Text("İşletme parametrelerinden 'Personel Adına Alınsın' seçeneği kapalı olduğu için kanal seçimi pasiftir.", style: TextStyle(fontSize: 10, color: Colors.grey, fontStyle: FontStyle.italic)),
+            ],
           ),
-        ],
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text("Vazgeç")),
+            ElevatedButton(
+              onPressed: () {
+                if (controller.text.isEmpty) return;
+                if (personelOdakli && (seciliKanal == null || seciliKanal!.isEmpty)) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Lütfen bir kanal seçin")));
+                  return;
+                }
+                setState(() { 
+                  personeller.add({"isim": controller.text, "kanal": personelOdakli ? (seciliKanal ?? "") : ""}); 
+                  _degisiklikVar = true; 
+                });
+                Navigator.pop(context);
+              },
+              child: const Text("Ekle"),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  void _listeElemaniSilOnay(String baslik, List<String> liste, int index) {
+  void _personelDuzenleFormu(int index) {
+    final controller = TextEditingController(text: personeller[index]["isim"]);
+    String? seciliKanal = personeller[index]["kanal"];
+    if (seciliKanal != null && seciliKanal.isEmpty) seciliKanal = null;
+    if (seciliKanal != null && !kanallar.contains(seciliKanal)) seciliKanal = null;
+    
+    bool personelOdakli = _personelOdakli;
+    if (personelOdakli && seciliKanal == null && kanallar.isNotEmpty) seciliKanal = kanallar.first;
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text("$baslik Sil"),
-        content: Text("'${liste[index]}' öğesini silmek istediğinize emin misiniz?"),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Vazgeç")),
-          TextButton(
-            onPressed: () { setState(() { liste.removeAt(index); _degisiklikVar = true; }); Navigator.pop(context); },
-            child: const Text("Sil", style: TextStyle(color: Colors.red)),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) => AlertDialog(
+          title: const Text("Personeli Düzenle"),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(controller: controller, decoration: const InputDecoration(labelText: "Personel Adı")),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Text("Bağlı Olduğu Kanal", style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: personelOdakli ? Colors.blue : Colors.grey)),
+                  if (personelOdakli) const Text(" *", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                ],
+              ),
+              const SizedBox(height: 5),
+              DropdownButton<String>(
+                isExpanded: true,
+                hint: const Text("Kanal Seçin"),
+                value: personelOdakli ? seciliKanal : null,
+                disabledHint: const Text("Parametre Pasif"),
+                items: kanallar.map((k) => DropdownMenuItem(value: k, child: Text(k))).toList(),
+                onChanged: personelOdakli ? (v) => setModalState(() => seciliKanal = v!) : null,
+              ),
+              if (!personelOdakli) 
+                const Text("İşletme parametrelerinden 'Personel Adına Alınsın' seçeneği kapalı olduğu için kanal seçimi pasiftir.", style: TextStyle(fontSize: 10, color: Colors.grey, fontStyle: FontStyle.italic)),
+            ],
           ),
-        ],
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text("Vazgeç")),
+            ElevatedButton(
+              onPressed: () {
+                if (controller.text.isEmpty) return;
+                if (personelOdakli && (seciliKanal == null || seciliKanal!.isEmpty)) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Lütfen bir kanal seçin")));
+                  return;
+                }
+                setState(() { 
+                  personeller[index] = {
+                    "isim": controller.text, 
+                    "kanal": personelOdakli ? (seciliKanal ?? "") : ""
+                  }; 
+                  _degisiklikVar = true; 
+                });
+                Navigator.pop(context);
+              },
+              child: const Text("Güncelle"),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -312,7 +405,7 @@ class _EsnafPanelEkraniState extends State<EsnafPanelEkrani> {
             ],
           ),
         );
-        if (cikisOnay == true && mounted) Navigator.pop(context);
+        if (cikisOnay == true && context.mounted) Navigator.pop(context);
       },
       child: Scaffold(
         backgroundColor: const Color(0xFFF8FAFC),
@@ -333,7 +426,6 @@ class _EsnafPanelEkraniState extends State<EsnafPanelEkrani> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // RANDEVU YÖNETİMİ BÖLÜMÜ
               StreamBuilder<List<RandevuModeli>>(
                 stream: _firestoreServisi.esnafTumRandevulariGetir(widget.esnaf.id),
                 builder: (context, snapshot) {
@@ -374,7 +466,6 @@ class _EsnafPanelEkraniState extends State<EsnafPanelEkrani> {
                           ),
                         ),
                       
-                      // TÜM RANDEVULARI GÖR BUTONU/KARTI
                       Padding(
                         padding: const EdgeInsets.only(bottom: 15),
                         child: InkWell(
@@ -410,6 +501,40 @@ class _EsnafPanelEkraniState extends State<EsnafPanelEkrani> {
                 }
               ),
 
+              Padding(
+                padding: const EdgeInsets.only(bottom: 15),
+                child: InkWell(
+                  onTap: () async {
+                    await Navigator.push(
+                      context, 
+                      MaterialPageRoute(builder: (c) => EsnafParametreEkrani(esnafId: widget.esnaf.id))
+                    );
+                    _verileriTazele();
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(15),
+                    decoration: BoxDecoration(
+                      color: Colors.indigo.shade50,
+                      borderRadius: BorderRadius.circular(15),
+                      border: Border.all(color: Colors.indigo.shade200),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.tune, color: Colors.indigo),
+                        SizedBox(width: 15),
+                        Expanded(
+                          child: Text(
+                            "İşletme Parametreleri",
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.indigo),
+                          ),
+                        ),
+                        Icon(Icons.arrow_forward_ios, size: 16, color: Colors.indigo),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
               _bolumKart(
                 baslik: "Mesai Saatleri",
                 icerik: Container(
@@ -419,6 +544,18 @@ class _EsnafPanelEkraniState extends State<EsnafPanelEkrani> {
                     _ayarSatiri("Açılış Saati", acilisSaat, () => _saatSec(true)),
                     const Divider(height: 1),
                     _ayarSatiri("Kapanış Saati", kapanisSaat, () => _saatSec(false)),
+                    const Divider(height: 1),
+                    ListTile(
+                      title: const Text("Randevu Aralığı (Slot)", style: TextStyle(fontSize: 13, color: Colors.black87)),
+                      trailing: DropdownButton<int>(
+                        value: slotAraligi,
+                        underline: const SizedBox(),
+                        items: [15, 20, 30, 45, 60, 90, 120].map((e) => DropdownMenuItem(value: e, child: Text("$e dk", style: const TextStyle(fontSize: 13)))).toList(),
+                        onChanged: (v) => setState(() { slotAraligi = v!; _degisiklikVar = true; }),
+                      ),
+                      dense: true,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 10),
+                    ),
                   ]),
                 ),
               ),
@@ -426,11 +563,11 @@ class _EsnafPanelEkraniState extends State<EsnafPanelEkrani> {
               _bolumKart(
                 baslik: "Randevu Kanalları",
                 bilgiAciklama: _getKanalAciklama(),
-                icerik: _listeWidget(kanallar, "Yeni Kanal Ekle", "Kanal", _getKanalAciklama()),
+                icerik: _kanallarWidget(),
               ),
               _bolumKart(
                 baslik: "Personeller",
-                icerik: _listeWidget(personeller, "Yeni Personel Ekle", "Personel", "Personel adını girin"),
+                icerik: _personellerWidget(),
               ),
               _bolumKart(
                 baslik: "Hizmetler ve Süreleri",
@@ -501,12 +638,12 @@ class _EsnafPanelEkraniState extends State<EsnafPanelEkrani> {
     );
   }
 
-  Widget _listeWidget(List<String> liste, String butonMetni, String elemanBaslik, String hint) {
+  Widget _kanallarWidget() {
     return Container(
       decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
       child: Column(
         children: [
-          ...liste.asMap().entries.map((entry) {
+          ...kanallar.asMap().entries.map((entry) {
             return Column(
               children: [
                 Padding(
@@ -514,19 +651,62 @@ class _EsnafPanelEkraniState extends State<EsnafPanelEkrani> {
                   child: Row(
                     children: [
                       Expanded(child: Text(entry.value, style: const TextStyle(fontSize: 13))),
-                      IconButton(icon: const Icon(Icons.edit_outlined, color: Colors.blue, size: 18), onPressed: () => _listeElemaniDuzenle(elemanBaslik, liste, entry.key)),
-                      IconButton(icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 18), onPressed: () => _listeElemaniSilOnay(elemanBaslik, liste, entry.key)),
+                      IconButton(icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 18), onPressed: () => setState(() { kanallar.removeAt(entry.key); _degisiklikVar = true; })),
                     ],
                   ),
                 ),
-                if (entry.key < liste.length - 1) const Divider(height: 1),
+                if (entry.key < kanallar.length - 1) const Divider(height: 1),
               ],
             );
           }),
           TextButton.icon(
-            onPressed: () => _listeElemaniEkle(elemanBaslik, liste, hint),
+            onPressed: _kanalEkleFormu,
             icon: const Icon(Icons.add_circle_outline, size: 18),
-            label: Text(butonMetni, style: const TextStyle(fontSize: 12)),
+            label: const Text("Yeni Kanal Ekle", style: TextStyle(fontSize: 12)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _personellerWidget() {
+    return Container(
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+      child: Column(
+        children: [
+          ...personeller.asMap().entries.map((entry) {
+            Map<String, dynamic> p = entry.value;
+            return Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(p["isim"], style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                            if (_personelOdakli)
+                               Text("Bağlı Kanal: ${p["kanal"]}", style: const TextStyle(fontSize: 11, color: Colors.grey))
+                            else
+                               const Text("Bağlı Kanal: Pasif", style: TextStyle(fontSize: 11, color: Colors.grey)),
+                          ],
+                        ),
+                      ),
+                      IconButton(icon: const Icon(Icons.edit_outlined, color: Colors.blue, size: 18), onPressed: () => _personelDuzenleFormu(entry.key)),
+                      IconButton(icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 18), onPressed: () => setState(() { personeller.removeAt(entry.key); _degisiklikVar = true; })),
+                    ],
+                  ),
+                ),
+                if (entry.key < personeller.length - 1) const Divider(height: 1),
+              ],
+            );
+          }),
+          TextButton.icon(
+            onPressed: _personelEkleFormu,
+            icon: const Icon(Icons.add_circle_outline, size: 18),
+            label: const Text("Yeni Personel Ekle", style: TextStyle(fontSize: 12)),
           ),
         ],
       ),
@@ -571,24 +751,35 @@ class _EsnafPanelEkraniState extends State<EsnafPanelEkrani> {
   }
 
   Future<void> _ayarlariKaydet({bool sessiz = false}) async {
-    final messenger = ScaffoldMessenger.of(context);
     if (!_degisiklikVar) {
-      if (!sessiz) messenger.showSnackBar(const SnackBar(content: Text("Kayıt yapılacak Değişiklik Bulunamadı"), backgroundColor: Colors.orange));
+      if (!sessiz && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Kayıt yapılacak Değişiklik Bulunamadı"), backgroundColor: Colors.orange));
+      }
       return;
     }
     try {
       await _firestoreServisi.esnafGuncelle(widget.esnaf.id, {
-        'calismaSaatleri': {'acilis': acilisSaat, 'kapanis': kapanisSaat, 'slotAraligi': slotAraligi, 'gunler': _calismaGunleri},
+        'calismaSaatleri': {
+          'acilis': acilisSaat, 
+          'kapanis': kapanisSaat, 
+          'slotDakika': slotAraligi,
+          'slotAraligi': slotAraligi, 
+          'gunler': _calismaGunleri
+        },
         'hizmetler': hizmetler,
         'kanallar': kanallar,
         'personeller': personeller,
       });
-      setState(() => _degisiklikVar = false);
-      if (!mounted) return;
-      if (!sessiz) messenger.showSnackBar(const SnackBar(content: Text("Ayarlar başarıyla kaydedildi!"), backgroundColor: Colors.green));
+      if (mounted) {
+        setState(() => _degisiklikVar = false);
+        if (!sessiz) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Ayarlar başarıyla kaydedildi!"), backgroundColor: Colors.green));
+        }
+      }
     } catch (e) {
-      if (!mounted) return;
-      messenger.showSnackBar(SnackBar(content: Text("Hata: $e"), backgroundColor: Colors.red));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Hata: $e"), backgroundColor: Colors.red));
+      }
     }
   }
 
@@ -651,7 +842,6 @@ class _EsnafPanelEkraniState extends State<EsnafPanelEkrani> {
   }
 
   Future<void> _bilgileriKaydet() async {
-    final messenger = ScaffoldMessenger.of(context);
     try {
       await _firestoreServisi.esnafGuncelle(widget.esnaf.id, {
         'isletmeAdi': _adController.text,
@@ -661,13 +851,15 @@ class _EsnafPanelEkraniState extends State<EsnafPanelEkrani> {
         'adres': _adresController.text,
         'konum': GeoPoint(double.tryParse(_latController.text) ?? 0.0, double.tryParse(_lonController.text) ?? 0.0),
       });
-      if (!mounted) return;
-      Navigator.pop(context);
-      setState(() {});
-      messenger.showSnackBar(const SnackBar(content: Text("İşletme bilgileri güncellendi!"), backgroundColor: Colors.green));
+      if (mounted) {
+        Navigator.pop(context);
+        setState(() {});
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("İşletme bilgileri güncellendi!"), backgroundColor: Colors.green));
+      }
     } catch (e) {
-      if (!mounted) return;
-      messenger.showSnackBar(SnackBar(content: Text("Hata: $e"), backgroundColor: Colors.red));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Hata: $e"), backgroundColor: Colors.red));
+      }
     }
   }
 
@@ -678,21 +870,29 @@ class _EsnafPanelEkraniState extends State<EsnafPanelEkrani> {
       double lat = double.tryParse(sonuc['enlem']!) ?? 0.0;
       double lon = double.tryParse(sonuc['boylam']!) ?? 0.0;
       String? profesyonelAdres = await profesyonelAdresGetir(lat, lon);
-      setModalState(() {
-        _latController.text = sonuc['enlem']!;
-        _lonController.text = sonuc['boylam']!;
-        _ilController.text = sonuc['il']!;
-        _ilceController.text = sonuc['ilce']!;
-        _adresController.text = profesyonelAdres ?? sonuc['tamAdres']!;
-        _gpsDurum = "Konum Tamam ✅";
-      });
-    } else { setModalState(() => _gpsDurum = "Hata oluştu."); }
+      if (mounted) {
+        setModalState(() {
+          _latController.text = sonuc['enlem']!;
+          _lonController.text = sonuc['boylam']!;
+          _ilController.text = sonuc['il']!;
+          _ilceController.text = sonuc['ilce']!;
+          _adresController.text = profesyonelAdres ?? sonuc['tamAdres']!;
+          _gpsDurum = "Konum Tamam ✅";
+        });
+      }
+    } else { 
+      if (mounted) {
+        setModalState(() => _gpsDurum = "Hata oluştu."); 
+      }
+    }
   }
 
   Future<String?> profesyonelAdresGetir(double lat, double lon) async {
     try {
       String? googleAdres = await _konumServisi.googleAdresGetir(lat, lon);
-      if (googleAdres != null && googleAdres.isNotEmpty) return googleAdres;
+      if (googleAdres != null && googleAdres.isNotEmpty) {
+        return googleAdres;
+      }
       final nominatimUrl = 'https://nominatim.openstreetmap.org/reverse?lat=$lat&lon=$lon&format=json&zoom=18&addressdetails=1&accept-language=tr';
       final response = await http.get(Uri.parse(nominatimUrl)).timeout(const Duration(seconds: 10));
       if (response.statusCode == 200) {
@@ -720,8 +920,15 @@ class _EsnafPanelEkraniState extends State<EsnafPanelEkrani> {
     if (picked != null) {
       String formatted = "${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}";
       setState(() {
-        if (isAcilis) acilisSaat = formatted;
-        else (picked.hour == 0 && picked.minute == 0) ? _showMidnightDialog() : kapanisSaat = formatted;
+        if (isAcilis) {
+          acilisSaat = formatted;
+        } else {
+          if (picked.hour == 0 && picked.minute == 0) {
+            _showMidnightDialog();
+          } else {
+            kapanisSaat = formatted;
+          }
+        }
         _degisiklikVar = true;
       });
     }

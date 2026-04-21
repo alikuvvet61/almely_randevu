@@ -98,6 +98,7 @@ class _AdminEkraniState extends State<AdminEkrani> {
                 onPressed: () async {
                   if (_iptalNedeniController.text.isNotEmpty) {
                     await _firestoreServisi.iptalNedeniEkle(tip, _iptalNedeniController.text);
+                    if (!mounted) return;
                     _iptalNedeniController.clear();
                   }
                 },
@@ -126,7 +127,9 @@ class _AdminEkraniState extends State<AdminEkrani> {
                           ),
                           IconButton(
                             icon: const Icon(Icons.delete, color: Colors.red),
-                            onPressed: () => _firestoreServisi.iptalNedeniSil(tip, neden),
+                            onPressed: () async {
+                              await _firestoreServisi.iptalNedeniSil(tip, neden);
+                            },
                           ),
                         ],
                       ),
@@ -157,7 +160,8 @@ class _AdminEkraniState extends State<AdminEkrani> {
             onPressed: () async {
               if (controller.text.isNotEmpty) {
                 await _firestoreServisi.iptalNedeniGuncelle(tip, eskiNeden, controller.text);
-                if (mounted) Navigator.pop(ctx);
+                if (!ctx.mounted) return;
+                Navigator.pop(ctx);
               }
             },
             style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white),
@@ -220,6 +224,7 @@ class _AdminEkraniState extends State<AdminEkrani> {
                                   } else {
                                     await _firestoreServisi.kategoriGuncelle(_duzenlenenKategoriId!, _kategoriAdController.text);
                                   }
+                                  if (!context.mounted) return;
                                   setModalState(() {
                                     _kategoriAdController.clear();
                                     _duzenlenenKategoriId = null;
@@ -290,8 +295,9 @@ class _AdminEkraniState extends State<AdminEkrani> {
         content: Text("'$ad' kategorisini silmek istediğinize emin misiniz? Bu işlem bu kategorideki esnafların görünümünü etkileyebilir."),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text("İptal")),
-          TextButton(onPressed: () {
-            _firestoreServisi.kategoriSil(id);
+          TextButton(onPressed: () async {
+            await _firestoreServisi.kategoriSil(id);
+            if (!context.mounted) return;
             Navigator.pop(context);
           }, child: const Text("Sil", style: TextStyle(color: Colors.red))),
         ],
@@ -390,8 +396,8 @@ class _AdminEkraniState extends State<AdminEkrani> {
                           return InputDecorator(
                             decoration: const InputDecoration(labelText: "Kategori", border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 10)),
                             child: DropdownButtonHideUnderline(
-                              child: DropdownButton<String>(
-                                value: kats.any((k) => k['ad'] == _secilenKategori) ? _secilenKategori : kats[0]['ad'],
+                              child: DropdownButtonFormField<String>(
+                                initialValue: kats.any((k) => k['ad'] == _secilenKategori) ? _secilenKategori : kats[0]['ad'],
                                 isExpanded: true,
                                 items: kats.map((e) => DropdownMenuItem(value: e['ad'] as String, child: Text(e['ad'] as String))).toList(),
                                 onChanged: (v) {
@@ -434,9 +440,6 @@ class _AdminEkraniState extends State<AdminEkrani> {
 
                       ElevatedButton(
                         onPressed: () async {
-                          final scaffoldMessenger = ScaffoldMessenger.of(context);
-                          final navigator = Navigator.of(context);
-
                           EsnafModeli guncelEsnaf = EsnafModeli(
                             id: esnaf?.id ?? '',
                             isletmeAdi: _adController.text,
@@ -459,17 +462,17 @@ class _AdminEkraniState extends State<AdminEkrani> {
                               await _firestoreServisi.esnafGuncelle(esnaf.id, guncelEsnaf.toMap());
                             }
 
-                            if (!mounted) return;
-                            navigator.pop();
-                            scaffoldMessenger.showSnackBar(
+                            if (!context.mounted) return;
+                            Navigator.pop(context);
+                            ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
                                     content: Text(esnaf == null ? "Esnaf Kaydedildi!" : "Esnaf Güncellendi!"),
                                     backgroundColor: Colors.green
                                 )
                             );
                           } catch (e) {
-                            if (!mounted) return;
-                            scaffoldMessenger.showSnackBar(
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(content: Text("Hata: $e"), backgroundColor: Colors.red)
                             );
                           }
@@ -504,10 +507,9 @@ class _AdminEkraniState extends State<AdminEkrani> {
           TextButton(
             onPressed: () async {
               await _firestoreServisi.tumAjandalariTemizle();
-              if (context.mounted) {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Tüm ajandalar sıfırlandı.")));
-              }
+              if (!context.mounted) return;
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Tüm ajandalar sıfırlandı.")));
             },
             child: const Text("Evet, Sıfırla", style: TextStyle(color: Colors.red)),
           ),
@@ -561,7 +563,7 @@ class _AdminEkraniState extends State<AdminEkrani> {
                 return StreamBuilder<List<Map<String, dynamic>>>(
                   stream: _firestoreServisi.kategorileriGetir(),
                   builder: (context, katSnapshot) {
-                    if (!katSnapshot.hasData) return const Center(child: CircularProgressIndicator());
+                    if (!katSnapshot.hasData) return const CircularProgressIndicator();
                     final kats = katSnapshot.data!.map((e) => e['ad'] as String).toList();
                     
                     if (kats.isEmpty) {
@@ -614,8 +616,9 @@ class _AdminEkraniState extends State<AdminEkrani> {
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text("İptal")),
           TextButton(
-            onPressed: () {
-              _firestoreServisi.esnafSil(esnaf.id);
+            onPressed: () async {
+              await _firestoreServisi.esnafSil(esnaf.id);
+              if (!context.mounted) return;
               Navigator.pop(context);
             },
             child: const Text("Sil", style: TextStyle(color: Colors.red)),

@@ -97,6 +97,10 @@ class GirisSecimSayfasi extends StatelessWidget {
   }
 
   Widget _anaButon(BuildContext context, String m, Color r, Color y, VoidCallback t, {bool kenar = false}) {
+    IconData icon = Icons.person;
+    if (m.contains("Esnaf")) icon = Icons.business;
+    if (m.contains("Yönetici")) icon = Icons.admin_panel_settings;
+    
     return ElevatedButton(
       style: ElevatedButton.styleFrom(
         minimumSize: const Size(280, 60),
@@ -105,7 +109,15 @@ class GirisSecimSayfasi extends StatelessWidget {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
       onPressed: t,
-      child: Text(m, style: TextStyle(color: y, fontWeight: FontWeight.bold, fontSize: 16)),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: y, size: 24),
+          const SizedBox(width: 10),
+          Text(m, style: TextStyle(color: y, fontWeight: FontWeight.bold, fontSize: 16)),
+        ],
+      ),
     );
   }
 }

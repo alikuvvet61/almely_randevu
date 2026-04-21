@@ -10,6 +10,7 @@ class KonumServisi {
   /// Mevcut GPS konumunu alır ve profesyonel formatta adres bilgilerini döndürür.
   Future<Map<String, String>?> konumuVeAdresiGetir() async {
     try {
+      // GPS konumunu timeout ile al (Açık alanda değillerse takılı kalabiliyor)
       final Position pos = await _konumYetkisiAl();
 
       // 1. Google Geocoding API ile en detaylı adresi çekmeyi dene
@@ -18,8 +19,6 @@ class KonumServisi {
       if (googleData != null && googleData['status'] == 'OK') {
         final List results = googleData['results'] as List;
         if (results.isNotEmpty) {
-          // Google'ın döndürdüğü sonuçlar arasından 'street_address' tipinde olanı bulalım.
-          // Bu tip genellikle en doğru cadde ve bina numarası bilgisini içerir.
           Map<String, dynamic>? selectedResult;
           for (final res in results) {
             if (res is Map<String, dynamic>) {
@@ -31,11 +30,9 @@ class KonumServisi {
             }
           }
 
-          // Eğer tam bir sokak adresi bulunamazsa, en alakalı (ilk) sonucu baz al.
           selectedResult ??= results[0] as Map<String, dynamic>;
           final List components = (selectedResult['address_components'] as List?) ?? [];
 
-          // Adres bileşenlerini ayıklıyoruz
           String mahalle = _parcaBul(components, "neighborhood");
           if (mahalle.isEmpty) mahalle = _parcaBul(components, "sublocality_level_1");
           
@@ -60,7 +57,9 @@ class KonumServisi {
       return await _nativeGeocodeYedek(pos);
     } catch (e) {
       debugPrint("Konum servisi hatası: $e");
-      return {'hata': 'Konum alınamadı: $e'};
+      String mesaj = "Konum alınamadı.";
+      if (e.toString().contains("timeout")) mesaj = "GPS sinyali çok zayıf veya zaman aşımına uğradı.";
+      return {'hata': mesaj};
     }
   }
 
@@ -99,13 +98,13 @@ class KonumServisi {
     return null;
   }
 
-  /// Google Geocoding API'ye HTTP isteği atar.
+  /// Google Geocoding API'ye HTTP isteği atar (Timeout 20 sn'ye çıkarıldı).
   Future<Map<String, dynamic>?> _fetchGoogleGeocode(double lat, double lon) async {
     try {
       final url = Uri.parse(
           'https://maps.googleapis.com/maps/api/geocode/json?latlng=$lat,$lon&key=$_googleApiKey&language=tr'
       );
-      final response = await http.get(url).timeout(const Duration(seconds: 10));
+      final response = await http.get(url).timeout(const Duration(seconds: 20));
       if (response.statusCode == 200) {
         return json.decode(response.body) as Map<String, dynamic>;
       }
@@ -116,7 +115,8 @@ class KonumServisi {
   Future<Map<String, String>> _nativeGeocodeYedek(Position pos) async {
     try {
       await geo.setLocaleIdentifier("tr_TR");
-      List<geo.Placemark> placemarks = await geo.placemarkFromCoordinates(pos.latitude, pos.longitude);
+      // Native geocoding işlemi de bazen takılabiliyor
+      List<geo.Placemark> placemarks = await geo.placemarkFromCoordinates(pos.latitude, pos.longitude).timeout(const Duration(seconds: 15));
       if (placemarks.isNotEmpty) {
         geo.Placemark p = placemarks[0];
         return {
@@ -140,13 +140,10 @@ class KonumServisi {
   }
 
   String _formatliAdresOlustur(String mah, String yol, String no, String pk, String ilce, String il, String ulke) {
-    // Format: "Derecik, Atatürk Caddesi No:150/A, 61170 Akçaabat/Trabzon, Türkiye"
-    
     String sMah = mah.replaceAll(RegExp(r' Mahallesi| Mah\.| Mah', caseSensitive: false), "").trim();
     String sNo = no.replaceAll(RegExp(r'No[:\s\.]*', caseSensitive: false), "").trim();
     
     List<String> parcalar = [];
-    
     if (sMah.isNotEmpty) parcalar.add(sMah);
     
     String caddeNo = yol.trim();
@@ -183,6 +180,12 @@ class KonumServisi {
       p = await Geolocator.requestPermission();
       if (p == LocationPermission.denied) throw 'Konum izni reddedildi.';
     }
-    return await Geolocator.getCurrentPosition(locationSettings: const LocationSettings(accuracy: LocationAccuracy.bestForNavigation));
+    // getCurrentPosition için 15 saniyelik limit ekliyoruz
+    return await Geolocator.getCurrentPosition(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.bestForNavigation,
+        timeLimit: Duration(seconds: 15),
+      ),
+    );
   }
 }

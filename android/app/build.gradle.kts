@@ -2,7 +2,6 @@ plugins {
     id("com.android.application")
     id("kotlin-android")
     id("com.google.gms.google-services")
-    // Flutter Gradle Plugin, Android ve Kotlin'den sonra gelmelidir.
     id("dev.flutter.flutter-gradle-plugin")
 }
 
@@ -14,6 +13,8 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // --- BİLDİRİM PAKETİ İÇİN GEREKLİ ---
+        isCoreLibraryDesugaringEnabled = true
     }
 
     defaultConfig {
@@ -23,21 +24,21 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
 
-        // --- KRİTİK EKLEME ---
-        // AndroidManifest içindeki ${applicationName} hatasını manuel çözen placeholder.
-        // Bu satır sayesinde 'io.flutter.app.FlutterApplication' kullanmana gerek kalmaz.
         manifestPlaceholders["applicationName"] = "android.app.Application"
     }
 
     buildTypes {
         release {
-            // Test aşamasında debug anahtarı kullanılıyor, canlıda kendi anahtarını eklemelisin.
             signingConfig = signingConfigs.getByName("debug")
         }
     }
 }
 
-// Modern Kotlin derleme ayarları
+dependencies {
+    // --- JAVA 8+ API DESTEĞİ (Desugaring) ---
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
+}
+
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile>().configureEach {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)

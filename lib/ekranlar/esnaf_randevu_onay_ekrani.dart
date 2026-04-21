@@ -108,7 +108,7 @@ class _EsnafRandevuYonetimEkraniState extends State<EsnafRandevuYonetimEkrani> {
                 Expanded(child: Text(r.kullaniciAd, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.indigo))),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(color: durumRenk.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                  decoration: BoxDecoration(color: durumRenk.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
                   child: Text(r.durum, style: TextStyle(color: durumRenk, fontWeight: FontWeight.bold, fontSize: 12)),
                 ),
               ],
@@ -117,8 +117,8 @@ class _EsnafRandevuYonetimEkraniState extends State<EsnafRandevuYonetimEkrani> {
             _bilgiSatiri(Icons.phone, r.kullaniciTel),
             _bilgiSatiri(Icons.event, "${DateFormat('dd MMMM yyyy, EEEE', 'tr_TR').format(r.tarih)} - ${r.saat}"),
             _bilgiSatiri(Icons.content_cut, r.hizmetAdi),
-            if (r.randevu_kanali != null) _bilgiSatiri(Icons.layers, "Kanal: ${r.randevu_kanali}"),
-            if (r.calisan_personel != null) _bilgiSatiri(Icons.person, "Personel: ${r.calisan_personel}"),
+            if (r.randevuKanali != null) _bilgiSatiri(Icons.layers, "Kanal: ${r.randevuKanali}"),
+            if (r.calisanPersonel != null) _bilgiSatiri(Icons.person, "Personel: ${r.calisanPersonel}"),
             
             if (r.iptalNedeni != null)
               Padding(
@@ -142,8 +142,9 @@ class _EsnafRandevuYonetimEkraniState extends State<EsnafRandevuYonetimEkrani> {
                   Expanded(
                     child: ElevatedButton.icon(
                       onPressed: () async {
+                        final messenger = ScaffoldMessenger.of(context);
                         await _firestoreServisi.randevuDurumGuncelle(r.id, 'Onaylandı');
-                        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Randevu onaylandı.")));
+                        if (mounted) messenger.showSnackBar(const SnackBar(content: Text("Randevu onaylandı.")));
                       },
                       icon: const Icon(Icons.check, size: 18),
                       label: const Text("Onayla"),
@@ -191,8 +192,9 @@ class _EsnafRandevuYonetimEkraniState extends State<EsnafRandevuYonetimEkrani> {
                         title: Text(nedenler[index]),
                         leading: const Icon(Icons.radio_button_off, color: Colors.blue),
                         onTap: () async {
+                          final navigator = Navigator.of(c);
                           await _firestoreServisi.randevuIptalEt(r.id, nedenler[index]);
-                          if (mounted) Navigator.pop(c);
+                          if (navigator.mounted) navigator.pop();
                         },
                       );
                     },
