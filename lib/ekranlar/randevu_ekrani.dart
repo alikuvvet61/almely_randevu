@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../modeller/esnaf_modeli.dart';
 import '../modeller/randevu_modeli.dart';
 import '../servisler/firestore_servisi.dart';
+import '../servisler/bildirim_servisi.dart';
 import '../widgets/ana_buton.dart';
 
 class RandevuEkrani extends StatefulWidget {
@@ -368,13 +369,35 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
 
     try {
       await _firestoreServisi.randevuEkle(yeniRandevu);
+
+      // Bildirim Gönder (Esnafa yeni randevu bildirimi)
+      BildirimServisi.bildirimGonder(
+        kullaniciTel: esnaf.telefon, // Esnafın telefonuna bildirim gider
+        baslik: "Yeni Randevu Talebi",
+        icerik: "${_adController.text} isimli kullanıcı $saat saati için randevu aldı.",
+      );
+
       if (!mounted) return;
+
+      String tarihFormat = DateFormat('dd.MM.yyyy').format(tarih);
+      String mesaj = durm == 'Onaylandı'
+          ? "Randevunuz $tarihFormat tarihinde saat $saat olarak onaylanmıştır. Kent Düğün Salonu olarak teşekkür ederiz."
+          : "Randevunuz $tarihFormat tarihinde saat $saat için alınmıştır. Kent Düğün Salonu olarak teşekkür ederiz. Onay bekleniyor.";
+
       showDialog(
         context: context,
         builder: (ctx) => AlertDialog(
           title: const Icon(Icons.check_circle, color: Colors.green, size: 60),
-          content: Text(durm == 'Onaylandı' ? "Randevunuz onaylandı." : "Onay bekliyor.", textAlign: TextAlign.center),
-          actions: [TextButton(onPressed: () { Navigator.pop(ctx); Navigator.pop(context); }, child: const Text("TAMAM"))],
+          content: Text(mesaj, textAlign: TextAlign.center),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                Navigator.pop(context);
+              },
+              child: const Text("TAMAM"),
+            )
+          ],
         ),
       );
     } catch (e) {
@@ -733,13 +756,26 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                         return GridView.builder(
                           shrinkWrap: true,
                           physics: const NeverScrollableScrollPhysics(),
-                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 4, childAspectRatio: 2, mainAxisSpacing: 10, crossAxisSpacing: 10),
+                          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: esnaf.slotAralikliGoster ? 3 : 4,
+                            childAspectRatio: esnaf.slotAralikliGoster ? 2.5 : 2.0,
+                            mainAxisSpacing: 10,
+                            crossAxisSpacing: 10,
+                          ),
                           itemCount: slotlar.length,
                           itemBuilder: (context, index) {
                             String saat = slotlar[index];
                             String? nedenKapali = _saatNedenKapali(esnaf, saat, _sonRandevular, toplamSure, ajandaVerisi: ajandaVerisi);
                             bool musait = nedenKapali == null;
                             bool secili = seciliSaat == saat;
+
+                            String saatText = saat;
+                            if (esnaf.slotAralikliGoster) {
+                              int basDakika = _saatiDakikayaCevir(saat);
+                              int slotDakika = (esnaf.calismaSaatleri?['slotDakika'] ?? 30).toInt();
+                              int bitDakika = basDakika + (toplamSure > 0 ? toplamSure : slotDakika);
+                              saatText = "$saat - ${_dakikaFormatli(bitDakika % 1440)}";
+                            }
 
                             return InkWell(
                               onTap: musait ? () {
@@ -756,7 +792,15 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                                 child: Column(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    Text(saat, style: TextStyle(color: secili ? Colors.white : (musait ? Colors.black : Colors.grey), fontWeight: musait ? FontWeight.bold : FontWeight.normal)),
+                                    Text(
+                                      saatText,
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        color: secili ? Colors.white : (musait ? Colors.black : Colors.grey),
+                                        fontWeight: musait ? FontWeight.bold : FontWeight.normal,
+                                        fontSize: esnaf.slotAralikliGoster ? 11 : 14,
+                                      ),
+                                    ),
                                     if (nedenKapali != null && nedenKapali.isNotEmpty)
                                       Text(nedenKapali, style: const TextStyle(color: Colors.red, fontSize: 9, overflow: TextOverflow.ellipsis)),
                                   ],

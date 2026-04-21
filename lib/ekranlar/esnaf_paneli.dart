@@ -561,6 +561,32 @@ class _EsnafPanelEkraniState extends State<EsnafPanelEkrani> {
               ),
 
               _bolumKart(
+                baslik: "Çalışma Günleri",
+                icerik: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 5),
+                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+                  child: Column(
+                    children: _calismaGunleri.keys.map((gun) {
+                      bool acik = _calismaGunleri[gun] ?? false;
+                      return SwitchListTile(
+                        title: Text(gun, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                        subtitle: Text(acik ? "İşletme Açık" : "İşletme Kapalı", style: TextStyle(fontSize: 11, color: acik ? Colors.green : Colors.red)),
+                        value: acik,
+                        activeColor: Colors.blue,
+                        dense: true,
+                        onChanged: (bool value) {
+                          setState(() {
+                            _calismaGunleri[gun] = value;
+                            _degisiklikVar = true;
+                          });
+                        },
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+
+              _bolumKart(
                 baslik: "Randevu Kanalları",
                 bilgiAciklama: _getKanalAciklama(),
                 icerik: _kanallarWidget(),

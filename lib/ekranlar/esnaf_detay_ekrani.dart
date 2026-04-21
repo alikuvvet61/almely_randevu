@@ -105,6 +105,33 @@ class EsnafDetayEkrani extends StatelessWidget {
                   const SizedBox(height: 20),
 
                   const Text(
+                    "Çalışma Programı",
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(15),
+                      border: Border.all(color: Colors.grey.shade200),
+                    ),
+                    child: Column(
+                      children: [
+                        _calismaGunuSatiri("Pazartesi"),
+                        _calismaGunuSatiri("Salı"),
+                        _calismaGunuSatiri("Çarşamba"),
+                        _calismaGunuSatiri("Perşembe"),
+                        _calismaGunuSatiri("Cuma"),
+                        _calismaGunuSatiri("Cumartesi"),
+                        _calismaGunuSatiri("Pazar", sonSatir: true),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  const Text(
                     "İletişim",
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
@@ -134,7 +161,6 @@ class EsnafDetayEkrani extends StatelessWidget {
           
           if (esnaf.aktifGunler != null && esnaf.aktifGunler!.isNotEmpty) {
             for (var gunStr in esnaf.aktifGunler!) {
-              // gunStr formatı: "2024-05-20_Kanal"
               String tarihKismi = gunStr.toString().split('_')[0];
               if (tarihKismi.compareTo(bugunStr) >= 0) {
                 ajandaVarMi = true;
@@ -164,6 +190,35 @@ class EsnafDetayEkrani extends StatelessWidget {
           }
         },
       ),
+    );
+  }
+
+  Widget _calismaGunuSatiri(String gun, {bool sonSatir = false}) {
+    final Map<String, dynamic> gunler = esnaf.calismaSaatleri?['gunler'] ?? {};
+    final bool acik = gunler[gun] ?? true;
+    final String acilis = esnaf.calismaSaatleri?['acilis'] ?? "09:00";
+    final String kapanis = esnaf.calismaSaatleri?['kapanis'] ?? "18:00";
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(gun, style: const TextStyle(fontWeight: FontWeight.w500)),
+              Text(
+                acik ? "$acilis - $kapanis" : "KAPALI",
+                style: TextStyle(
+                  color: acik ? Colors.black87 : Colors.red,
+                  fontWeight: acik ? FontWeight.normal : FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (!sonSatir) const Divider(height: 1),
+      ],
     );
   }
 }

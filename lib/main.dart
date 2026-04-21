@@ -3,6 +3,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'servisler/bildirim_servisi.dart';
 import 'ekranlar/esnaf_giris_ekrani.dart';
 import 'ekranlar/ana_ekran.dart'; 
 import 'ekranlar/admin_ekrani.dart';
@@ -12,6 +13,9 @@ void main() async {
   
   // Türkçe tarih formatlarını başlat
   await initializeDateFormatting('tr_TR', null);
+
+  // Bildirim servisini başlat
+  await BildirimServisi.initialize();
 
   try {
     if (kIsWeb) {

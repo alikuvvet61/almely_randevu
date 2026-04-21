@@ -5,10 +5,11 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
 class BildirimServisi {
-  static final FirebaseMessaging _fcm = FirebaseMessaging.instance;
+  static FirebaseMessaging get _fcm => FirebaseMessaging.instance;
   static final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
 
   static Future<void> initialize() async {
+    if (kIsWeb) return; // Web üzerinde FCM ve yerel bildirimler şu an devre dışı
     // 1. Bildirim izinlerini iste (iOS ve Android 13+)
     NotificationSettings settings = await _fcm.requestPermission(
       alert: true,
@@ -57,6 +58,7 @@ class BildirimServisi {
 
   // FCM Token al ve Firestore'a telefon numarasıyla eşleştirerek kaydet
   static Future<void> tokenKaydet(String telefon) async {
+    if (kIsWeb) return;
     try {
       String? token = await _fcm.getToken();
       if (token != null) {
@@ -88,6 +90,7 @@ class BildirimServisi {
 
   // Firestore'daki bildirimleri dinle ve telefona bildirim olarak bas
   static void bildirimDinle(String telefon) {
+    if (kIsWeb) return;
     FirebaseFirestore.instance
         .collection('bildirimler')
         .where('aliciTel', isEqualTo: telefon)
