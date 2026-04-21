@@ -83,9 +83,13 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
     final hizmetler = _seciliHizmetlerNotifier.value;
     if (hizmetler.isEmpty || _saatKendimSececegimNotifier.value) return;
 
+    // Eğer personel odaklı randevu aktifse ve henüz personel seçilmemişse işlem yapma
+    if (esnaf.randevularPersonelAdinaAlinsin && _seciliPersonelNotifier.value == null) {
+      return;
+    }
+
     if (_aramaYapiliyorNotifier.value) return;
     _aramaYapiliyorNotifier.value = true;
-    _musaitlikBulunamadiNotifier.value = false;
 
     try {
       int toplamSure = _getToplamSure(hizmetler);
@@ -210,10 +214,13 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
     for (var item in aktifler) {
       final parcalar = item.toString().split('_');
       if (parcalar.isNotEmpty) {
+        // Eğer esnafın kanalları varsa ve bir kanal seçiliyse (veya personel odaklıysa)
+        // kanal eşleşmesine bakıyoruz.
         if (kanal != null && kanal.isNotEmpty) {
-          if (parcalar.length <= 1 || parcalar[1] != kanal) continue;
-        } else {
-          if (parcalar.length > 1) continue;
+          // parcalar[1] kanal adıdır. Eğer kanal adı eşleşmiyorsa bu günü atla.
+          if (parcalar.length > 1 && parcalar[1] != kanal) {
+            continue;
+          }
         }
 
         try {
@@ -223,7 +230,9 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
               tarihler.add(t);
             }
           }
-        } catch (e) { debugPrint("Tarih parse hatası: $e"); }
+        } catch (e) {
+          debugPrint("Tarih parse hatası: $e");
+        }
       }
     }
     tarihler.sort();
@@ -414,7 +423,11 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                             _seciliSaatNotifier.value = null;
                             _saatKendimSececegimNotifier.value = false; // Seçim değişince modu sıfırla
                             _updateStreams(); // Saatlerin hemen yüklenmesini sağla
-                            _enYakinMusaitligiBul(esnaf);
+                            
+                            // Eğer personel zorunlu değilse veya zaten seçilmişse otomatik ara
+                            if (!esnaf.randevularPersonelAdinaAlinsin || _seciliPersonelNotifier.value != null) {
+                                _enYakinMusaitligiBul(esnaf);
+                            }
                           },
                         );
                       }).toList(),
@@ -422,50 +435,97 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                   },
                 ),
 
-                ValueListenableBuilder<bool>(
-                    valueListenable: _aramaYapiliyorNotifier,
-                    builder: (context, aramaYapiliyor, _) {
-                      return ValueListenableBuilder<List<Map<String, dynamic>>>(
-                          valueListenable: _seciliHizmetlerNotifier,
-                          builder: (context, seciliHizmetler, _) {
-                            if (seciliHizmetler.isEmpty) return const SizedBox.shrink();
+                ValueListenableBuilder<List<Map<String, dynamic>>>(
+                  valueListenable: _seciliHizmetlerNotifier,
+                  builder: (context, seciliHizmetler, _) {
+                    if (seciliHizmetler.isEmpty) return const SizedBox.shrink();
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Divider(height: 40),
+                        // ADIM 2: Kanal / Personel Seçimi
+                        Text(
+                          esnaf.randevularPersonelAdinaAlinsin ? "2. Personel Seçin" : "2. Randevu Kanalı Seçin",
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        ),
+                        const SizedBox(height: 10),
+                        if (esnaf.randevularPersonelAdinaAlinsin)
+                          _personelSeciciWidget(esnaf)
+                        else if (esnaf.kanallar != null && esnaf.kanallar!.length > 1)
+                          _kanalSeciciWidget(esnaf)
+                        else
+                          const Text("Varsayılan Kanal Seçili", style: TextStyle(color: Colors.grey, fontSize: 13)),
+
+                        ValueListenableBuilder<String?>(
+                          valueListenable: esnaf.randevularPersonelAdinaAlinsin ? _seciliPersonelNotifier : _seciliKanalNotifier,
+                          builder: (context, secim, _) {
+                            // Personel veya Kanal seçilmeden ilerleme olmaz (Eğer seçilmesi gerekiyorsa)
+                            bool secimGerekiyor = esnaf.randevularPersonelAdinaAlinsin || (esnaf.kanallar?.length ?? 0) > 1;
+                            if (secimGerekiyor && secim == null) return const SizedBox.shrink();
+
                             return Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const SizedBox(height: 15),
                                 const Divider(height: 40),
-                                const Text("2. Tarih ve Kanal", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                                // ADIM 3: Tarih Seçimi
+                                const Text("3. Tarih Seçin", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                                 const SizedBox(height: 10),
                                 _tarihSeciciWidget(esnaf),
-                                const Divider(height: 40),
-                                const Text("3. Randevu Saati", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                                const SizedBox(height: 10),
-                                ValueListenableBuilder<bool>(
-                                  valueListenable: _musaitlikBulunamadiNotifier,
-                                  builder: (context, bulunamadi, _) {
-                                    if (bulunamadi) {
-                                      return const Padding(
-                                        padding: EdgeInsets.symmetric(vertical: 20),
-                                        child: Center(
-                                          child: Text(
-                                            "Seçilen hizmetlerin toplam süresine uygun boş randevu saati bulunamadı.",
-                                            textAlign: TextAlign.center,
-                                            style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
-                                          ),
+
+                                ValueListenableBuilder<DateTime?>(
+                                  valueListenable: _seciliTarihNotifier,
+                                  builder: (context, seciliTarih, _) {
+                                    if (seciliTarih == null) return const SizedBox.shrink();
+
+                                    return Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        const Divider(height: 40),
+                                        // ADIM 4: Saat Seçimi
+                                        const Text("4. Randevu Saati", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                                        const SizedBox(height: 10),
+                                        ValueListenableBuilder<bool>(
+                                          valueListenable: _aramaYapiliyorNotifier,
+                                          builder: (context, aramaYapiliyor, _) {
+                                            if (aramaYapiliyor) {
+                                              return const Center(
+                                                child: Padding(
+                                                  padding: EdgeInsets.all(40),
+                                                  child: CircularProgressIndicator(),
+                                                ),
+                                              );
+                                            }
+                                            return ValueListenableBuilder<bool>(
+                                              valueListenable: _musaitlikBulunamadiNotifier,
+                                              builder: (context, bulunamadi, _) {
+                                                if (bulunamadi) {
+                                                  return const Padding(
+                                                    padding: EdgeInsets.symmetric(vertical: 20),
+                                                    child: Center(
+                                                      child: Text(
+                                                        "Seçilen hizmetlerin toplam süresine uygun boş randevu saati bulunamadı.",
+                                                        textAlign: TextAlign.center,
+                                                        style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+                                                      ),
+                                                    ),
+                                                  );
+                                                }
+                                                return _saatSecimiBolumuWidget(esnaf);
+                                              },
+                                            );
+                                          },
                                         ),
-                                      );
-                                    }
-                                    if (aramaYapiliyor) {
-                                      return const Center(child: Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator()));
-                                    }
-                                    return _saatSecimiBolumuWidget(esnaf);
+                                      ],
+                                    );
                                   },
                                 ),
                               ],
                             );
-                          }
-                      );
-                    }
+                          },
+                        ),
+                      ],
+                    );
+                  },
                 ),
 
                 const SizedBox(height: 30),
@@ -535,41 +595,110 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
   }
 
   Widget _tarihSeciciWidget(EsnafModeli esnaf) {
-    return ValueListenableBuilder<DateTime?>(
-        valueListenable: _seciliTarihNotifier,
-        builder: (context, seciliTarih, _) {
-          List<DateTime> aktifTarihler = _getAktifTarihler(esnaf);
-          if (aktifTarihler.isEmpty) return const Center(child: Text("Müsait tarih yok."));
-          return SizedBox(
-            height: 80,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              itemCount: aktifTarihler.length,
-              itemBuilder: (context, index) {
-                DateTime gun = aktifTarihler[index];
-                bool secili = seciliTarih != null && gun.day == seciliTarih.day && gun.month == seciliTarih.month && gun.year == seciliTarih.year;
-                return InkWell(
-                  onTap: () {
-                    _seciliTarihNotifier.value = gun;
-                    _seciliSaatNotifier.value = null;
-                    _updateStreams();
+    return ValueListenableBuilder<String?>(
+      valueListenable: _seciliKanalNotifier,
+      builder: (context, kanal, _) {
+        return ValueListenableBuilder<DateTime?>(
+            valueListenable: _seciliTarihNotifier,
+            builder: (context, seciliTarih, _) {
+              List<DateTime> aktifTarihler = _getAktifTarihler(esnaf);
+              if (aktifTarihler.isEmpty) return const Center(child: Text("Müsait tarih yok."));
+              return SizedBox(
+                height: 80,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: aktifTarihler.length,
+                  itemBuilder: (context, index) {
+                    DateTime gun = aktifTarihler[index];
+                    bool secili = seciliTarih != null && gun.day == seciliTarih.day && gun.month == seciliTarih.month && gun.year == seciliTarih.year;
+                    return InkWell(
+                      onTap: () {
+                        _seciliTarihNotifier.value = gun;
+                        _seciliSaatNotifier.value = null;
+                        _updateStreams();
+                      },
+                      child: Container(
+                        width: 60, margin: const EdgeInsets.only(right: 10),
+                        decoration: BoxDecoration(color: secili ? Colors.blue : Colors.blue.shade50, borderRadius: BorderRadius.circular(10)),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(DateFormat('EE', 'tr_TR').format(gun), style: TextStyle(color: secili ? Colors.white : Colors.blueGrey)),
+                            Text(gun.day.toString(), style: TextStyle(color: secili ? Colors.white : Colors.black, fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                      ),
+                    );
                   },
-                  child: Container(
-                    width: 60, margin: const EdgeInsets.only(right: 10),
-                    decoration: BoxDecoration(color: secili ? Colors.blue : Colors.blue.shade50, borderRadius: BorderRadius.circular(10)),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(DateFormat('EE', 'tr_TR').format(gun), style: TextStyle(color: secili ? Colors.white : Colors.blueGrey)),
-                        Text(gun.day.toString(), style: TextStyle(color: secili ? Colors.white : Colors.black, fontWeight: FontWeight.bold)),
-                      ],
-                    ),
-                  ),
-                );
+                ),
+              );
+            }
+        );
+      }
+    );
+  }
+
+  Widget _kanalSeciciWidget(EsnafModeli esnaf) {
+    return ValueListenableBuilder<String?>(
+      valueListenable: _seciliKanalNotifier,
+      builder: (context, seciliKanal, _) {
+        return Wrap(
+          spacing: 10,
+          children: (esnaf.kanallar ?? []).map((k) {
+            bool secili = seciliKanal == k.toString();
+            return ChoiceChip(
+              label: Text(k.toString()),
+              selected: secili,
+              onSelected: (val) {
+                if (val) {
+                  _seciliKanalNotifier.value = k.toString();
+                  _seciliSaatNotifier.value = null;
+                  _otomatikTarihSec(esnaf);
+                  _updateStreams();
+                  _enYakinMusaitligiBul(esnaf);
+                }
               },
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
+
+  Widget _personelSeciciWidget(EsnafModeli esnaf) {
+    return ValueListenableBuilder<String?>(
+      valueListenable: _seciliPersonelNotifier,
+      builder: (context, seciliPersonel, _) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text("Personel Seçin", style: TextStyle(fontSize: 14, color: Colors.grey)),
+            const SizedBox(height: 5),
+            Wrap(
+              spacing: 10,
+              children: (esnaf.personeller ?? []).map((p) {
+                String pIsim = p['isim'] ?? "";
+                String pKanal = p['kanal'] ?? "";
+                bool secili = seciliPersonel == pIsim;
+                return ChoiceChip(
+                  label: Text(pIsim),
+                  selected: secili,
+                  onSelected: (val) {
+                    if (val) {
+                      _seciliPersonelNotifier.value = pIsim;
+                      _seciliKanalNotifier.value = pKanal; // Personelin kanalı otomatik seçilir
+                      _seciliSaatNotifier.value = null;
+                      _otomatikTarihSec(esnaf);
+                      _updateStreams();
+                      _enYakinMusaitligiBul(esnaf);
+                    }
+                  },
+                );
+              }).toList(),
             ),
-          );
-        }
+          ],
+        );
+      },
     );
   }
 
