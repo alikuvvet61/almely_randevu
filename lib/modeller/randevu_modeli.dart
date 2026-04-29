@@ -4,6 +4,7 @@ class RandevuModeli {
   final String id;
   final String esnafId;
   final String esnafAdi;
+  final String esnafTel;
   final String kullaniciAd;
   final String kullaniciTel;
   final DateTime tarih;
@@ -14,11 +15,13 @@ class RandevuModeli {
   final String? randevuKanali; // Örn: Koltuk 1, Oda 2
   final String? calisanPersonel; // Örn: Ahmet Yılmaz
   final String? iptalNedeni;
+  final bool puanlandi;
 
   RandevuModeli({
     required this.id,
     required this.esnafId,
     required this.esnafAdi,
+    required this.esnafTel,
     required this.kullaniciAd,
     required this.kullaniciTel,
     required this.tarih,
@@ -29,14 +32,19 @@ class RandevuModeli {
     this.randevuKanali,
     this.calisanPersonel,
     this.iptalNedeni,
+    this.puanlandi = false,
   });
 
   factory RandevuModeli.fromFirestore(DocumentSnapshot doc) {
-    Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+    return RandevuModeli.fromMap(doc.data() as Map<String, dynamic>, doc.id);
+  }
+
+  factory RandevuModeli.fromMap(Map<String, dynamic> data, String id) {
     return RandevuModeli(
-      id: doc.id,
+      id: id,
       esnafId: data['esnafId'] ?? '',
       esnafAdi: data['esnafAdi'] ?? '',
+      esnafTel: data['esnafTel'] ?? '',
       kullaniciAd: data['kullaniciAd'] ?? '',
       kullaniciTel: data['kullaniciTel'] ?? '',
       tarih: (data['tarih'] as Timestamp).toDate(),
@@ -47,6 +55,7 @@ class RandevuModeli {
       randevuKanali: data['randevu_kanali'],
       calisanPersonel: data['calisan_personel'],
       iptalNedeni: data['iptalNedeni'],
+      puanlandi: data['puanlandi'] ?? false,
     );
   }
 
@@ -54,6 +63,7 @@ class RandevuModeli {
     return {
       'esnafId': esnafId,
       'esnafAdi': esnafAdi,
+      'esnafTel': esnafTel,
       'kullaniciAd': kullaniciAd,
       'kullaniciTel': kullaniciTel,
       'tarih': Timestamp.fromDate(tarih),
@@ -64,6 +74,7 @@ class RandevuModeli {
       'randevu_kanali': randevuKanali,
       'calisan_personel': calisanPersonel,
       'iptalNedeni': iptalNedeni,
+      'puanlandi': puanlandi,
     };
   }
 }

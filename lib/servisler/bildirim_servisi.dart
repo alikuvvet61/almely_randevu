@@ -31,6 +31,20 @@ class BildirimServisi {
     
     await _localNotifications.initialize(initializationSettings);
 
+    // Taksi kanalı oluştur (Özel sesli)
+    const AndroidNotificationChannel taxiChannel = AndroidNotificationChannel(
+      'taksi_cagrisi_kanali',
+      'Taksi Çağrıları',
+      description: 'Yeni taksi çağrısı bildirimi.',
+      importance: Importance.max,
+      playSound: true,
+      sound: RawResourceAndroidNotificationSound('taxi_horn'),
+    );
+
+    await _localNotifications
+        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(taxiChannel);
+
     // 3. Ön planda (app açıkken) bildirim gelirse yakala ve yerel olarak göster
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
       RemoteNotification? notification = message.notification;
@@ -73,19 +87,20 @@ class BildirimServisi {
     }
   }
 
-  // Firestore üzerinden bildirim gönderimi (Simülasyon)
+  // Firestore üzerinden bildirim gönderimi
   static Future<void> bildirimGonder({
     required String kullaniciTel,
     required String baslik,
     required String icerik,
   }) async {
-    await FirebaseFirestore.instance.collection('bildirimler').add({
+    final docRef = await FirebaseFirestore.instance.collection('bildirimler').add({
       'aliciTel': kullaniciTel,
       'baslik': baslik,
       'icerik': icerik,
       'okundu': false,
       'tarih': FieldValue.serverTimestamp(),
     });
+    debugPrint("Bildirim Firestore'a eklendi: ${docRef.id}");
   }
 
   // Firestore'daki bildirimleri dinle ve telefona bildirim olarak bas
@@ -101,17 +116,20 @@ class BildirimServisi {
         if (change.type == DocumentChangeType.added) {
           var data = change.doc.data();
           if (data != null) {
+            final bool isTaxi = data['baslik']?.toString().contains('Taksi') ?? false;
+            
             _localNotifications.show(
               change.doc.id.hashCode,
               data['baslik'] ?? 'Yeni Bildirim',
               data['icerik'] ?? '',
-              const NotificationDetails(
+              NotificationDetails(
                 android: AndroidNotificationDetails(
-                  'randevu_kanal_id',
-                  'Randevu Bildirimleri',
+                  isTaxi ? 'taksi_cagrisi_kanali' : 'randevu_kanal_id',
+                  isTaxi ? 'Taksi Çağrıları' : 'Randevu Bildirimleri',
                   importance: Importance.max,
                   priority: Priority.high,
                   showWhen: true,
+                  sound: isTaxi ? const RawResourceAndroidNotificationSound('taxi_horn') : null,
                 ),
               ),
             );

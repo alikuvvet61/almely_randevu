@@ -101,57 +101,65 @@ class _AnaEkranState extends State<AnaEkran> {
               // SIRALAMA SEÇENEKLERİ
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
-                child: Column(
-                  children: [
-                    Row(
-                      children: [
-                        const Text("Sıralama:", style: TextStyle(fontWeight: FontWeight.w500, color: Colors.grey)),
-                        const SizedBox(width: 10),
-                        if (_currentPosition != null)
-                          Padding(
-                            padding: const EdgeInsets.only(right: 8.0),
-                            child: _siralamaChip(
-                              label: "Mesafe", 
-                              icon: Icons.near_me, 
-                              secili: siralamaKriteri == 'mesafe',
-                              onTap: () => setModalState(() => siralamaKriteri = 'mesafe')
-                            ),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      const Text("Sıralama:", style: TextStyle(fontWeight: FontWeight.w500, color: Colors.grey)),
+                      const SizedBox(width: 10),
+                      if (_currentPosition != null)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8.0),
+                          child: _siralamaChip(
+                            label: "Mesafe", 
+                            icon: Icons.near_me, 
+                            secili: siralamaKriteri == 'mesafe',
+                            onTap: () => setModalState(() => siralamaKriteri = 'mesafe')
                           ),
-                        _siralamaChip(
-                          label: "İsim", 
-                          icon: Icons.sort_by_alpha, 
-                          secili: siralamaKriteri == 'isim',
-                          onTap: () => setModalState(() => siralamaKriteri = 'isim')
+                        ),
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8.0),
+                        child: _siralamaChip(
+                          label: "Puan", 
+                          icon: Icons.star, 
+                          secili: siralamaKriteri == 'puan',
+                          onTap: () => setModalState(() => siralamaKriteri = 'puan')
+                        ),
+                      ),
+                      _siralamaChip(
+                        label: "İsim", 
+                        icon: Icons.sort_by_alpha, 
+                        secili: siralamaKriteri == 'isim',
+                        onTap: () => setModalState(() => siralamaKriteri = 'isim')
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              if (_currentPosition == null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 5),
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.shade50,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.amber.shade200),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.location_off, size: 18, color: Colors.amber),
+                        SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            "En yakın esnafları görebilmek için konum izni verebilirsiniz.",
+                            style: TextStyle(fontSize: 12, color: Colors.amber),
+                          ),
                         ),
                       ],
                     ),
-                    if (_currentPosition == null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 10),
-                        child: Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: Colors.amber.shade50,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: Colors.amber.shade200),
-                          ),
-                          child: const Row(
-                            children: [
-                              Icon(Icons.location_off, size: 18, color: Colors.amber),
-                              SizedBox(width: 10),
-                              Expanded(
-                                child: Text(
-                                  "En yakın esnafları görebilmek için konum izni verebilirsiniz.",
-                                  style: TextStyle(fontSize: 12, color: Colors.amber),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                  ],
+                  ),
                 ),
-              ),
               const Divider(height: 1),
               
               Expanded(
@@ -180,6 +188,8 @@ class _AnaEkranState extends State<AnaEkran> {
                         if (dA == -1 && dB != -1) return 1;
                         if (dA != -1 && dB == -1) return -1;
                         if (dA != -1 && dB != -1) return dA.compareTo(dB);
+                      } else if (siralamaKriteri == 'puan') {
+                        return esnafB.puan.compareTo(esnafA.puan);
                       }
                       
                       // İsim sıralaması veya Fallback
@@ -201,7 +211,19 @@ class _AnaEkranState extends State<AnaEkran> {
                             backgroundColor: Colors.blue.shade50,
                             child: const Icon(Icons.store, color: Colors.blue, size: 28),
                           ),
-                          title: Text(esnaf.isletmeAdi, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                          title: Row(
+                            children: [
+                              Expanded(child: Text(esnaf.isletmeAdi, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16))),
+                              if (esnaf.puan > 0)
+                                Row(
+                                  children: [
+                                    const Icon(Icons.star, color: Colors.amber, size: 16),
+                                    Text(esnaf.puan.toStringAsFixed(1), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                                    Text(" (${esnaf.yorumSayisi})", style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                                  ],
+                                ),
+                            ],
+                          ),
                           subtitle: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [

@@ -17,17 +17,21 @@ class EsnafAjandaEkrani extends StatefulWidget {
 class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
   final FirestoreServisi _firestoreServisi = FirestoreServisi();
   DateTime _seciliTarih = DateTime.now();
-  DateTimeRange? _seciliAralik;
+  DateTime? _baslangicTarihi;
+  DateTime? _bitisTarihi;
   
   String? _seciliAcilisSaat;
   String? _seciliKapanisSaat;
   int _slotAraligi = 30;
   bool _setupVarsayilanlariYuklendi = false;
 
-  final bool _ogleArasiVar = false;
-  final String _ogleBaslangic = "12:00";
-  final String _ogleBitis = "13:00";
+  bool _ogleArasiVar = false;
+  String _ogleBaslangic = "12:00";
+  String _ogleBitis = "13:00";
   String? _aktifKanal;
+
+  late Stream<EsnafModeli> _esnafStream;
+  Stream<DocumentSnapshot>? _ajandaStream;
 
   final Map<String, bool> _calismaGunleri = {
     "Pazartesi": true,
@@ -42,8 +46,12 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
   @override
   void initState() {
     super.initState();
+    _esnafStream = _firestoreServisi.esnafGetir(widget.esnaf.id);
+    
     if (widget.esnaf.kanallar != null && widget.esnaf.kanallar!.isNotEmpty) {
       _aktifKanal = widget.esnaf.kanallar!.first.toString();
+    } else {
+      _aktifKanal = "Uygulama";
     }
     
     _seciliAcilisSaat = widget.esnaf.calismaSaatleri?['acilis'] ?? "09:00";
@@ -59,6 +67,14 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
       }
       if (uyumlu) _slotAraligi = mevcutSlot;
     }
+
+    _ajandaStreamGuncelle();
+  }
+
+  void _ajandaStreamGuncelle() {
+    setState(() {
+      _ajandaStream = _firestoreServisi.gunlukAjandaGetir(widget.esnaf.id, _seciliTarih, _aktifKanal);
+    });
   }
 
   int _hesaplaIdealSlot(List<dynamic>? hizmetler) {
@@ -122,41 +138,83 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
     }
   }
 
-  void _topluAjandaOlustur() async {
-    if (_seciliAralik == null || _seciliAcilisSaat == null || _seciliKapanisSaat == null) {
+  void _ajandaOlustur(EsnafModeli esnaf) async {
+    if (_baslangicTarihi == null || _bitisTarihi == null || _seciliAcilisSaat == null || _seciliKapanisSaat == null) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Lütfen tüm alanları seçin")));
+      return;
+    }
+
+    if (_aktifKanal == null) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Lütfen bir kanal seçin")));
+      return;
+    }
+
+    // Çakışma kontrolü
+    List<String> cakisanBilgiler = [];
+    List<DateTime> olusturulacakTarihler = [];
+
+    int gunSayisi = _bitisTarihi!.difference(_baslangicTarihi!).inDays;
+    String kanal = _aktifKanal!.trim();
+    
+    for (int i = 0; i <= gunSayisi; i++) {
+      DateTime gun = _baslangicTarihi!.add(Duration(days: i));
+      String gunAdi = DateFormat('EEEE', 'tr_TR').format(gun);
+      
+      if (_calismaGunleri[gunAdi] == true) {
+        String tStr = DateFormat('yyyy-MM-dd').format(gun);
+        String docId = kanal.isNotEmpty ? "${tStr}_$kanal" : tStr;
+        
+        if ((esnaf.aktifGunler ?? []).contains(docId)) {
+          cakisanBilgiler.add(DateFormat('dd/MM').format(gun));
+        } else {
+          olusturulacakTarihler.add(gun);
+        }
+      }
+    }
+
+    if (cakisanBilgiler.isNotEmpty) {
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text("Ajanda Zaten Mevcut"),
+            content: Text("Şu tarihlerde ajanda zaten mevcut:\n\n${cakisanBilgiler.join(", ")}\n\nLütfen bu günleri listeden çıkarın veya mevcutları silin."),
+            actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Tamam"))],
+          ),
+        );
+      }
+      return;
+    }
+
+    if (olusturulacakTarihler.isEmpty) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Oluşturulacak uygun gün bulunamadı")));
       return;
     }
     
     showDialog(context: context, barrierDismissible: false, builder: (c) => const Center(child: CircularProgressIndicator()));
     
-    List<DateTime> tarihler = [];
-    for (int i = 0; i <= _seciliAralik!.end.difference(_seciliAralik!.start).inDays; i++) {
-      DateTime gun = _seciliAralik!.start.add(Duration(days: i));
-      if (_calismaGunleri[DateFormat('EEEE', 'tr_TR').format(gun)] == true) {
-        tarihler.add(gun);
-      }
-    }
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context, rootNavigator: true);
 
     try {
       await _firestoreServisi.ajandaOlustur(
         esnafId: widget.esnaf.id,
-        tarihler: tarihler,
+        tarihler: olusturulacakTarihler,
         acilis: _seciliAcilisSaat!,
         kapanis: _seciliKapanisSaat!,
         slotDakika: _slotAraligi,
         ogleBaslangic: _ogleArasiVar ? _ogleBaslangic : null,
         ogleBitis: _ogleArasiVar ? _ogleBitis : null,
-        kanal: _aktifKanal,
+        kanal: kanal,
       );
       
       if (!mounted) return;
-      Navigator.of(context).pop();
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Ajanda başarıyla oluşturuldu")));
+      navigator.pop();
+      messenger.showSnackBar(const SnackBar(content: Text("Ajanda başarıyla oluşturuldu"), backgroundColor: Colors.green));
     } catch (e) {
       if (!mounted) return;
-      Navigator.of(context).pop();
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Hata: $e")));
+      navigator.pop();
+      messenger.showSnackBar(SnackBar(content: Text("Hata: $e"), backgroundColor: Colors.red));
     }
   }
 
@@ -170,11 +228,37 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
           TextButton(onPressed: () => Navigator.pop(c), child: const Text("Vazgeç")),
           TextButton(
             onPressed: () async {
-              final navigator = Navigator.of(c);
               final messenger = ScaffoldMessenger.of(context);
-              await _firestoreServisi.ajandaSil(widget.esnaf.id, _seciliTarih, _aktifKanal);
-              if (navigator.mounted) navigator.pop();
-              messenger.showSnackBar(const SnackBar(content: Text("Ajanda başarıyla silindi")));
+              final navigator = Navigator.of(context, rootNavigator: true);
+
+              // 1. Onay kutusunu kapat
+              Navigator.pop(c);
+              
+              // 2. İşlem devam ederken yükleme göstergesi aç
+              showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (ctx) => const Center(child: CircularProgressIndicator()),
+              );
+
+              try {
+                await _firestoreServisi.ajandaSil(widget.esnaf.id, _seciliTarih, _aktifKanal);
+                
+                if (!mounted) return;
+                // 3. İşlem bittiğinde yükleme göstergesini kapat
+                navigator.pop();
+                
+                messenger.showSnackBar(
+                  const SnackBar(content: Text("Ajanda başarıyla silindi"), backgroundColor: Colors.green)
+                );
+              } catch (e) {
+                if (!mounted) return;
+                // Hata durumunda da yüklemeyi kapat
+                navigator.pop();
+                messenger.showSnackBar(
+                  SnackBar(content: Text("Hata: $e"), backgroundColor: Colors.red)
+                );
+              }
             },
             child: const Text("SİL", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
           ),
@@ -234,7 +318,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<EsnafModeli>(
-      stream: _firestoreServisi.esnafGetir(widget.esnaf.id),
+      stream: _esnafStream,
       builder: (context, esnafSnapshot) {
         final guncelEsnaf = esnafSnapshot.data ?? widget.esnaf;
 
@@ -304,7 +388,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
               if (guncelEsnaf.kanallar != null && guncelEsnaf.kanallar!.isNotEmpty) _kanalSecici(guncelEsnaf),
               Expanded(
                 child: StreamBuilder<DocumentSnapshot>(
-                  stream: _firestoreServisi.gunlukAjandaGetir(guncelEsnaf.id, _seciliTarih, _aktifKanal),
+                  stream: _ajandaStream,
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
                     
@@ -396,16 +480,25 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          IconButton(icon: const Icon(Icons.chevron_left), onPressed: () => setState(() => _seciliTarih = _seciliTarih.subtract(const Duration(days: 1)))),
+          IconButton(icon: const Icon(Icons.chevron_left), onPressed: () {
+            _seciliTarih = _seciliTarih.subtract(const Duration(days: 1));
+            _ajandaStreamGuncelle();
+          }),
           TextButton.icon(
             icon: const Icon(Icons.calendar_today, size: 16),
             label: Text(DateFormat('dd MMMM yyyy, EEEE', 'tr_TR').format(_seciliTarih), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87)),
             onPressed: () async {
               final p = await showDatePicker(context: context, initialDate: _seciliTarih, firstDate: DateTime.now().subtract(const Duration(days: 365)), lastDate: DateTime.now().add(const Duration(days: 365)), locale: const Locale('tr', 'TR'));
-              if (p != null) setState(() => _seciliTarih = p);
+              if (p != null) {
+                _seciliTarih = p;
+                _ajandaStreamGuncelle();
+              }
             },
           ),
-          IconButton(icon: const Icon(Icons.chevron_right), onPressed: () => setState(() => _seciliTarih = _seciliTarih.add(const Duration(days: 1)))),
+          IconButton(icon: const Icon(Icons.chevron_right), onPressed: () {
+            _seciliTarih = _seciliTarih.add(const Duration(days: 1));
+            _ajandaStreamGuncelle();
+          }),
         ],
       ),
     );
@@ -413,18 +506,48 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
 
   Widget _kanalSecici(EsnafModeli esnaf) {
     return Container(
-      height: 50, color: Colors.white,
+      height: 60,
+      color: Colors.white,
       child: ListView(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        children: esnaf.kanallar!.map((k) => Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: ChoiceChip(
-            label: Text(k.toString()),
-            selected: _aktifKanal == k.toString(),
-            onSelected: (s) => setState(() => _aktifKanal = k.toString()),
-          ),
-        )).toList(),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        children: esnaf.kanallar!.map((k) {
+          String kanalAdi = k.toString();
+          String? personelAdi;
+
+          if (esnaf.randevularPersonelAdinaAlinsin) {
+            final p = esnaf.personeller?.firstWhere(
+              (element) => element is Map && element['kanal'] == kanalAdi,
+              orElse: () => null,
+            );
+            if (p != null) personelAdi = p['isim'];
+          }
+
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: ChoiceChip(
+              label: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(personelAdi ?? kanalAdi, 
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)
+                  ),
+                  if (personelAdi != null) 
+                    Text(kanalAdi, style: const TextStyle(fontSize: 9, color: Colors.black54)),
+                ],
+              ),
+              selected: _aktifKanal == kanalAdi,
+              onSelected: (s) {
+                if (s) {
+                  setState(() {
+                    _aktifKanal = kanalAdi;
+                    _ajandaStreamGuncelle();
+                  });
+                }
+              },
+            ),
+          );
+        }).toList(),
       ),
     );
   }
@@ -443,43 +566,132 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text("Toplu Ajanda Oluştur", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.blue)),
-                  const Divider(),
-                  ListTile(
-                    title: const Text("Tarih Aralığı Seç", style: TextStyle(fontSize: 13)),
-                    subtitle: Text(_seciliAralik == null ? "Seçtiğiniz tarihler" : "${DateFormat('dd/MM').format(_seciliAralik!.start)} - ${DateFormat('dd/MM').format(_seciliAralik!.end)}"),
-                    trailing: const Icon(Icons.date_range),
-                    onTap: () async {
-                      final a = await showDateRangePicker(context: context, firstDate: DateTime.now().subtract(const Duration(days: 1)), lastDate: DateTime.now().add(const Duration(days: 365)), locale: const Locale('tr', 'TR'));
-                      if (a != null) {
-                        if (!mounted) return;
-                        setState(() { _seciliAralik = a; });
-                      }
-                    },
-                  ),
                   Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Expanded(child: ListTile(title: const Text("Açılış", style: TextStyle(fontSize: 13)), subtitle: Text(_seciliAcilisSaat ?? "--:--"), onTap: () => _saatSec(true))),
-                      Expanded(child: ListTile(title: const Text("Kapanış", style: TextStyle(fontSize: 13)), subtitle: Text(_seciliKapanisSaat ?? "--:--"), onTap: () => _saatSec(false))),
+                      const Text("Ajanda Periyodu", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
+                      if (_aktifKanal != null) 
+                        Builder(
+                          builder: (context) {
+                            String? personelAdi;
+                            if (esnaf.randevularPersonelAdinaAlinsin) {
+                              final p = esnaf.personeller?.firstWhere(
+                                (element) => element is Map && element['kanal'] == _aktifKanal,
+                                orElse: () => null,
+                              );
+                              if (p != null) personelAdi = p['isim'];
+                            }
+                            return Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(8)),
+                              child: Text(personelAdi ?? _aktifKanal!, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blue)),
+                            );
+                          }
+                        ),
                     ],
                   ),
-                  DropdownButtonFormField<int>(
-                    key: ValueKey(_slotAraligi),
-                    initialValue: _slotAraligi,
-                    decoration: const InputDecoration(labelText: "Slot Aralığı", labelStyle: TextStyle(fontSize: 13)),
-                    items: [5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 240].map((e) => DropdownMenuItem(value: e, child: Text("$e Dakika"))).toList(),
-                    onChanged: (v) {
-                       setState(() {
-                         _slotAraligi = v!;
-                       });
-                    },
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () async {
+                            final d = await showDatePicker(context: context, initialDate: DateTime.now(), firstDate: DateTime.now().subtract(const Duration(days: 30)), lastDate: DateTime.now().add(const Duration(days: 365)));
+                            if (d != null) setState(() => _baslangicTarihi = d);
+                          },
+                          child: Text(_baslangicTarihi == null ? "Başlangıç" : DateFormat('dd/MM/yyyy').format(_baslangicTarihi!)),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () async {
+                            final d = await showDatePicker(context: context, initialDate: _baslangicTarihi ?? DateTime.now(), firstDate: _baslangicTarihi ?? DateTime.now(), lastDate: DateTime.now().add(const Duration(days: 365)));
+                            if (d != null) setState(() => _bitisTarihi = d);
+                          },
+                          child: Text(_bitisTarihi == null ? "Bitiş" : DateFormat('dd/MM/yyyy').format(_bitisTarihi!)),
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 20),
+                  const Text("Çalışma Günleri", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
+                  const SizedBox(height: 5),
+                  Wrap(
+                    spacing: 8,
+                    children: _calismaGunleri.keys.map((gun) => FilterChip(
+                      label: Text(gun, style: const TextStyle(fontSize: 12)),
+                      selected: _calismaGunleri[gun]!,
+                      onSelected: (v) => setState(() => _calismaGunleri[gun] = v),
+                    )).toList(),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text("Mesai Saatleri", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text("Başlangıç", style: TextStyle(fontSize: 12, color: Colors.green)), 
+                          subtitle: Text(_seciliAcilisSaat ?? "--:--", style: const TextStyle(fontWeight: FontWeight.bold)), 
+                          onTap: () => _saatSec(true)
+                        )
+                      ),
+                      Expanded(
+                        child: ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text("Bitiş", style: TextStyle(fontSize: 12, color: Colors.red)), 
+                          subtitle: Text(_seciliKapanisSaat ?? "--:--", style: const TextStyle(fontWeight: FontWeight.bold)), 
+                          onTap: () => _saatSec(false)
+                        )
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  const Text("Öğle Arası", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text("Öğle Arası Uygula", style: TextStyle(fontSize: 13)),
+                    value: _ogleArasiVar,
+                    onChanged: (v) => setState(() => _ogleArasiVar = v),
+                  ),
+                  if (_ogleArasiVar) Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () async {
+                            final t = await showTimePicker(context: context, initialTime: TimeOfDay(hour: int.parse(_ogleBaslangic.split(":")[0]), minute: int.parse(_ogleBaslangic.split(":")[1])));
+                            if (t != null) setState(() => _ogleBaslangic = "${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}");
+                          },
+                          child: Text("Başlangıç: $_ogleBaslangic"),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () async {
+                            final t = await showTimePicker(context: context, initialTime: TimeOfDay(hour: int.parse(_ogleBitis.split(":")[0]), minute: int.parse(_ogleBitis.split(":")[1])));
+                            if (t != null) setState(() => _ogleBitis = "${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}");
+                          },
+                          child: Text("Bitiş: $_ogleBitis"),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  DropdownButtonFormField<int>(
+                    initialValue: _slotAraligi,
+                    decoration: const InputDecoration(labelText: "Slot Aralığı (Dakika)", border: OutlineInputBorder()),
+                    items: [5, 10, 15, 20, 30, 45, 60, 90, 120].map((e) => DropdownMenuItem(value: e, child: Text("$e Dakika"))).toList(),
+                    onChanged: (v) => setState(() => _slotAraligi = v!),
+                  ),
+                  const SizedBox(height: 25),
                   ElevatedButton(
-                    onPressed: _topluAjandaOlustur,
-                    style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 45), backgroundColor: Colors.blue, foregroundColor: Colors.white),
-                    child: const Text("AJANDAYI ŞİMDİ OLUŞTUR"),
+                    onPressed: () => _ajandaOlustur(esnaf),
+                    style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 50), backgroundColor: Colors.blue, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                    child: const Text("AJANDAYI OLUŞTUR", style: TextStyle(fontWeight: FontWeight.bold)),
                   )
                 ],
               ),
@@ -551,6 +763,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                   id: '',
                   esnafId: widget.esnaf.id,
                   esnafAdi: widget.esnaf.isletmeAdi,
+                  esnafTel: widget.esnaf.telefon,
                   kullaniciAd: adController.text,
                   kullaniciTel: telController.text,
                   tarih: _seciliTarih,
@@ -618,18 +831,46 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                 kapaliMi = kapaliSlotlarRaw.contains(saat);
               }
 
+              // Öğle arası kontrolü
+              bool ogleArasiMi = false;
+              if (ajanda['ogleBaslangic'] != null && ajanda['ogleBitis'] != null) {
+                int sDk = _saatiDakikayaCevir(saat);
+                int oBasDk = _saatiDakikayaCevir(ajanda['ogleBaslangic']);
+                int oBitDk = _saatiDakikayaCevir(ajanda['ogleBitis']);
+                
+                if (sDk >= oBasDk && sDk < oBitDk) {
+                  // Sadece öğle arasının başlangıç saatinde göster
+                  if (saat == ajanda['ogleBaslangic']) {
+                    ogleArasiMi = true;
+                    kapaliMi = true;
+                    neden = "Öğle Arası";
+                  } else {
+                    // Diğer öğle arası slotlarını tamamen gizle
+                    return const SizedBox.shrink();
+                  }
+                }
+              }
+
               return Opacity(
                 opacity: kapaliMi ? 0.6 : 1.0,
                 child: Card(
                   elevation: 0,
-                  color: kapaliMi ? Colors.grey.shade50 : Colors.white,
+                  color: ogleArasiMi ? Colors.blue.shade50 : (kapaliMi ? Colors.grey.shade50 : Colors.white),
                   margin: const EdgeInsets.only(bottom: 8),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: BorderSide(color: kapaliMi ? Colors.grey.shade200 : Colors.grey.shade200)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10), 
+                    side: BorderSide(color: ogleArasiMi ? Colors.blue.shade100 : (kapaliMi ? Colors.grey.shade200 : Colors.grey.shade200))
+                  ),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 4),
                     child: Row(
                       children: [
-                        _saatGostergesi(saat, bitisSaati, esnaf.slotAralikliGoster, kapaliMi ? Colors.grey : Colors.black87),
+                        _saatGostergesi(
+                          ogleArasiMi ? ajanda['ogleBaslangic'] : saat, 
+                          ogleArasiMi ? ajanda['ogleBitis'] : bitisSaati, 
+                          ogleArasiMi ? true : esnaf.slotAralikliGoster, 
+                          ogleArasiMi ? Colors.blue : (kapaliMi ? Colors.grey : Colors.black87)
+                        ),
                         const SizedBox(width: 15),
                         Expanded(
                           child: IgnorePointer(
@@ -641,9 +882,14 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(kapaliMi ? "Randevuya Kapalı" : "Boş Slot", 
-                                      style: TextStyle(color: kapaliMi ? Colors.grey : Colors.black54, fontSize: 16, fontStyle: kapaliMi ? FontStyle.italic : FontStyle.normal)),
-                                    if (kapaliMi && neden.isNotEmpty)
+                                    Text(ogleArasiMi ? "Öğle Arası" : (kapaliMi ? "Randevuya Kapalı" : "Boş Slot"), 
+                                      style: TextStyle(
+                                        color: ogleArasiMi ? Colors.blue : (kapaliMi ? Colors.grey : Colors.black54), 
+                                        fontSize: 16, 
+                                        fontWeight: ogleArasiMi ? FontWeight.bold : FontWeight.normal,
+                                        fontStyle: (kapaliMi && !ogleArasiMi) ? FontStyle.italic : FontStyle.normal
+                                      )),
+                                    if (kapaliMi && neden.isNotEmpty && !ogleArasiMi)
                                       Text("Neden: $neden", style: const TextStyle(fontSize: 10, color: Colors.redAccent)),
                                   ],
                                 ),
@@ -651,10 +897,14 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                             ),
                           ),
                         ),
-                        IconButton(
+                        if (!ogleArasiMi) IconButton(
                           icon: Icon(kapaliMi ? Icons.lock : Icons.lock_open, color: kapaliMi ? Colors.red.shade400 : Colors.green.shade400, size: 22),
                           onPressed: () => _slotKapatAcFormu(saat, kapaliMi),
                           tooltip: kapaliMi ? "Saati Randevuya Aç" : "Saati Randevuya Kapat",
+                        ),
+                        if (ogleArasiMi) const Padding(
+                          padding: EdgeInsets.all(12),
+                          child: Icon(Icons.restaurant, color: Colors.blue, size: 22),
                         ),
                         if (!kapaliMi) IconButton(
                           icon: const Icon(Icons.add_circle_outline, color: Colors.blue, size: 22),

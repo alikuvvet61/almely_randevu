@@ -59,13 +59,17 @@ class _EsnafParametreEkraniState extends State<EsnafParametreEkrani> {
             baslik: "Randevu Onay Modu",
             altBaslik: "Yeni gelen randevular otomatik mi onaylansın yoksa siz mi onaylayacaksınız?",
             icerik: DropdownButtonFormField<String>(
-              initialValue: _esnaf!.randevuOnayModu,
+              initialValue: _esnaf!.randevuOnayModu.isEmpty ? 'Manuel' : _esnaf!.randevuOnayModu,
               decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
               items: const [
                 DropdownMenuItem(value: 'Manuel', child: Text("Manuel (Ben onaylayacağım)")),
                 DropdownMenuItem(value: 'Otomatik', child: Text("Otomatik (Anında onaylansın)")),
               ],
-              onChanged: (v) => _guncelle({'randevuOnayModu': v}),
+              onChanged: (v) {
+                if (v != null) {
+                  _guncelle({'randevuOnayModu': v});
+                }
+              },
             ),
           ),
           const SizedBox(height: 15),
@@ -95,10 +99,16 @@ class _EsnafParametreEkraniState extends State<EsnafParametreEkrani> {
             icerik: SwitchListTile(
               title: const Text("Personel Adına Alınsın", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
               value: _esnaf!.randevularPersonelAdinaAlinsin,
-              onChanged: (v) {
-                // İki parametreyi birleştiriyoruz. Alttaki (Personel Adına Alınsın) ana kontrol oluyor.
-                // Bu aktifse, personel seçimi de zorunlu (personelSecimiZorunlu) olmalı.
-                _guncelle({
+              onChanged: (v) async {
+                // Yerel durumu hemen güncelle ki UI tepki versin
+                setState(() {
+                  _esnaf = _esnaf!.copyWith(
+                    randevularPersonelAdinaAlinsin: v,
+                    personelSecimiZorunlu: v,
+                  );
+                });
+                // Firestore'u güncelle
+                await _guncelle({
                   'randevularPersonelAdinaAlinsin': v,
                   'personelSecimiZorunlu': v,
                 });

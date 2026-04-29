@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../servisler/firestore_servisi.dart';
+import '../servisler/bildirim_servisi.dart';
 import '../modeller/randevu_modeli.dart';
 
 class KullaniciRandevuEkrani extends StatelessWidget {
@@ -101,6 +102,20 @@ class KullaniciRandevuEkrani extends StatelessWidget {
                                   ),
                                 ),
                               )
+                            else if (gecmisMi && r.durum == 'Onaylandı' && !r.puanlandi)
+                              SizedBox(
+                                width: double.infinity,
+                                child: ElevatedButton.icon(
+                                  onPressed: () => _degerlendirmeYapDialog(context, r),
+                                  icon: const Icon(Icons.star, color: Colors.white),
+                                  label: const Text("Hizmeti Değerlendir"),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.amber,
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  ),
+                                ),
+                              )
                             else if (gecmisMi && r.durum != 'İptal Edildi')
                                const Center(child: Text("Bu randevunun tarihi geçmiş", style: TextStyle(color: Colors.grey, fontSize: 12, fontStyle: FontStyle.italic))),
                           ],
@@ -166,6 +181,70 @@ class KullaniciRandevuEkrani extends StatelessWidget {
     );
   }
 
+  void _degerlendirmeYapDialog(BuildContext context, RandevuModeli r) {
+    double secilenPuan = 5.0;
+    final TextEditingController yorumController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text("Hizmeti Değerlendir"),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(r.esnafAdi, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
+              const SizedBox(height: 10),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(5, (index) {
+                  return IconButton(
+                    icon: Icon(
+                      index < secilenPuan ? Icons.star : Icons.star_border,
+                      color: Colors.amber,
+                      size: 32,
+                    ),
+                    onPressed: () => setDialogState(() => secilenPuan = index + 1.0),
+                  );
+                }),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: yorumController,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  hintText: "Deneyiminizi paylaşın...",
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text("Vazgeç")),
+            ElevatedButton(
+              onPressed: () async {
+                await _firestoreServisi.yorumEkle(
+                  esnafId: r.esnafId,
+                  randevuId: r.id,
+                  kullaniciAd: r.kullaniciAd,
+                  kullaniciTel: r.kullaniciTel,
+                  puan: secilenPuan,
+                  yorum: yorumController.text,
+                );
+                if (context.mounted) {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Değerlendirmeniz için teşekkürler!")));
+                }
+              },
+              child: const Text("GÖNDER"),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _randevuIptalDialog(BuildContext context, RandevuModeli r) {
     showModalBottomSheet(
       context: context,
@@ -193,7 +272,17 @@ class KullaniciRandevuEkrani extends StatelessWidget {
                         title: Text(nedenler[index]),
                         leading: const Icon(Icons.radio_button_off, color: Colors.blue),
                         onTap: () async {
+                          String tarihFormat = DateFormat('dd.MM.yyyy').format(r.tarih);
+                          
                           await _firestoreServisi.randevuIptalEt(r.id, nedenler[index]);
+
+                          // Esnafa bildirim gönder
+                          await BildirimServisi.bildirimGonder(
+                            kullaniciTel: r.esnafTel,
+                            baslik: "Randevu İptal Edildi ⚠️",
+                            icerik: "${r.kullaniciAd} isimli kullanıcı $tarihFormat ${r.saat} randevusunu iptal etti. Neden: ${nedenler[index]}",
+                          );
+
                           if (context.mounted) {
                             Navigator.pop(c);
                             ScaffoldMessenger.of(context).showSnackBar(

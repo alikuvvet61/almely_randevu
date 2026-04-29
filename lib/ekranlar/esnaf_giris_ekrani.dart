@@ -35,9 +35,12 @@ class _EsnafGirisEkraniState extends State<EsnafGirisEkrani> {
 
       if (esnaf != null) {
         // BAŞARILI: Esnaf bulundu, panele gönder
+        // Eğer giriş yapılan numara dükkan numarası değilse, şoför olarak işaretle
+        String? soforTel = (esnaf.telefon != tel) ? tel : null;
+
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (c) => EsnafPanelEkrani(esnaf: esnaf)),
+          MaterialPageRoute(builder: (c) => EsnafPaneli(esnaf: esnaf, soforTel: soforTel)),
         );
       } else {
         // HATA: Numara veritabanında yok

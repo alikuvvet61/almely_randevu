@@ -211,6 +211,7 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
     List<DateTime> tarihler = [];
     final bugun = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
     final kanal = _seciliKanalNotifier.value;
+    final gunler = esnaf.calismaSaatleri?['gunler'] as Map<String, dynamic>? ?? {};
 
     for (var item in aktifler) {
       final parcalar = item.toString().split('_');
@@ -226,6 +227,13 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
 
         try {
           DateTime t = DateFormat('yyyy-MM-dd').parse(parcalar[0]);
+
+          // Günlük çalışma programı kontrolü (KAPALI ise engelle)
+          String gunAdi = DateFormat('EEEE', 'tr_TR').format(t);
+          if (gunler.containsKey(gunAdi) && gunler[gunAdi] == false) {
+            continue;
+          }
+
           if (t.isAtSameMomentAs(bugun) || t.isAfter(bugun)) {
             if (!tarihler.any((d) => d.year == t.year && d.month == t.month && d.day == t.day)) {
               tarihler.add(t);
@@ -259,12 +267,14 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
     String acilis = calisma['acilis'] ?? "09:00";
     String kapanis = calisma['kapanis'] ?? "18:00";
     int slotAraligi = calisma['slotDakika'] ?? calisma['slotAraligi'] ?? 30;
+
     if (slotAraligi <= 0) return [];
 
     try {
       DateTime current = DateFormat("HH:mm").parse(acilis);
       DateTime end = DateFormat("HH:mm").parse(kapanis == "24:00" ? "00:00" : kapanis);
       if (end.isBefore(current) || kapanis == "00:00" || kapanis == "24:00") end = end.add(const Duration(days: 1));
+      
       while (current.isBefore(end)) {
         slotlar.add(DateFormat("HH:mm").format(current));
         current = current.add(Duration(minutes: slotAraligi));
@@ -289,6 +299,14 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
           kapaliSlotlarMap[s.toString()] = "Kapalı";
         }
       }
+    }
+
+    // Öğle arası kontrolü
+    if (ajandaVerisi != null && ajandaVerisi['ogleBaslangic'] != null && ajandaVerisi['ogleBitis'] != null) {
+      int sDk = _saatiDakikayaCevir(slot);
+      int oBasDk = _saatiDakikayaCevir(ajandaVerisi['ogleBaslangic']);
+      int oBitDk = _saatiDakikayaCevir(ajandaVerisi['ogleBitis']);
+      if (sDk >= oBasDk && sDk < oBitDk) return "Öğle Arası";
     }
 
     int sBaslangic = _saatiDakikayaCevir(slot);
@@ -356,6 +374,7 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
       id: '',
       esnafId: esnaf.id,
       esnafAdi: esnaf.isletmeAdi,
+      esnafTel: esnaf.telefon,
       kullaniciAd: _adController.text,
       kullaniciTel: _telController.text,
       tarih: tarih,
@@ -381,8 +400,8 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
 
       String tarihFormat = DateFormat('dd.MM.yyyy').format(tarih);
       String mesaj = durm == 'Onaylandı'
-          ? "Randevunuz $tarihFormat tarihinde saat $saat olarak onaylanmıştır. Kent Düğün Salonu olarak teşekkür ederiz."
-          : "Randevunuz $tarihFormat tarihinde saat $saat için alınmıştır. Kent Düğün Salonu olarak teşekkür ederiz. Onay bekleniyor.";
+          ? "Randevunuz $tarihFormat tarihinde saat $saat olarak onaylanmıştır. ${esnaf.isletmeAdi} olarak teşekkür ederiz."
+          : "Randevunuz $tarihFormat tarihinde saat $saat için alınmıştır. ${esnaf.isletmeAdi} olarak teşekkür ederiz. Onay bekleniyor.";
 
       showDialog(
         context: context,

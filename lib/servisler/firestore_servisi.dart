@@ -13,6 +13,7 @@ class FirestoreServisi {
   CollectionReference get _ayarlarRef => _db.collection('ayarlar');
   CollectionReference get _kategorilerRef => _db.collection('kategoriler');
   CollectionReference get _hizmetTanimRef => _db.collection('hizmet_tanimlari');
+  CollectionReference get _yorumlarRef => _db.collection('yorumlar');
 
   // --- ESNAF İŞLEMLERİ ---
   Stream<List<EsnafModeli>> esnaflariGetir() {
@@ -36,8 +37,23 @@ class FirestoreServisi {
 
   Future<EsnafModeli?> telefonIleEsnafGetir(String telefon) async {
     try {
+      // 1. Önce doğrudan esnaf telefonu olarak ara
       var sonuc = await _esnaflarRef.where('telefon', isEqualTo: telefon).limit(1).get();
       if (sonuc.docs.isNotEmpty) return EsnafModeli.fromFirestore(sonuc.docs.first);
+
+      // 2. Esnaf bulunamadıysa, araçlardaki şoför telefonları arasında ara
+      var tumEsnaflar = await _esnaflarRef.get();
+      for (var doc in tumEsnaflar.docs) {
+        var data = doc.data() as Map<String, dynamic>;
+        var araclar = data['araclar'] as List?;
+        if (araclar != null) {
+          for (var arac in araclar) {
+            if (arac is Map && (arac['soforTel'] == telefon || arac['telefon'] == telefon)) {
+              return EsnafModeli.fromFirestore(doc);
+            }
+          }
+        }
+      }
     } catch (e) { return null; }
     return null;
   }
@@ -210,9 +226,11 @@ class FirestoreServisi {
         .map((snap) {
           var list = snap.docs.map((doc) => RandevuModeli.fromFirestore(doc)).toList();
           list.sort((a, b) {
-            int d = a.tarih.compareTo(b.tarih);
+            // Tarihe göre azalan (en yeni en üstte)
+            int d = b.tarih.compareTo(a.tarih);
             if (d != 0) return d;
-            return a.saat.compareTo(b.saat);
+            // Saatlere göre azalan (aynı gün içindeki en geç saat en üstte)
+            return b.saat.compareTo(a.saat);
           });
           return list;
         });
@@ -225,9 +243,11 @@ class FirestoreServisi {
         .map((snap) {
           var list = snap.docs.map((doc) => RandevuModeli.fromFirestore(doc)).toList();
           list.sort((a, b) {
-            int d = a.tarih.compareTo(b.tarih);
+            // Tarihe göre azalan (en yeni en üstte)
+            int d = b.tarih.compareTo(a.tarih);
             if (d != 0) return d;
-            return a.saat.compareTo(b.saat);
+            // Saatlere göre azalan
+            return b.saat.compareTo(a.saat);
           });
           return list;
         });
@@ -236,12 +256,115 @@ class FirestoreServisi {
   Future<void> randevuEkle(RandevuModeli randevu) async => await _randevularRef.add(randevu.toMap());
   Future<void> randevuSil(String id) async => await _randevularRef.doc(id).delete();
   
-  Future<void> randevuDurumGuncelle(String id, String yeniDurum) async {
+  Future<void> randevuDurumGuncelle(String id, String yeniDurum, {String? aliciTel, String? esnafAdi, String? tarihSaat}) async {
     await _randevularRef.doc(id).update({'durum': yeniDurum, 'guncellemeTarihi': FieldValue.serverTimestamp()});
+    
+    if (aliciTel != null) {
+      String baslik = "Randevu Durumu Güncellendi";
+      String icerik = "Randevunuz $yeniDurum olarak güncellendi.";
+      
+      if (yeniDurum == 'Onaylandı') {
+        baslik = "Randevunuz Onaylandı! ✅";
+        icerik = "$esnafAdi işletmesindeki $tarihSaat randevunuz onaylanmıştır.";
+      } else if (yeniDurum == 'Reddedildi') {
+        baslik = "Randevunuz Reddedildi ❌";
+        icerik = "$esnafAdi işletmesindeki $tarihSaat randevu talebiniz reddedildi.";
+      }
+
+      await FirebaseFirestore.instance.collection('bildirimler').add({
+        'aliciTel': aliciTel,
+        'baslik': baslik,
+        'icerik': icerik,
+        'okundu': false,
+        'tarih': FieldValue.serverTimestamp(),
+      });
+    }
   }
 
-  Future<void> randevuIptalEt(String id, String neden) async {
+  Future<void> randevuIptalEt(String id, String neden, {String? aliciTel, String? esnafAdi, String? tarihSaat}) async {
     await _randevularRef.doc(id).update({'durum': 'İptal Edildi', 'iptalNedeni': neden, 'iptalTarihi': FieldValue.serverTimestamp()});
+
+    if (aliciTel != null) {
+      await FirebaseFirestore.instance.collection('bildirimler').add({
+        'aliciTel': aliciTel,
+        'baslik': "Randevu İptal Edildi ⚠️",
+        'icerik': "$esnafAdi işletmesindeki $tarihSaat randevunuz iptal edildi. Neden: $neden",
+        'okundu': false,
+        'tarih': FieldValue.serverTimestamp(),
+      });
+    }
+  }
+
+  // --- YORUM VE PUANLAMA ---
+  Stream<List<Map<String, dynamic>>> esnafYorumlariniGetir(String esnafId) {
+    return _yorumlarRef
+        .where('esnafId', isEqualTo: esnafId)
+        .snapshots()
+        .map((snap) {
+      final list = snap.docs.map((doc) {
+        final d = doc.data() as Map<String, dynamic>;
+        d['id'] = doc.id;
+        return d;
+      }).toList();
+      
+      // Sıralamayı bellekte yap (İndeks hatasını önler)
+      list.sort((a, b) {
+        Timestamp t1 = a['tarih'] ?? Timestamp.now();
+        Timestamp t2 = b['tarih'] ?? Timestamp.now();
+        return t2.compareTo(t1);
+      });
+      
+      return list;
+    });
+  }
+
+  Future<void> yorumEkle({
+    required String esnafId,
+    required String randevuId,
+    required String kullaniciAd,
+    required String kullaniciTel,
+    required double puan,
+    required String yorum,
+  }) async {
+    await _db.runTransaction((transaction) async {
+      // 1. Esnaf belgesini al (ortalama puan için)
+      DocumentReference esnafRef = _esnaflarRef.doc(esnafId);
+      DocumentSnapshot esnafSnap = await transaction.get(esnafRef);
+      
+      if (!esnafSnap.exists) {
+        throw Exception("Esnaf bulunamadı.");
+      }
+
+      // 2. Yorumu ekle
+      DocumentReference yeniYorumRef = _yorumlarRef.doc();
+      transaction.set(yeniYorumRef, {
+        'esnafId': esnafId,
+        'randevuId': randevuId,
+        'kullaniciAd': kullaniciAd,
+        'kullaniciTel': kullaniciTel,
+        'puan': puan,
+        'yorum': yorum,
+        'tarih': FieldValue.serverTimestamp(),
+      });
+
+      // 3. Randevuyu 'Puanlandı' olarak işaretle (Sadece randevuId 'genel' değilse)
+      if (!randevuId.startsWith('genel')) {
+        transaction.update(_randevularRef.doc(randevuId), {'puanlandi': true});
+      }
+
+      // 4. Esnafın ortalama puanını güncelle
+      Map<String, dynamic> data = esnafSnap.data() as Map<String, dynamic>;
+      double eskiPuan = (data['puan'] ?? 0.0).toDouble();
+      int eskiYorumSayisi = (data['yorumSayisi'] ?? 0).toInt();
+      
+      int yeniYorumSayisi = eskiYorumSayisi + 1;
+      double yeniPuan = ((eskiPuan * eskiYorumSayisi) + puan) / yeniYorumSayisi;
+      
+      transaction.update(esnafRef, {
+        'puan': yeniPuan,
+        'yorumSayisi': yeniYorumSayisi,
+      });
+    });
   }
 
   // --- YÖNETİCİ AYARLARI ---

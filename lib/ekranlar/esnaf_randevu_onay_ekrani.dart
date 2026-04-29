@@ -143,7 +143,14 @@ class _EsnafRandevuYonetimEkraniState extends State<EsnafRandevuYonetimEkrani> {
                     child: ElevatedButton.icon(
                       onPressed: () async {
                         final messenger = ScaffoldMessenger.of(context);
-                        await _firestoreServisi.randevuDurumGuncelle(r.id, 'Onaylandı');
+                        String tarihFormat = DateFormat('dd.MM.yyyy HH:mm').format(r.tarih);
+                        await _firestoreServisi.randevuDurumGuncelle(
+                          r.id, 
+                          'Onaylandı',
+                          aliciTel: r.kullaniciTel,
+                          esnafAdi: r.esnafAdi,
+                          tarihSaat: "${tarihFormat.split(' ')[0]} ${r.saat}"
+                        );
                         if (mounted) messenger.showSnackBar(const SnackBar(content: Text("Randevu onaylandı.")));
                       },
                       icon: const Icon(Icons.check, size: 18),
@@ -193,7 +200,14 @@ class _EsnafRandevuYonetimEkraniState extends State<EsnafRandevuYonetimEkrani> {
                         leading: const Icon(Icons.radio_button_off, color: Colors.blue),
                         onTap: () async {
                           final navigator = Navigator.of(c);
-                          await _firestoreServisi.randevuIptalEt(r.id, nedenler[index]);
+                          String tarihFormat = DateFormat('dd.MM.yyyy').format(r.tarih);
+                          await _firestoreServisi.randevuIptalEt(
+                            r.id, 
+                            nedenler[index],
+                            aliciTel: r.kullaniciTel,
+                            esnafAdi: r.esnafAdi,
+                            tarihSaat: "$tarihFormat ${r.saat}"
+                          );
                           if (navigator.mounted) navigator.pop();
                         },
                       );

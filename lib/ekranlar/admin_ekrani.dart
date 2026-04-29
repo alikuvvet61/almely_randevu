@@ -422,7 +422,12 @@ class _AdminEkraniState extends State<AdminEkrani> {
                       ]),
                       const SizedBox(height: 10),
                       TextField(controller: _adresController, maxLines: 2, decoration: const InputDecoration(labelText: "Adres Bilgisi", isDense: true, border: OutlineInputBorder())),
-
+                      const SizedBox(height: 10),
+                      Row(children: [
+                        Expanded(child: TextField(controller: _latController, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: "Enlem (Lat)", isDense: true, border: OutlineInputBorder()))),
+                        const SizedBox(width: 10),
+                        Expanded(child: TextField(controller: _lonController, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: "Boylam (Lon)", isDense: true, border: OutlineInputBorder()))),
+                      ]),
                       const SizedBox(height: 20),
 
                       ElevatedButton.icon(

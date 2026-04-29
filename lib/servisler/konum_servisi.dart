@@ -1,191 +1,74 @@
-import 'dart:convert';
-import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
-import 'package:geocoding/geocoding.dart' as geo;
+import 'dart:convert';
+import 'dart:async';
 
 class KonumServisi {
-  static const String _googleApiKey = "AIzaSyC55S5CY0E_WxTmwq-TvpF2Tp_yrBdrQb8";
+  final String _googleApiKey = "AIzaSyC55S5CY0E_WxTmwq-TvpF2Tp_yrBdrQb8";
 
-  /// Mevcut GPS konumunu alır ve profesyonel formatta adres bilgilerini döndürür.
+  /// Google Geocoding API kullanarak profesyonel konum ve adres getirir.
   Future<Map<String, String>?> konumuVeAdresiGetir() async {
     try {
-      // GPS konumunu timeout ile al (Açık alanda değillerse takılı kalabiliyor)
-      final Position pos = await _konumYetkisiAl();
+      // 1. İzin Kontrolü
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          return {'hata': 'Konum izni reddedildi.'};
+        }
+      }
 
-      // 1. Google Geocoding API ile en detaylı adresi çekmeyi dene
-      final Map<String, dynamic>? googleData = await _fetchGoogleGeocode(pos.latitude, pos.longitude);
-      
-      if (googleData != null && googleData['status'] == 'OK') {
-        final List results = googleData['results'] as List;
-        if (results.isNotEmpty) {
-          Map<String, dynamic>? selectedResult;
-          for (final res in results) {
-            if (res is Map<String, dynamic>) {
-              final List types = (res['types'] as List?) ?? [];
-              if (types.contains('street_address')) {
-                selectedResult = res;
-                break;
-              }
+      // 2. Mevcut Konumu Al
+      Position position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.best,
+        ),
+      );
+
+      // 3. Google Geocoding API Sorgusu
+      final url = Uri.parse(
+        'https://maps.googleapis.com/maps/api/geocode/json?latlng=${position.latitude},${position.longitude}&key=$_googleApiKey&language=tr'
+      );
+
+      final response = await http.get(url);
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        
+        if (data['status'] == 'OK' && (data['results'] as List).isNotEmpty) {
+          final result = data['results'][0];
+          final String tamAdres = result['formatted_address'];
+          
+          String il = "";
+          String ilce = "";
+
+          // Adres bileşenlerini ayıkla
+          final addressComponents = result['address_components'] as List;
+          for (var component in addressComponents) {
+            final types = component['types'] as List;
+            if (types.contains('administrative_area_level_1')) {
+              il = component['long_name'];
+            }
+            if (types.contains('administrative_area_level_2')) {
+              ilce = component['long_name'];
             }
           }
-
-          selectedResult ??= results[0] as Map<String, dynamic>;
-          final List components = (selectedResult['address_components'] as List?) ?? [];
-
-          String mahalle = _parcaBul(components, "neighborhood");
-          if (mahalle.isEmpty) mahalle = _parcaBul(components, "sublocality_level_1");
-          
-          String cadde = _parcaBul(components, "route");
-          String no = _parcaBul(components, "street_number");
-          String pk = _parcaBul(components, "postal_code");
-          String ilce = _parcaBul(components, "administrative_area_level_2");
-          String il = _parcaBul(components, "administrative_area_level_1");
-          String ulke = _parcaBul(components, "country");
 
           return {
-            'enlem': pos.latitude.toString(),
-            'boylam': pos.longitude.toString(),
+            'enlem': position.latitude.toStringAsFixed(7),
+            'boylam': position.longitude.toStringAsFixed(7),
             'il': il,
             'ilce': ilce,
-            'tamAdres': _formatliAdresOlustur(mahalle, cadde, no, pk, ilce, il, ulke),
+            'tamAdres': tamAdres,
           };
+        } else {
+          return {'hata': 'Google Adres Bulunamadı: ${data['status']}'};
         }
-      }
-      
-      // Google API başarısız olursa Native Geocoder'ı (yedek) kullan
-      return await _nativeGeocodeYedek(pos);
-    } catch (e) {
-      debugPrint("Konum servisi hatası: $e");
-      String mesaj = "Konum alınamadı.";
-      if (e.toString().contains("timeout")) mesaj = "GPS sinyali çok zayıf veya zaman aşımına uğradı.";
-      return {'hata': mesaj};
-    }
-  }
-
-  /// Koordinatlardan sadece Google API kullanarak adres metni döndürür.
-  Future<String?> googleAdresGetir(double lat, double lon) async {
-    try {
-      final Map<String, dynamic>? googleData = await _fetchGoogleGeocode(lat, lon);
-      if (googleData != null && googleData['status'] == 'OK') {
-        final List results = googleData['results'] as List;
-        if (results.isNotEmpty) {
-          Map<String, dynamic>? selectedResult;
-          for (final res in results) {
-            if (res is Map<String, dynamic> && (res['types'] as List).contains('street_address')) {
-              selectedResult = res;
-              break;
-            }
-          }
-          selectedResult ??= results[0] as Map<String, dynamic>;
-          final List components = (selectedResult['address_components'] as List?) ?? [];
-
-          String m = _parcaBul(components, "neighborhood");
-          if (m.isEmpty) m = _parcaBul(components, "sublocality_level_1");
-          String r = _parcaBul(components, "route");
-          String n = _parcaBul(components, "street_number");
-          String p = _parcaBul(components, "postal_code");
-          String d = _parcaBul(components, "administrative_area_level_2");
-          String s = _parcaBul(components, "administrative_area_level_1");
-          String c = _parcaBul(components, "country");
-
-          return _formatliAdresOlustur(m, r, n, p, d, s, c);
-        }
+      } else {
+        return {'hata': 'Google API Hatası: ${response.statusCode}'};
       }
     } catch (e) {
-      debugPrint("googleAdresGetir hatası: $e");
+      return {'hata': 'Konum işlemi sırasında hata oluştu: $e'};
     }
-    return null;
-  }
-
-  /// Google Geocoding API'ye HTTP isteği atar (Timeout 20 sn'ye çıkarıldı).
-  Future<Map<String, dynamic>?> _fetchGoogleGeocode(double lat, double lon) async {
-    try {
-      final url = Uri.parse(
-          'https://maps.googleapis.com/maps/api/geocode/json?latlng=$lat,$lon&key=$_googleApiKey&language=tr'
-      );
-      final response = await http.get(url).timeout(const Duration(seconds: 20));
-      if (response.statusCode == 200) {
-        return json.decode(response.body) as Map<String, dynamic>;
-      }
-    } catch (_) {}
-    return null;
-  }
-
-  Future<Map<String, String>> _nativeGeocodeYedek(Position pos) async {
-    try {
-      await geo.setLocaleIdentifier("tr_TR");
-      // Native geocoding işlemi de bazen takılabiliyor
-      List<geo.Placemark> placemarks = await geo.placemarkFromCoordinates(pos.latitude, pos.longitude).timeout(const Duration(seconds: 15));
-      if (placemarks.isNotEmpty) {
-        geo.Placemark p = placemarks[0];
-        return {
-          'enlem': pos.latitude.toString(),
-          'boylam': pos.longitude.toString(),
-          'il': p.administrativeArea ?? "",
-          'ilce': p.subAdministrativeArea ?? "",
-          'tamAdres': _formatliAdresOlustur(
-            p.subLocality ?? p.locality ?? "",
-            p.thoroughfare ?? "",
-            p.subThoroughfare ?? "",
-            p.postalCode ?? "",
-            p.subAdministrativeArea ?? "",
-            p.administrativeArea ?? "",
-            p.country ?? ""
-          ),
-        };
-      }
-    } catch (_) {}
-    return {'hata': 'Adres çözülemedi.'};
-  }
-
-  String _formatliAdresOlustur(String mah, String yol, String no, String pk, String ilce, String il, String ulke) {
-    String sMah = mah.replaceAll(RegExp(r' Mahallesi| Mah\.| Mah', caseSensitive: false), "").trim();
-    String sNo = no.replaceAll(RegExp(r'No[:\s\.]*', caseSensitive: false), "").trim();
-    
-    List<String> parcalar = [];
-    if (sMah.isNotEmpty) parcalar.add(sMah);
-    
-    String caddeNo = yol.trim();
-    if (sNo.isNotEmpty) caddeNo += " No:$sNo";
-    if (caddeNo.isNotEmpty) parcalar.add(caddeNo);
-    
-    if (pk.isNotEmpty) parcalar.add(pk);
-    
-    String yer = "";
-    if (ilce.isNotEmpty) yer = ilce;
-    if (il.isNotEmpty) yer = yer.isNotEmpty ? "$yer/$il" : il;
-    if (yer.isNotEmpty) parcalar.add(yer);
-    
-    if (ulke.isNotEmpty) parcalar.add(ulke);
-
-    return parcalar.join(", ");
-  }
-
-  String _parcaBul(List components, String tip) {
-    try {
-      final component = components.firstWhere(
-        (c) => c is Map<String, dynamic> && (c['types'] as List).contains(tip),
-        orElse: () => null,
-      );
-      return component != null ? (component['long_name'] as String? ?? "") : "";
-    } catch (e) { return ""; }
-  }
-
-  Future<Position> _konumYetkisiAl() async {
-    bool s = await Geolocator.isLocationServiceEnabled();
-    if (!s) throw 'Lütfen GPS servisini açın.';
-    LocationPermission p = await Geolocator.checkPermission();
-    if (p == LocationPermission.denied) {
-      p = await Geolocator.requestPermission();
-      if (p == LocationPermission.denied) throw 'Konum izni reddedildi.';
-    }
-    // getCurrentPosition için 15 saniyelik limit ekliyoruz
-    return await Geolocator.getCurrentPosition(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.bestForNavigation,
-        timeLimit: Duration(seconds: 15),
-      ),
-    );
   }
 }
