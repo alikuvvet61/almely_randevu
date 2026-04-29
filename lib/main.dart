@@ -3,6 +3,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'firebase_options.dart';
 import 'servisler/bildirim_servisi.dart';
 import 'ekranlar/giris_secim_ekrani.dart';
 
@@ -20,20 +21,9 @@ void main() async {
   }
 
   try {
-    if (kIsWeb) {
-      await Firebase.initializeApp(
-        options: const FirebaseOptions(
-          apiKey: "AIzaSyC55S5CY0E_WxTmwq-TvpF2Tp_yrBdrQb8",
-          appId: "1:1013564598824:web:ae03d69dd700b7df86a31d",
-          messagingSenderId: "1013564598824",
-          projectId: "almely-randevu",
-          storageBucket: "almely-randevu.firebasestorage.app",
-          authDomain: "almely-randevu.firebaseapp.com",
-        ),
-      );
-    } else {
-      await Firebase.initializeApp();
-    }
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
   } catch (e) {
     debugPrint("Firebase başlatma hatası: $e");
   }
