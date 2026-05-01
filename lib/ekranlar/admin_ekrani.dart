@@ -29,6 +29,7 @@ class _AdminEkraniState extends State<AdminEkrani> {
   String _gpsDurum = "Konumu Getir";
   
   String? _duzenlenenKategoriId;
+  String? _duzenlenenKategoriAd;
 
   @override
   void dispose() {
@@ -220,14 +221,23 @@ class _AdminEkraniState extends State<AdminEkrani> {
                               onPressed: () async {
                                 if (_kategoriAdController.text.isNotEmpty) {
                                   if (_duzenlenenKategoriId == null) {
-                                    await _firestoreServisi.kategoriEkle(_kategoriAdController.text);
+                                    // Yeni eklenirken isme göre varsayılan ikonu ve rengi ata ve kalıcı olarak kaydet
+                                    int ikonKod = _kategoriIkonuGetir(_kategoriAdController.text).codePoint;
+                                    int renkKod = _kategoriRengiGetir(_kategoriAdController.text).value;
+                                    await _firestoreServisi.kategoriEkle(_kategoriAdController.text, ikon: ikonKod, renk: renkKod);
                                   } else {
-                                    await _firestoreServisi.kategoriGuncelle(_duzenlenenKategoriId!, _kategoriAdController.text);
+                                    // Güncellenirken isim değiştiyse alt belgeleri de güncelleyecek
+                                    await _firestoreServisi.kategoriGuncelle(
+                                      _duzenlenenKategoriId!, 
+                                      _kategoriAdController.text,
+                                      eskiAd: _duzenlenenKategoriAd
+                                    );
                                   }
                                   if (!context.mounted) return;
                                   setModalState(() {
                                     _kategoriAdController.clear();
                                     _duzenlenenKategoriId = null;
+                                    _duzenlenenKategoriAd = null;
                                   });
                                 }
                               },
@@ -252,6 +262,10 @@ class _AdminEkraniState extends State<AdminEkrani> {
                             itemBuilder: (context, index) {
                               final kat = kats[index];
                               return ListTile(
+                                leading: Icon(
+                                  _kategoriIkonuGetir(kat['ad'], ikonKod: kat['ikon'] as int?), 
+                                  color: _kategoriRengiGetir(kat['ad'], renkKod: kat['renk'] as int?)
+                                ),
                                 title: Text(kat['ad']),
                                 trailing: Row(
                                   mainAxisSize: MainAxisSize.min,
@@ -261,6 +275,7 @@ class _AdminEkraniState extends State<AdminEkrani> {
                                       onPressed: () {
                                         setModalState(() {
                                           _duzenlenenKategoriId = kat['id'];
+                                          _duzenlenenKategoriAd = kat['ad'];
                                           _kategoriAdController.text = kat['ad'];
                                         });
                                       },
@@ -569,7 +584,7 @@ class _AdminEkraniState extends State<AdminEkrani> {
                   stream: _firestoreServisi.kategorileriGetir(),
                   builder: (context, katSnapshot) {
                     if (!katSnapshot.hasData) return const CircularProgressIndicator();
-                    final kats = katSnapshot.data!.map((e) => e['ad'] as String).toList();
+                    final kats = katSnapshot.data!;
                     
                     if (kats.isEmpty) {
                       return const Center(child: Text("Lütfen önce kategori ekleyin."));
@@ -578,12 +593,13 @@ class _AdminEkraniState extends State<AdminEkrani> {
                     return ListView.builder(
                       itemCount: kats.length,
                       itemBuilder: (context, index) {
-                        final kat = kats[index];
-                        final kategoriEsnaflari = tumEsnaflar.where((e) => e.kategori == kat).toList();
+                        final katVerisi = kats[index];
+                        final katAd = katVerisi['ad'];
+                        final kategoriEsnaflari = tumEsnaflar.where((e) => e.kategori == katAd).toList();
                         
                         return ExpansionTile(
-                          leading: Icon(_kategoriIkonuGetir(kat), color: Colors.blue),
-                          title: Text("$kat (${kategoriEsnaflari.length})", style: const TextStyle(fontWeight: FontWeight.bold)),
+                          leading: Icon(_kategoriIkonuGetir(katAd, ikonKod: katVerisi['ikon'] as int?), color: _kategoriRengiGetir(katAd, renkKod: katVerisi['renk'] as int?)),
+                          title: Text("$katAd (${kategoriEsnaflari.length})", style: const TextStyle(fontWeight: FontWeight.bold)),
                           children: kategoriEsnaflari.isEmpty 
                             ? [const Padding(padding: EdgeInsets.all(10), child: Text("Bu kategoride kayıtlı esnaf yok.", style: TextStyle(fontSize: 12, color: Colors.grey)))]
                             : kategoriEsnaflari.map((esnaf) => Card(
@@ -633,14 +649,44 @@ class _AdminEkraniState extends State<AdminEkrani> {
     );
   }
 
-  IconData _kategoriIkonuGetir(String kat) {
-    switch (kat) {
+  Color _kategoriRengiGetir(String ad, {int? renkKod}) {
+    if (renkKod != null) return Color(renkKod);
+    switch (ad.trim()) {
+      case 'Kuaför': return Colors.orange;
+      case 'Taksi': return Colors.amber;
+      case 'Halı Saha': return Colors.green;
+      case 'Oto Yıkama': return Colors.blue;
+      case 'Restoran': return Colors.redAccent;
+      case 'Düğün Salonu': return Colors.purple;
+      case 'Araç Kiralama': return Colors.blueGrey;
+      case 'Diyetisyen': return Colors.lightGreen;
+      case 'Fizyoterapi ve Rehabilitasyon': return Colors.teal;
+      case 'Pet Kuaför': return Colors.brown;
+      case 'Veteriner': return Colors.redAccent;
+      case 'Psikolog': return Colors.indigo;
+      case 'Özel Ders': return Colors.deepOrange;
+      default: return Colors.blueAccent;
+    }
+  }
+
+  IconData _kategoriIkonuGetir(String kat, {int? ikonKod}) {
+    if (ikonKod != null) {
+      return IconData(ikonKod, fontFamily: 'MaterialIcons');
+    }
+    switch (kat.trim()) {
       case 'Kuaför': return Icons.content_cut;
       case 'Taksi': return Icons.local_taxi;
       case 'Halı Saha': return Icons.sports_soccer;
       case 'Oto Yıkama': return Icons.local_car_wash;
       case 'Restoran': return Icons.restaurant;
       case 'Düğün Salonu': return Icons.celebration;
+      case 'Araç Kiralama': return Icons.car_rental;
+      case 'Diyetisyen': return Icons.apple;
+      case 'Fizyoterapi ve Rehabilitasyon': return Icons.healing;
+      case 'Pet Kuaför': return Icons.pets;
+      case 'Veteriner': return Icons.pets;
+      case 'Psikolog': return Icons.psychology;
+      case 'Özel Ders': return Icons.school;
       default: return Icons.business;
     }
   }

@@ -70,7 +70,7 @@ class _EsnafRandevuYonetimEkraniState extends State<EsnafRandevuYonetimEkrani> {
               children: [
                 Icon(Icons.calendar_today_outlined, size: 80, color: Colors.grey.shade300),
                 const SizedBox(height: 20),
-                Text("Bu kategoride randevu bulunmuyor.", style: TextStyle(color: Colors.grey.shade500)),
+                Text("Herhangi bir randevu bulunmuyor", style: TextStyle(color: Colors.grey.shade500)),
               ],
             ),
           );
@@ -151,7 +151,7 @@ class _EsnafRandevuYonetimEkraniState extends State<EsnafRandevuYonetimEkrani> {
                           esnafAdi: r.esnafAdi,
                           tarihSaat: "${tarihFormat.split(' ')[0]} ${r.saat}"
                         );
-                        if (mounted) messenger.showSnackBar(const SnackBar(content: Text("Randevu onaylandı.")));
+                        if (mounted) messenger.showSnackBar(const SnackBar(content: Text("Randevu onaylandı")));
                       },
                       icon: const Icon(Icons.check, size: 18),
                       label: const Text("Onayla"),
@@ -183,7 +183,7 @@ class _EsnafRandevuYonetimEkraniState extends State<EsnafRandevuYonetimEkrani> {
           children: [
             const Text("Randevuyu Reddet", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 10),
-            const Text("Lütfen reddetme nedenini seçiniz:"),
+            const Text("Lütfen bir reddetme nedeni seçin:"),
             const Divider(height: 30),
             Flexible(
               child: StreamBuilder<List<String>>(

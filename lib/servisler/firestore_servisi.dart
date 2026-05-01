@@ -65,11 +65,40 @@ class FirestoreServisi {
   // --- KATEGORİ İŞLEMLERİ ---
   Stream<List<Map<String, dynamic>>> kategorileriGetir() {
     return _kategorilerRef.orderBy('ad').snapshots().map((snap) => 
-      snap.docs.map((doc) => {'id': doc.id, 'ad': doc['ad']}).toList());
+      snap.docs.map((doc) {
+        final data = doc.data() as Map<String, dynamic>;
+        return {
+          'id': doc.id, 
+          'ad': data['ad'],
+          'ikon': data['ikon'],
+          'renk': data['renk']
+        };
+      }).toList());
   }
 
-  Future<void> kategoriEkle(String ad) async => await _kategorilerRef.add({'ad': ad});
-  Future<void> kategoriGuncelle(String id, String yeniAd) async => await _kategorilerRef.doc(id).update({'ad': yeniAd});
+  Future<void> kategoriEkle(String ad, {int? ikon, int? renk}) async => 
+      await _kategorilerRef.add({'ad': ad, 'ikon': ikon, 'renk': renk});
+
+  Future<void> kategoriGuncelle(String id, String yeniAd, {String? eskiAd, int? ikon, int? renk}) async {
+    Map<String, dynamic> veri = {'ad': yeniAd};
+    if (ikon != null) veri['ikon'] = ikon;
+    if (renk != null) veri['renk'] = renk;
+    await _kategorilerRef.doc(id).update(veri);
+
+    // Eğer isim değiştiyse bu kategorideki esnafların kategori adını da güncelle
+    if (eskiAd != null && eskiAd != yeniAd) {
+      final esnaflar = await _esnaflarRef.where('kategori', isEqualTo: eskiAd).get();
+      for (var doc in esnaflar.docs) {
+        await doc.reference.update({'kategori': yeniAd});
+      }
+      
+      // Ayrıca hizmet tanımlarını da güncelle
+      final hizmetler = await _hizmetTanimRef.where('kategori', isEqualTo: eskiAd).get();
+      for (var doc in hizmetler.docs) {
+        await doc.reference.update({'kategori': yeniAd});
+      }
+    }
+  }
   Future<void> kategoriSil(String id) async => await _kategorilerRef.doc(id).delete();
 
   // --- HİZMET TANIMLARI ---

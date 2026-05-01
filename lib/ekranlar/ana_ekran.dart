@@ -17,14 +17,49 @@ class _AnaEkranState extends State<AnaEkran> {
   final FirestoreServisi firestoreServisi = FirestoreServisi();
   Position? _currentPosition;
 
-  final List<Map<String, dynamic>> kategoriler = const [
-    {'ad': 'Kuaför', 'ikon': Icons.content_cut, 'renk': Colors.orange},
-    {'ad': 'Taksi', 'ikon': Icons.local_taxi, 'renk': Colors.amber},
-    {'ad': 'Halı Saha', 'ikon': Icons.sports_soccer, 'renk': Colors.green},
-    {'ad': 'Oto Yıkama', 'ikon': Icons.local_car_wash, 'renk': Colors.blue},
-    {'ad': 'Restoran', 'ikon': Icons.restaurant, 'renk': Colors.redAccent},
-    {'ad': 'Düğün Salonu', 'ikon': Icons.celebration, 'renk': Colors.purple},
-  ];
+  IconData _getKategoriIkon(String ad, int? ikonKod) {
+    if (ikonKod != null) {
+      return IconData(ikonKod, fontFamily: 'MaterialIcons');
+    }
+    switch (ad.trim()) {
+      case 'Kuaför': return Icons.content_cut;
+      case 'Taksi': return Icons.local_taxi;
+      case 'Halı Saha': return Icons.sports_soccer;
+      case 'Oto Yıkama': return Icons.local_car_wash;
+      case 'Restoran': return Icons.restaurant;
+      case 'Düğün Salonu': return Icons.celebration;
+      case 'Araç Kiralama': return Icons.car_rental;
+      case 'Diyetisyen': return Icons.apple;
+      case 'Fizyoterapi ve Rehabilitasyon': return Icons.healing;
+      case 'Pet Kuaför': return Icons.pets;
+      case 'Veteriner': return Icons.pets;
+      case 'Psikolog': return Icons.psychology;
+      case 'Özel Ders': return Icons.school;
+      default: return Icons.business;
+    }
+  }
+
+  Color _getKategoriRenk(String ad, int? renkKod) {
+    if (renkKod != null) {
+      return Color(renkKod);
+    }
+    switch (ad.trim()) {
+      case 'Kuaför': return Colors.orange;
+      case 'Taksi': return Colors.amber;
+      case 'Halı Saha': return Colors.green;
+      case 'Oto Yıkama': return Colors.blue;
+      case 'Restoran': return Colors.redAccent;
+      case 'Düğün Salonu': return Colors.purple;
+      case 'Araç Kiralama': return Colors.blueGrey;
+      case 'Diyetisyen': return Colors.lightGreen;
+      case 'Fizyoterapi ve Rehabilitasyon': return Colors.teal;
+      case 'Pet Kuaför': return Colors.brown;
+      case 'Veteriner': return Colors.redAccent;
+      case 'Psikolog': return Colors.indigo;
+      case 'Özel Ders': return Colors.deepOrange;
+      default: return Colors.blueAccent;
+    }
+  }
 
   @override
   void initState() {
@@ -337,39 +372,59 @@ class _AnaEkranState extends State<AnaEkran> {
               ),
             ),
           Expanded(
-            child: GridView.builder(
-              padding: const EdgeInsets.all(15),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-                childAspectRatio: 1.1,
-              ),
-              itemCount: kategoriler.length,
-              itemBuilder: (context, i) => InkWell(
-                onTap: () => _esnafListesiAc(context, kategoriler[i]['ad']),
-                borderRadius: BorderRadius.circular(15),
-                child: Card(
-                  elevation: 4,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                  color: kategoriler[i]['renk'],
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(kategoriler[i]['ikon'], size: 45, color: Colors.white),
-                      const SizedBox(height: 10),
-                      Text(
-                        kategoriler[i]['ad'],
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
+            child: StreamBuilder<List<Map<String, dynamic>>>(
+              stream: firestoreServisi.kategorileriGetir(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+                final kats = snapshot.data ?? [];
+                
+                if (kats.isEmpty) {
+                  return const Center(child: Text("Henüz kategori eklenmemiş."));
+                }
+
+                return GridView.builder(
+                  padding: const EdgeInsets.all(15),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 12,
+                    childAspectRatio: 1.1,
+                  ),
+                  itemCount: kats.length,
+                  itemBuilder: (context, i) {
+                    final kat = kats[i];
+                    final ad = kat['ad'] as String;
+                    final ikonKod = kat['ikon'] as int?;
+                    final renkKod = kat['renk'] as int?;
+                    
+                    return InkWell(
+                      onTap: () => _esnafListesiAc(context, ad),
+                      borderRadius: BorderRadius.circular(15),
+                      child: Card(
+                        elevation: 4,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                        color: _getKategoriRenk(ad, renkKod),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(_getKategoriIkon(ad, ikonKod), size: 45, color: Colors.white),
+                            const SizedBox(height: 10),
+                            Text(
+                              ad,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    ],
-                  ),
-                ),
-              ),
+                    );
+                  },
+                );
+              }
             ),
           ),
         ],

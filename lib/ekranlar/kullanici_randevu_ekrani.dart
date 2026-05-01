@@ -74,17 +74,17 @@ class KullaniciRandevuEkrani extends StatelessWidget {
                               ],
                             ),
                             const Divider(height: 25),
-                            _bilgiSatiri(Icons.event, "${DateFormat('dd MMMM yyyy', 'tr_TR').format(r.tarih)} - ${r.saat} randevunuz bulunmaktadır."),
+                            _bilgiSatiri(Icons.event, "${DateFormat('dd MMMM yyyy', 'tr_TR').format(r.tarih)} - ${r.saat}"),
                             _bilgiSatiri(Icons.content_cut, r.hizmetAdi),
                             if (r.calisanPersonel != null)
                               _bilgiSatiri(Icons.person, "Personel: ${r.calisanPersonel}"),
                             if (r.randevuKanali != null)
-                              _bilgiSatiri(Icons.layers, "Randevu Kanalı: ${r.randevuKanali}"),
+                              _bilgiSatiri(Icons.layers, "Bölüm: ${r.randevuKanali}"),
                             
                             if (r.durum == 'İptal Edildi' && r.iptalNedeni != null)
                               Padding(
                                 padding: const EdgeInsets.only(top: 10),
-                                child: Text("İptal Nedeni: ${r.iptalNedeni}", 
+                                child: Text("Neden: ${r.iptalNedeni}", 
                                   style: const TextStyle(color: Colors.red, fontSize: 13, fontWeight: FontWeight.w500)),
                               ),
 
@@ -117,7 +117,7 @@ class KullaniciRandevuEkrani extends StatelessWidget {
                                 ),
                               )
                             else if (gecmisMi && r.durum != 'İptal Edildi')
-                               const Center(child: Text("Bu randevunun tarihi geçmiş", style: TextStyle(color: Colors.grey, fontSize: 12, fontStyle: FontStyle.italic))),
+                               const Center(child: Text("Bu randevunun tarihi geçmiş.", style: TextStyle(color: Colors.grey, fontSize: 12, fontStyle: FontStyle.italic))),
                           ],
                         ),
                       ),
@@ -135,7 +135,7 @@ class KullaniciRandevuEkrani extends StatelessWidget {
                     SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        "Not: Randevuya gitmeyecekseniz lütfen randevunuzu iptal ediniz.",
+                        "Randevunuzu iptal ettiğinizde ilgili işletmeye otomatik bilgi gönderilecektir.",
                         style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Colors.deepOrange),
                       ),
                     ),
@@ -234,10 +234,10 @@ class KullaniciRandevuEkrani extends StatelessWidget {
                 );
                 if (context.mounted) {
                   Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Değerlendirmeniz için teşekkürler!")));
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Değerlendirmeniz için teşekkür ederiz!")));
                 }
               },
-              child: const Text("GÖNDER"),
+              child: const Text("Yorumu Gönder"),
             ),
           ],
         ),
@@ -256,7 +256,7 @@ class KullaniciRandevuEkrani extends StatelessWidget {
           children: [
             const Text("Randevu İptal Nedeni", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 10),
-            const Text("Lütfen randevuyu iptal etme nedeninizi seçiniz:", style: TextStyle(color: Colors.grey)),
+            const Text("Lütfen bir iptal nedeni seçin", style: TextStyle(color: Colors.grey)),
             const Divider(height: 30),
             Flexible(
               child: StreamBuilder<List<String>>(
@@ -279,8 +279,8 @@ class KullaniciRandevuEkrani extends StatelessWidget {
                           // Esnafa bildirim gönder
                           await BildirimServisi.bildirimGonder(
                             kullaniciTel: r.esnafTel,
-                            baslik: "Randevu İptal Edildi ⚠️",
-                            icerik: "${r.kullaniciAd} isimli kullanıcı $tarihFormat ${r.saat} randevusunu iptal etti. Neden: ${nedenler[index]}",
+                            baslik: "🚫 Randevu İptal Edildi",
+                            icerik: "${r.kullaniciAd}, $tarihFormat tarihli saat ${r.saat} randevusunu iptal etti. Neden: ${nedenler[index]}",
                           );
 
                           if (context.mounted) {

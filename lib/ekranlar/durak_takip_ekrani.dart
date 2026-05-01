@@ -131,7 +131,7 @@ class _DurakTakipEkraniState extends State<DurakTakipEkrani> {
                           margin: const EdgeInsets.only(left: 8),
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(color: Colors.green.shade600, borderRadius: BorderRadius.circular(4)),
-                          child: Text("$siraNo. SIRADA", style: const TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold)),
+                          child: Text(siraNo == 1 ? "SIRADAKİ ARAÇ" : "$siraNo. SIRADA", style: const TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold)),
                         ),
                       if (kendiAraci)
                         Container(

@@ -140,7 +140,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
 
   void _ajandaOlustur(EsnafModeli esnaf) async {
     if (_baslangicTarihi == null || _bitisTarihi == null || _seciliAcilisSaat == null || _seciliKapanisSaat == null) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Lütfen tüm alanları seçin")));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Lütfen tüm alanları doldurun")));
       return;
     }
 
@@ -178,7 +178,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
           context: context,
           builder: (ctx) => AlertDialog(
             title: const Text("Ajanda Zaten Mevcut"),
-            content: Text("Şu tarihlerde ajanda zaten mevcut:\n\n${cakisanBilgiler.join(", ")}\n\nLütfen bu günleri listeden çıkarın veya mevcutları silin."),
+            content: Text("Şu tarihler için ajanda zaten oluşturulmuş: ${cakisanBilgiler.join(", ")}"),
             actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Tamam"))],
           ),
         );
@@ -187,7 +187,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
     }
 
     if (olusturulacakTarihler.isEmpty) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Oluşturulacak uygun gün bulunamadı")));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Uygun gün bulunamadı")));
       return;
     }
     
@@ -222,8 +222,8 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
     showDialog(
       context: context,
       builder: (c) => AlertDialog(
-        title: const Text("Ajandayı Sil"),
-        content: Text("${DateFormat('dd/MM/yyyy').format(_seciliTarih)} tarihindeki ajandayı silmek istediğinize emin misiniz? Bu işlem geri alınamaz."),
+        title: const Text("Ajanda Sil"),
+        content: Text("${DateFormat('dd/MM/yyyy').format(_seciliTarih)} tarihli ajandayı silmek istediğinize emin misiniz?"),
         actions: [
           TextButton(onPressed: () => Navigator.pop(c), child: const Text("Vazgeç")),
           TextButton(
@@ -249,7 +249,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                 navigator.pop();
                 
                 messenger.showSnackBar(
-                  const SnackBar(content: Text("Ajanda başarıyla silindi"), backgroundColor: Colors.green)
+                  const SnackBar(content: Text("Ajanda silindi"), backgroundColor: Colors.green)
                 );
               } catch (e) {
                 if (!mounted) return;
@@ -260,7 +260,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                 );
               }
             },
-            child: const Text("SİL", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+            child: const Text("Sil", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -430,7 +430,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text("Kapatma nedeni seçiniz:", style: TextStyle(fontSize: 13, color: Colors.grey)),
+            const Text("Kapatma nedeni seçin", style: TextStyle(fontSize: 13, color: Colors.grey)),
             const SizedBox(height: 10),
             StreamBuilder<List<String>>(
               stream: _firestoreServisi.iptalNedenleriniGetir('esnaf'),
@@ -451,7 +451,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
           ElevatedButton(
             onPressed: () async {
               if (seciliNeden == null) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Lütfen neden seçin")));
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Lütfen bir neden seçin")));
                 return;
               }
               final navigator = Navigator.of(ctx);
@@ -466,7 +466,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
               await _firestoreServisi.gunuKapatAc(widget.esnaf.id, _seciliTarih, _aktifKanal, yeniKapatilacaklar, true, neden: seciliNeden);
               if (navigator.mounted) navigator.pop();
             },
-            child: const Text("KAPAT"),
+            child: const Text("Kapat"),
           ),
         ],
       ),
@@ -559,7 +559,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
         children: [
           const Icon(Icons.event_busy, size: 60, color: Colors.grey),
           const SizedBox(height: 10),
-          const Text("Bu gün için ajanda henüz oluşturulmamış.", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
+          const Text("Bu tarih için ajanda henüz oluşturulmamış", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
           const SizedBox(height: 20),
           Card(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
@@ -653,7 +653,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                   const Text("Öğle Arası", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
-                    title: const Text("Öğle Arası Uygula", style: TextStyle(fontSize: 13)),
+                    title: const Text("Öğle arası uygula", style: TextStyle(fontSize: 13)),
                     value: _ogleArasiVar,
                     onChanged: (v) => setState(() => _ogleArasiVar = v),
                   ),
@@ -684,14 +684,14 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                   DropdownButtonFormField<int>(
                     initialValue: _slotAraligi,
                     decoration: const InputDecoration(labelText: "Slot Aralığı (Dakika)", border: OutlineInputBorder()),
-                    items: [5, 10, 15, 20, 30, 45, 60, 90, 120].map((e) => DropdownMenuItem(value: e, child: Text("$e Dakika"))).toList(),
+                    items: [5, 10, 15, 20, 30, 45, 60, 90, 120].map((e) => DropdownMenuItem(value: e, child: Text("$e dakika"))).toList(),
                     onChanged: (v) => setState(() => _slotAraligi = v!),
                   ),
                   const SizedBox(height: 25),
                   ElevatedButton(
                     onPressed: () => _ajandaOlustur(esnaf),
                     style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 50), backgroundColor: Colors.blue, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
-                    child: const Text("AJANDAYI OLUŞTUR", style: TextStyle(fontWeight: FontWeight.bold)),
+                    child: const Text("Ajandayı Oluştur", style: TextStyle(fontWeight: FontWeight.bold)),
                   )
                 ],
               ),
@@ -711,7 +711,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setModalState) => AlertDialog(
-          title: Text("$saat Randevusu Ekle"),
+          title: Text("$saat Randevu Ekle"),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -719,7 +719,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                 TextField(controller: adController, decoration: const InputDecoration(labelText: "Müşteri Ad Soyad")),
                 TextField(controller: telController, decoration: const InputDecoration(labelText: "Telefon Numarası"), keyboardType: TextInputType.phone),
                 const SizedBox(height: 15),
-                const Text("Hizmet Seçin (Çoklu Seçilebilir)", style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                const Text("Hizmet Seçin (Birden fazla seçilebilir)", style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
                 const Divider(),
                 ...hizmetler.map((h) {
                   bool secili = seciliHizmetler.any((x) => x['isim'] == h['isim']);
@@ -780,7 +780,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                   messenger.showSnackBar(const SnackBar(content: Text("Randevu başarıyla eklendi"), backgroundColor: Colors.green));
                 }
               },
-              child: const Text("KAYDET"),
+              child: const Text("Kaydet"),
             ),
           ],
         ),
@@ -798,7 +798,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
         final randevular = snapshot.data ?? [];
         final kapaliSlotlarRaw = ajanda['kapaliSlotlar'] ?? {};
         
-        if (slotlar.isEmpty) return const Center(child: Padding(padding: EdgeInsets.all(20.0), child: Text("Hatalı saat ayarları. Lütfen ajandayı silip tekrar oluşturun.", textAlign: TextAlign.center)));
+        if (slotlar.isEmpty) return const Center(child: Padding(padding: EdgeInsets.all(20.0), child: Text("Hatalı saat ayarları. Lütfen mesai saatlerini kontrol edin.", textAlign: TextAlign.center)));
 
         final Set<String> islenmisRandevular = {};
         return ListView.builder(
@@ -900,7 +900,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                         if (!ogleArasiMi) IconButton(
                           icon: Icon(kapaliMi ? Icons.lock : Icons.lock_open, color: kapaliMi ? Colors.red.shade400 : Colors.green.shade400, size: 22),
                           onPressed: () => _slotKapatAcFormu(saat, kapaliMi),
-                          tooltip: kapaliMi ? "Saati Randevuya Aç" : "Saati Randevuya Kapat",
+                          tooltip: kapaliMi ? "Saati Aç" : "Saati Kapat",
                         ),
                         if (ogleArasiMi) const Padding(
                           padding: EdgeInsets.all(12),
@@ -946,11 +946,11 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                           ],
                         ),
                       ),
-                      const Column(
+                      Column(
                         children: [
-                          Icon(Icons.verified, color: Colors.green, size: 28),
-                          SizedBox(height: 4),
-                          Text("ONAYLI", style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 10))
+                          const Icon(Icons.verified, color: Colors.green, size: 28),
+                          const SizedBox(height: 4),
+                          const Text("ONAYLI", style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 10))
                         ]
                       ),
                     ],
@@ -974,11 +974,11 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text("$saat Saatini Kapat"),
+        title: Text("$saat Saati Kapat"),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text("Kapatma nedeni seçiniz:", style: TextStyle(fontSize: 13, color: Colors.grey)),
+            const Text("Kapatma nedeni seçin", style: TextStyle(fontSize: 13, color: Colors.grey)),
             const SizedBox(height: 10),
             StreamBuilder<List<String>>(
               stream: _firestoreServisi.iptalNedenleriniGetir('esnaf'),
@@ -999,14 +999,14 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
           ElevatedButton(
             onPressed: () async {
               if (seciliNeden == null) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Lütfen neden seçin")));
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Lütfen bir neden seçin")));
                 return;
               }
               final navigator = Navigator.of(ctx);
               await _firestoreServisi.slotKapatAc(widget.esnaf.id, _seciliTarih, _aktifKanal, saat, neden: seciliNeden);
               if (navigator.mounted) navigator.pop();
             },
-            child: const Text("KAPAT"),
+            child: const Text("Kapat"),
           ),
         ],
       ),
@@ -1075,16 +1075,16 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text("Randevuyu İptal Et"),
-        content: const Text("Bu randevuyu iptal etmek istediğinize emin misiniz? Müşteriye bilgi verilmesi önerilir."),
+        content: const Text("Randevuyu iptal etmek istediğinize emin misiniz?"),
         actions: [
           TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text("Vazgeç")),
           ElevatedButton(
             onPressed: () async {
               final messenger = ScaffoldMessenger.of(context);
               final nav = Navigator.of(dialogContext);
-              await _firestoreServisi.randevuIptalEt(r.id, "Esnaf tarafından iptal edildi.");
+              await _firestoreServisi.randevuIptalEt(r.id, "Esnaf tarafından iptal edildi");
               if (nav.mounted) nav.pop();
-              messenger.showSnackBar(const SnackBar(content: Text("Randevu iptal edildi.")));
+              messenger.showSnackBar(const SnackBar(content: Text("Randevu iptal edildi")));
             },
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             child: const Text("İptal Et"),
