@@ -223,7 +223,7 @@ class _AdminEkraniState extends State<AdminEkrani> {
                                   if (_duzenlenenKategoriId == null) {
                                     // Yeni eklenirken isme göre varsayılan ikonu ve rengi ata ve kalıcı olarak kaydet
                                     int ikonKod = _kategoriIkonuGetir(_kategoriAdController.text).codePoint;
-                                    int renkKod = _kategoriRengiGetir(_kategoriAdController.text).value;
+                                    int renkKod = _kategoriRengiGetir(_kategoriAdController.text).toARGB32();
                                     await _firestoreServisi.kategoriEkle(_kategoriAdController.text, ikon: ikonKod, renk: renkKod);
                                   } else {
                                     // Güncellenirken isim değiştiyse alt belgeleri de güncelleyecek
