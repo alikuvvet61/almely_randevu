@@ -297,6 +297,7 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
         kapaliSlotlarMap = Map<String, dynamic>.from(raw);
       } else if (raw is List) {
         for (var s in raw) {
+          kapaliSlotlarMap[s.toString()] = "Belirtilmedi";
         }
       }
     }
