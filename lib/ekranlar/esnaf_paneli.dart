@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../modeller/esnaf_modeli.dart';
 import '../modeller/randevu_modeli.dart';
 import '../servisler/bildirim_servisi.dart';
@@ -39,6 +40,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
   List<Map<String, dynamic>> araclar = [];
   bool _personelOdakli = false;
   bool _degisiklikVar = false;
+  final Map<String, String> _kanalDegisimleri = {};
   String _randevuOnayModu = 'Manuel';
   bool _ayniGunRandevuEngelle = false;
   bool _slotAralikliGoster = false;
@@ -56,6 +58,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
   final List<TextEditingController> _hizmetSureControllerList = [];
   String _gpsDurum = "Konumu Güncelle";
   final _konumServisi = KonumServisi();
+  late EsnafModeli _guncelEsnaf;
 
   bool get _isSofor => widget.soforTel != null;
 
@@ -68,7 +71,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
     super.initState();
     BildirimServisi.tokenKaydet(widget.esnaf.telefon);
     BildirimServisi.bildirimDinle(widget.esnaf.telefon);
-    
+
     if (_isSofor) {
       BildirimServisi.tokenKaydet(widget.soforTel!);
       BildirimServisi.bildirimDinle(widget.soforTel!);
@@ -77,6 +80,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
 
     _taksiTalepleriniDinle();
     _esnafVerileriniDinle();
+    _guncelEsnaf = widget.esnaf;
     _adController = TextEditingController(text: widget.esnaf.isletmeAdi);
     _telController = TextEditingController(text: widget.esnaf.telefon);
     _ilController = TextEditingController(text: widget.esnaf.il);
@@ -109,7 +113,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
       _hizmetSureControllerList.add(TextEditingController(text: h["sure"].toString()));
     }
 
-    slotAraligi = widget.esnaf.calismaSaatleri?['slotDakika'] ?? 
+    slotAraligi = widget.esnaf.calismaSaatleri?['slotDakika'] ??
                   widget.esnaf.calismaSaatleri?['slotAraligi'] ?? 30;
 
     if (widget.esnaf.calismaSaatleri?['acilis'] != null) {
@@ -127,7 +131,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
         }
       });
     }
-    
+
     Future.delayed(Duration.zero, () {
       if (mounted) setState(() => _degisiklikVar = false);
     });
@@ -170,6 +174,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
         if (data != null && !_degisiklikVar) {
           // Sadece yerelde bir değişiklik (yazma/silme) yokken veritabanından güncelle
           setState(() {
+            _guncelEsnaf = EsnafModeli.fromMap(data, snapshot.id);
             araclar = List<Map<String, dynamic>>.from(data['araclar'] ?? []);
             hizmetler = List<Map<String, dynamic>>.from(data['hizmetler'] ?? []);
             kanallar = List<String>.from(data['kanallar'] ?? []);
@@ -193,7 +198,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
       for (var change in snapshot.docChanges) {
         if (change.type == DocumentChangeType.added) {
           final data = change.doc.data() as Map<String, dynamic>;
-          
+
           // Eğer bu araç bir şoföre atanmışsa ve talep başka bir şoföre gitmişse gösterme
           if (data['soforTel'] != null && _isSofor && data['soforTel'] != widget.soforTel) {
             continue;
@@ -219,10 +224,10 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
 
   Future<void> _konumGuncelle(double lat, double lon) async {
     if (widget.soforTel == null) return;
-    
+
     List<Map<String, dynamic>> yeniAraclar = List.from(araclar);
     int index = yeniAraclar.indexWhere((a) => a['soforTel'] == widget.soforTel);
-    
+
     if (index != -1) {
       yeniAraclar[index]['konum'] = GeoPoint(lat, lon);
       await FirebaseFirestore.instance.collection('esnaflar').doc(widget.esnaf.id).update({
@@ -266,7 +271,41 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                   children: [
                     _talepSatiri(Icons.person, "Müşteri", data['musteriAd'] ?? 'Müşteri'),
                     const SizedBox(height: 12),
-                    _talepSatiri(Icons.location_on, "Adres / Konum", data['adres'] ?? 'Seçilen Konum'),
+                    _talepSatiri(Icons.phone, "Müşteri Telefon", data['musteriTel'] ?? 'Bilinmiyor'),
+                    const SizedBox(height: 12),
+                    _talepSatiri(Icons.location_on, "Adres / Konum", data['adres'] ?? 'Konum Belirtilmemiş'),
+                    const SizedBox(height: 15),
+                    const Divider(),
+                    const SizedBox(height: 10),
+                    const Text("TAHMİNİ VARIŞ VE MESAFE", style: TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 10),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        Column(
+                          children: [
+                            Text(
+                              "${data['tahminiSure'] ?? '--'} dk",
+                              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: Colors.indigo),
+                            ),
+                            const Text("Süre", style: TextStyle(fontSize: 9, color: Colors.grey)),
+                          ],
+                        ),
+                        if (data['mesafe'] != null)
+                          Column(
+                            children: [
+                              Builder(builder: (context) {
+                                double m = (data['mesafe'] as num).toDouble();
+                                return Text(
+                                  m < 1000 ? "${m.toStringAsFixed(0)} m" : "${(m / 1000).toStringAsFixed(1)} km",
+                                  style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: Colors.orange),
+                                );
+                              }),
+                              const Text("Mesafe", style: TextStyle(fontSize: 9, color: Colors.grey)),
+                            ],
+                          ),
+                      ],
+                    ),
                     if (data['plaka'] != null) ...[
                       const Divider(height: 25),
                       _talepSatiri(Icons.directions_car, "İstenen Araç", data['plaka']),
@@ -296,7 +335,47 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: ElevatedButton(
-                      onPressed: () => _tahminiSureSor(doc),
+                      onPressed: () async {
+                        final talepData = doc.data() as Map<String, dynamic>;
+                        final plaka = talepData['plaka'];
+
+                        // 1. Talebi güncelle
+                        await doc.reference.update({
+                          'durum': 'kabul_edildi',
+                          'soforTel': widget.soforTel ?? 'Yönetici',
+                          'kabulZamani': FieldValue.serverTimestamp(),
+                        });
+
+                        // Müşteriye bildirim gönder
+                        if (talepData['musteriTel'] != null) {
+                          BildirimServisi.bildirimGonder(
+                            kullaniciTel: talepData['musteriTel'],
+                            baslik: "Taksiniz Yolda!",
+                            icerik: plaka != null ? "$plaka plakalı aracımız yola çıktı, size doğru geliyor." : "Aracımız yola çıktı, size doğru geliyor.",
+                          );
+                        }
+
+                        // 2. Aracı sıradan çıkar ve meşgul yap
+                        if (plaka != null) {
+                          var esDoc = await FirebaseFirestore.instance.collection('esnaflar').doc(widget.esnaf.id).get();
+                          if (esDoc.exists) {
+                            List<dynamic> gAraclar = List.from(esDoc.data()?['araclar'] ?? []);
+                            int i = gAraclar.indexWhere((a) => a['plaka'] == plaka);
+                            if (i != -1) {
+                              gAraclar[i]['durakta'] = false;
+                              gAraclar[i]['siraZamani'] = 0;
+                              gAraclar[i]['durum'] = "Meşgul";
+                              await esDoc.reference.update({'araclar': gAraclar});
+                            }
+                          }
+                        }
+
+                        if (context.mounted) {
+                          Navigator.pop(context); // Bildirim penceresini kapat
+                          // Şoföre Navigasyon Sorusu
+                          _navigasyonSor(talepData['musteriKonum'], talepData['adres']);
+                        }
+                      },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.green,
                         foregroundColor: Colors.white,
@@ -316,73 +395,44 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
     );
   }
 
-  void _tahminiSureSor(DocumentSnapshot doc) {
-    final TextEditingController sureController = TextEditingController(text: "5");
+
+  void _navigasyonSor(dynamic konum, String? adres) {
+    if (konum == null) return;
+
+    double lat;
+    double lon;
+
+    if (konum is GeoPoint) {
+      lat = konum.latitude;
+      lon = konum.longitude;
+    } else {
+      return;
+    }
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Tahmini Varış Süresi"),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
           children: [
-            const Text("Müşteriye kaç dakikada ulaşırsınız?"),
-            const SizedBox(height: 15),
-            TextField(
-              controller: sureController,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                suffixText: "dakika",
-                border: OutlineInputBorder(),
-              ),
-            ),
+            Icon(Icons.navigation, color: Colors.green),
+            SizedBox(width: 10),
+            Text("Navigasyon"),
           ],
         ),
+        content: Text("Müşterinin konumuna navigasyon başlatılsın mı?\n\nAdres: ${adres ?? 'Belirtilmedi'}"),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Vazgeç")),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Hayır", style: TextStyle(color: Colors.grey))),
           ElevatedButton(
             onPressed: () async {
-              final talepData = doc.data() as Map<String, dynamic>;
-              final plaka = talepData['plaka'];
-              final sure = sureController.text;
-
-      // 1. Talebi güncelle
-              await doc.reference.update({
-                'durum': 'kabul_edildi',
-                'soforTel': widget.soforTel ?? 'Yönetici',
-                'tahminiSure': sure,
-                'kabulZamani': FieldValue.serverTimestamp(),
-              });
-
-              // Müşteriye bildirim gönder
-              if (talepData['musteriTel'] != null) {
-                BildirimServisi.bildirimGonder(
-                  kullaniciTel: talepData['musteriTel'],
-                  baslik: "Taksiniz Yolda!",
-                  icerik: "$plaka plakalı aracımız yaklaşık $sure dakika içerisinde yanınızda olacaktır.",
-                );
-              }
-
-              // 2. Aracı sıradan çıkar ve meşgul yap
-              if (plaka != null) {
-                var esDoc = await FirebaseFirestore.instance.collection('esnaflar').doc(widget.esnaf.id).get();
-                if (esDoc.exists) {
-                  List<dynamic> gAraclar = List.from(esDoc.data()?['araclar'] ?? []);
-                  int i = gAraclar.indexWhere((a) => a['plaka'] == plaka);
-                  if (i != -1) {
-                    gAraclar[i]['durakta'] = false;
-                    gAraclar[i]['siraZamani'] = 0;
-                    gAraclar[i]['durum'] = "Meşgul";
-                    await esDoc.reference.update({'araclar': gAraclar});
-                  }
-                }
-              }
-
-              if (context.mounted) {
-                Navigator.pop(context); // Diyaloğu kapat
-                Navigator.pop(context); // Bildirim penceresini kapat (eğer hala açıksa)
+              Navigator.pop(ctx);
+              final url = Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$lat,$lon&travelmode=driving');
+              if (await canLaunchUrl(url)) {
+                await launchUrl(url, mode: LaunchMode.externalApplication);
               }
             },
-            child: const Text("Onayla ve Gönder"),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
+            child: const Text("Başlat"),
           ),
         ],
       ),
@@ -497,7 +547,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
           if (p is Map) return Map<String, dynamic>.from(p);
           return {"isim": p.toString(), "kanal": ""};
         }).toList();
-        
+
         var cs = data['calismaSaatleri'] as Map<String, dynamic>?;
         if (cs != null) {
           acilisSaat = cs['acilis'] ?? "Seçilmedi";
@@ -538,12 +588,43 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
         'kanallar': kanallar,
         'personeller': personeller,
         'araclar': araclar.map((a) {
-          // Eski 'sofor' alanını temizle (artık soforAd ve soforTel kullanılıyor)
           final yeniArac = Map<String, dynamic>.from(a);
           yeniArac.remove('sofor');
           return yeniArac;
         }).toList(),
       });
+
+      // Kanal isimleri değiştiyse randevuları da toplu güncelle
+      if (_kanalDegisimleri.isNotEmpty) {
+        final randevuSnap = await FirebaseFirestore.instance
+            .collection('randevular')
+            .where('esnafId', isEqualTo: widget.esnaf.id)
+            .get();
+
+        WriteBatch batch = FirebaseFirestore.instance.batch();
+        int count = 0;
+
+        for (var doc in randevuSnap.docs) {
+          final data = doc.data();
+          String? mevcutKanalRaw = data['kanal'];
+          if (mevcutKanalRaw != null) {
+            String mevcutKanal = mevcutKanalRaw.trim();
+            if (_kanalDegisimleri.containsKey(mevcutKanal)) {
+              batch.update(doc.reference, {'kanal': _kanalDegisimleri[mevcutKanal]});
+              count++;
+              if (count >= 500) {
+                await batch.commit();
+                batch = FirebaseFirestore.instance.batch();
+                count = 0;
+              }
+            }
+          }
+        }
+
+        if (count > 0) await batch.commit();
+        _kanalDegisimleri.clear();
+      }
+
       if (!mounted) return;
       setState(() => _degisiklikVar = false);
       if (!sessiz) {
@@ -570,7 +651,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
         onTap: () {
           final navigator = Navigator.of(context);
           navigator.push(
-            MaterialPageRoute(builder: (c) => DurakTakipEkrani(esnaf: widget.esnaf, soforTel: widget.soforTel)),
+            MaterialPageRoute(builder: (c) => DurakTakipEkrani(esnaf: _guncelEsnaf, soforTel: widget.soforTel)),
           );
         },
       );
@@ -588,7 +669,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                   metin: "Canlı Durak Takip",
                   onTap: () {
                     final navigator = Navigator.of(context);
-                    navigator.push(MaterialPageRoute(builder: (c) => DurakTakipEkrani(esnaf: widget.esnaf, soforTel: widget.soforTel)));
+                    navigator.push(MaterialPageRoute(builder: (c) => DurakTakipEkrani(esnaf: _guncelEsnaf, soforTel: widget.soforTel)));
                   },
                 ),
               ),
@@ -722,9 +803,9 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
 
   void _aracDuzenle(int index) {
     var arac = araclar[index];
-    TextEditingController pController = TextEditingController(text: arac['plaka']);
-    TextEditingController sAdController = TextEditingController(text: arac['soforAd']);
-    TextEditingController sTelController = TextEditingController(text: arac['soforTel']);
+    final pController = TextEditingController(text: arac['plaka']);
+    final sAdController = TextEditingController(text: arac['soforAd']);
+    final sTelController = TextEditingController(text: arac['soforTel']);
 
     showDialog(
       context: context,
@@ -739,7 +820,15 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Vazgeç")),
+          TextButton(
+            onPressed: () {
+              pController.dispose();
+              sAdController.dispose();
+              sTelController.dispose();
+              Navigator.pop(context);
+            },
+            child: const Text("Vazgeç"),
+          ),
           ElevatedButton(
             onPressed: () {
               setState(() {
@@ -748,6 +837,9 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                 araclar[index]['soforTel'] = sTelController.text.trim();
                 _degisiklikVar = true;
               });
+              pController.dispose();
+              sAdController.dispose();
+              sTelController.dispose();
               Navigator.pop(context);
             },
             child: const Text("Güncelle"),
@@ -775,22 +867,31 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Vazgeç")),
+          TextButton(
+            onPressed: () {
+              pController.dispose();
+              sAdController.dispose();
+              sTelController.dispose();
+              Navigator.pop(context);
+            },
+            child: const Text("Vazgeç"),
+          ),
           ElevatedButton(
             onPressed: () {
-              if (pController.text.isNotEmpty && sAdController.text.isNotEmpty) {
+              if (pController.text.isNotEmpty) {
                 setState(() {
                   araclar.add({
-                    "plaka": pController.text.trim().toUpperCase(),
-                    "soforAd": sAdController.text.trim(),
-                    "soforTel": sTelController.text.trim(),
-                    "durakta": false,
-                    "durum": "Müsait",
-                    "konum": null,
-                    "siraZamani": DateTime.now().millisecondsSinceEpoch,
+                    'plaka': pController.text.trim().toUpperCase(),
+                    'soforAd': sAdController.text.trim(),
+                    'soforTel': sTelController.text.trim(),
+                    'durum': 'Müsait',
+                    'durakta': false,
                   });
                   _degisiklikVar = true;
                 });
+                pController.dispose();
+                sAdController.dispose();
+                sTelController.dispose();
                 Navigator.pop(context);
               }
             },
@@ -857,7 +958,28 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                 ),
                 IconButton(
                   icon: const Icon(Icons.delete, color: Colors.red),
-                  onPressed: () => setState(() { kanallar.removeAt(idx); _degisiklikVar = true; }),
+                  onPressed: () => setState(() {
+                    String rawSilinen = kanallar[idx];
+                    String silinenKanal = rawSilinen.trim();
+                    kanallar.removeAt(idx);
+                    
+                    // Silinen kanala bağlı personelleri temizle
+                    List<Map<String, dynamic>> yeniPersonelListesi = [];
+                    for (var p in personeller) {
+                      Map<String, dynamic> pMap = Map<String, dynamic>.from(p);
+                      String pKanalRaw = (pMap["kanal"] ?? "").toString();
+                      
+                      if (pKanalRaw == rawSilinen || 
+                          pKanalRaw.trim() == silinenKanal || 
+                          pKanalRaw.trim().toLowerCase() == silinenKanal.toLowerCase()) {
+                        pMap["kanal"] = "";
+                      }
+                      yeniPersonelListesi.add(pMap);
+                    }
+                    personeller = yeniPersonelListesi;
+                    
+                    _degisiklikVar = true;
+                  }),
                 ),
               ],
             ),
@@ -873,12 +995,13 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                 content: TextField(onChanged: (v) => yeni = v, decoration: const InputDecoration(hintText: "Örn: Masa 1")),
                 actions: [
                   TextButton(onPressed: () => Navigator.pop(context), child: const Text("Vazgeç")),
-                  TextButton(onPressed: () {
-                    if (yeni.isNotEmpty) {
-                      setState(() { kanallar.add(yeni); _degisiklikVar = true; });
-                      Navigator.pop(context);
-                    }
-                  }, child: const Text("Ekle")),
+          TextButton(onPressed: () {
+            final temizYeni = yeni.trim();
+            if (temizYeni.isNotEmpty) {
+              setState(() { kanallar.add(temizYeni); _degisiklikVar = true; });
+              Navigator.pop(context);
+            }
+          }, child: const Text("Ekle")),
                 ],
               ),
             );
@@ -891,24 +1014,54 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
   }
 
   void _kanalDuzenle(int idx) {
-    String kanal = kanallar[idx];
+    final controller = TextEditingController(text: kanallar[idx]);
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text("Kanalı Düzenle"),
         content: TextFormField(
-          initialValue: kanal,
-          onChanged: (v) => kanal = v,
+          controller: controller,
           decoration: const InputDecoration(labelText: "Kanal Adı"),
+          textCapitalization: TextCapitalization.words,
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text("Vazgeç")),
           TextButton(onPressed: () {
-            if (kanal.isNotEmpty) {
-              setState(() {
-                kanallar[idx] = kanal;
-                _degisiklikVar = true;
-              });
+            final String eskiTamIsim = kanallar[idx]; 
+            final String yeniIsim = controller.text.trim();
+            final String eskiTemizIsim = eskiTamIsim.trim();
+            
+            if (yeniIsim.isNotEmpty) {
+              bool isimDegisti = yeniIsim != eskiTemizIsim;
+              bool formatDegisti = yeniIsim != eskiTamIsim;
+
+              if (isimDegisti || formatDegisti) {
+                setState(() {
+                  // 1. Ana kanallar listesini güncelle (Trim edilmiş haliyle)
+                  kanallar[idx] = yeniIsim;
+                  
+                  if (isimDegisti) {
+                    // 2. Personelleri GÜNCELLE
+                    personeller = personeller.map((p) {
+                      final pMap = Map<String, dynamic>.from(p);
+                      final String pKanal = (pMap["kanal"] ?? "").toString().trim();
+                      if (pKanal == eskiTemizIsim) {
+                        pMap["kanal"] = yeniIsim;
+                      }
+                      return pMap;
+                    }).toList();
+
+                    // 3. Firestore Takibi (Zincirleme güncelleme için)
+                    _kanalDegisimleri.forEach((key, value) {
+                      if (value == eskiTemizIsim) {
+                        _kanalDegisimleri[key] = yeniIsim;
+                      }
+                    });
+                    _kanalDegisimleri[eskiTemizIsim] = yeniIsim;
+                  }
+                  _degisiklikVar = true;
+                });
+              }
               Navigator.pop(context);
             }
           }, child: const Text("Güncelle")),
@@ -920,44 +1073,59 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
   void _personelDuzenle(int idx) {
     var p = personeller[idx];
     String isim = p["isim"] ?? "";
-    String kanal = p["kanal"] ?? "";
+    String kanal = (p["kanal"] ?? "").toString().trim();
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Personeli Düzenle"),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextFormField(
-              initialValue: isim,
-              onChanged: (v) => isim = v,
-              decoration: const InputDecoration(labelText: "Personel Adı"),
-            ),
-            const SizedBox(height: 10),
-            DropdownButtonFormField<String>(
-              initialValue: kanal,
-              items: [
-                const DropdownMenuItem(value: "", child: Text("Tüm Kanallar")),
-                ...kanallar.map((k) => DropdownMenuItem(value: k, child: Text(k))),
-              ],
-              onChanged: (v) => kanal = v ?? "",
-              decoration: const InputDecoration(labelText: "Bağlı Olduğu Kanal"),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Vazgeç")),
-          TextButton(onPressed: () {
-            if (isim.isNotEmpty) {
-              setState(() {
-                personeller[idx] = {"isim": isim, "kanal": kanal};
-                _degisiklikVar = true;
-              });
-              Navigator.pop(context);
+      builder: (context) {
+        // State-safe controller approach to avoid issues with initialValue updates
+        return AlertDialog(
+          title: const Text("Personeli Düzenle"),
+          content: StatefulBuilder(
+            builder: (context, setDialogState) {
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextFormField(
+                    initialValue: isim,
+                    onChanged: (v) => isim = v,
+                    decoration: const InputDecoration(labelText: "Personel Adı"),
+                    textCapitalization: TextCapitalization.words,
+                  ),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<String>(
+                    initialValue: kanallar.any((k) => k.trim() == kanal) 
+                        ? kanallar.firstWhere((k) => k.trim() == kanal) 
+                        : "",
+                    items: [
+                      const DropdownMenuItem(value: "", child: Text("Tüm Kanallar")),
+                      ...kanallar.map((k) => DropdownMenuItem(value: k, child: Text(k))),
+                    ],
+                    onChanged: (v) {
+                      setDialogState(() {
+                        kanal = v ?? "";
+                      });
+                    },
+                    decoration: const InputDecoration(labelText: "Bağlı Olduğu Kanal"),
+                  ),
+                ],
+              );
             }
-          }, child: const Text("Güncelle")),
-        ],
-      ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text("Vazgeç")),
+            TextButton(onPressed: () {
+              if (isim.trim().isNotEmpty) {
+                setState(() {
+                  personeller[idx] = {"isim": isim.trim(), "kanal": kanal};
+                  _degisiklikVar = true;
+                });
+                Navigator.pop(context);
+              }
+            }, child: const Text("Güncelle")),
+          ],
+        );
+      },
     );
   }
 
@@ -965,41 +1133,70 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
     var h = hizmetler[idx];
     String isim = h["isim"] ?? "";
     int sure = h["sure"] ?? 30;
+    double ucret = (h["ucret"] ?? 0).toDouble();
+    bool ucretGoster = h["ucretGoster"] ?? false;
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Hizmeti Düzenle"),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextFormField(
-              initialValue: isim,
-              onChanged: (v) => isim = v,
-              decoration: const InputDecoration(labelText: "Hizmet Adı"),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) => AlertDialog(
+          title: const Text("Hizmeti Düzenle"),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  initialValue: isim,
+                  onChanged: (v) => isim = v,
+                  decoration: const InputDecoration(labelText: "Hizmet Adı"),
+                ),
+                TextFormField(
+                  initialValue: sure.toString(),
+                  onChanged: (v) => sure = int.tryParse(v) ?? 30,
+                  decoration: const InputDecoration(labelText: "Süre (Dakika)"),
+                  keyboardType: TextInputType.number,
+                ),
+                TextFormField(
+                  initialValue: ucret.toString().replaceAll(".0", ""),
+                  onChanged: (v) => ucret = double.tryParse(v) ?? 0,
+                  decoration: const InputDecoration(labelText: "Ücret (Opsiyonel)", suffixText: "TL"),
+                  keyboardType: TextInputType.number,
+                ),
+                const SizedBox(height: 10),
+                CheckboxListTile(
+                  title: const Text("Ücreti Müşteriye Göster"),
+                  value: ucretGoster,
+                  onChanged: (v) => setModalState(() => ucretGoster = v ?? false),
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                ),
+              ],
             ),
-            TextFormField(
-              initialValue: sure.toString(),
-              onChanged: (v) => sure = int.tryParse(v) ?? 30,
-              decoration: const InputDecoration(labelText: "Süre (Dakika)"),
-              keyboardType: TextInputType.number,
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text("Vazgeç")),
+            TextButton(
+              onPressed: () {
+                if (isim.isNotEmpty) {
+                  setState(() {
+                    hizmetler[idx] = {
+                      "isim": isim,
+                      "sure": sure,
+                      "ucret": ucret,
+                      "ucretGoster": ucretGoster,
+                    };
+                    if (idx < _hizmetSureControllerList.length) {
+                      _hizmetSureControllerList[idx].text = sure.toString();
+                    }
+                    _degisiklikVar = true;
+                  });
+                  Navigator.pop(context);
+                }
+              },
+              child: const Text("Güncelle"),
             ),
           ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Vazgeç")),
-          TextButton(onPressed: () {
-            if (isim.isNotEmpty) {
-              setState(() {
-                hizmetler[idx] = {"isim": isim, "sure": sure};
-                if (idx < _hizmetSureControllerList.length) {
-                  _hizmetSureControllerList[idx].text = sure.toString();
-                }
-                _degisiklikVar = true;
-              });
-              Navigator.pop(context);
-            }
-          }, child: const Text("Güncelle")),
-        ],
       ),
     );
   }
@@ -1049,12 +1246,14 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                     TextField(onChanged: (v) => isim = v, decoration: const InputDecoration(labelText: "Personel Adı")),
                     const SizedBox(height: 10),
                     DropdownButtonFormField<String>(
-                      initialValue: kanal,
+                      initialValue: "",
                       items: [
                         const DropdownMenuItem(value: "", child: Text("Tüm Kanallar")),
                         ...kanallar.map((k) => DropdownMenuItem(value: k, child: Text(k))),
                       ],
-                      onChanged: (v) => kanal = v ?? "",
+                      onChanged: (v) {
+                        kanal = v ?? "";
+                      },
                       decoration: const InputDecoration(labelText: "Bağlı Olduğu Kanal"),
                     ),
                   ],
@@ -1063,7 +1262,10 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                   TextButton(onPressed: () => Navigator.pop(context), child: const Text("Vazgeç")),
                   TextButton(onPressed: () {
                     if (isim.isNotEmpty) {
-                      setState(() { personeller.add({"isim": isim, "kanal": kanal}); _degisiklikVar = true; });
+                      setState(() {
+                        personeller.add({"isim": isim.trim(), "kanal": kanal});
+                        _degisiklikVar = true;
+                      });
                       Navigator.pop(context);
                     }
                   }, child: const Text("Ekle")),
@@ -1084,9 +1286,23 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
         ...hizmetler.asMap().entries.map((entry) {
           int idx = entry.key;
           var h = entry.value;
+          bool showPrice = h["ucretGoster"] ?? false;
+          double ucret = (h["ucret"] ?? 0).toDouble();
+
           return ListTile(
             title: Text(h["isim"] ?? "Hizmet"),
-            subtitle: Text("${h["sure"] ?? 30} dakika"),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text("${h["sure"] ?? 30} dakika"),
+                Text(
+                  ucret > 0 
+                      ? "Ücret: ${ucret.toStringAsFixed(0)} TL ${showPrice ? '(Görünür)' : '(Gizli)'}"
+                      : "Ücret: Ücretsiz ${showPrice ? '(Görünür)' : '(Gizli)'}",
+                  style: TextStyle(fontSize: 12, color: showPrice ? Colors.green : Colors.grey),
+                ),
+              ],
+            ),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -1110,34 +1326,59 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
           onPressed: () {
             String isim = "";
             int sure = 30;
+            double ucret = 0;
+            bool ucretGoster = false;
+
             showDialog(
               context: context,
-              builder: (context) => AlertDialog(
-                title: const Text("Yeni Hizmet"),
-                content: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(onChanged: (v) => isim = v, decoration: const InputDecoration(labelText: "Hizmet Adı")),
-                    TextField(
-                      onChanged: (v) => sure = int.tryParse(v) ?? 30,
-                      decoration: const InputDecoration(labelText: "Süre (Dakika)"),
-                      keyboardType: TextInputType.number,
+              builder: (context) => StatefulBuilder(
+                builder: (context, setModalState) => AlertDialog(
+                  title: const Text("Yeni Hizmet"),
+                  content: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TextField(onChanged: (v) => isim = v, decoration: const InputDecoration(labelText: "Hizmet Adı")),
+                        TextField(
+                          onChanged: (v) => sure = int.tryParse(v) ?? 30,
+                          decoration: const InputDecoration(labelText: "Süre (Dakika)"),
+                          keyboardType: TextInputType.number,
+                        ),
+                        TextField(
+                          onChanged: (v) => ucret = double.tryParse(v) ?? 0,
+                          decoration: const InputDecoration(labelText: "Ücret (Opsiyonel)", suffixText: "TL"),
+                          keyboardType: TextInputType.number,
+                        ),
+                        const SizedBox(height: 10),
+                        CheckboxListTile(
+                          title: const Text("Ücreti Müşteriye Göster"),
+                          value: ucretGoster,
+                          onChanged: (v) => setModalState(() => ucretGoster = v ?? false),
+                          contentPadding: EdgeInsets.zero,
+                          controlAffinity: ListTileControlAffinity.leading,
+                        ),
+                      ],
                     ),
+                  ),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(context), child: const Text("Vazgeç")),
+                    TextButton(onPressed: () {
+                      if (isim.isNotEmpty) {
+                        setState(() {
+                          hizmetler.add({
+                            "isim": isim,
+                            "sure": sure,
+                            "ucret": ucret,
+                            "ucretGoster": ucretGoster
+                          });
+                          _hizmetSureControllerList.add(TextEditingController(text: sure.toString()));
+                          _degisiklikVar = true;
+                        });
+                        Navigator.pop(context);
+                      }
+                    }, child: const Text("Ekle")),
                   ],
                 ),
-                actions: [
-                  TextButton(onPressed: () => Navigator.pop(context), child: const Text("Vazgeç")),
-                  TextButton(onPressed: () {
-                    if (isim.isNotEmpty) {
-                      setState(() {
-                        hizmetler.add({"isim": isim, "sure": sure});
-                        _hizmetSureControllerList.add(TextEditingController(text: sure.toString()));
-                        _degisiklikVar = true;
-                      });
-                      Navigator.pop(context);
-                    }
-                  }, child: const Text("Ekle")),
-                ],
               ),
             );
           },
@@ -1216,10 +1457,10 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
         if (deger != "Seçilmedi") {
           initial = TimeOfDay(hour: int.parse(deger.split(":")[0]), minute: int.parse(deger.split(":")[1]));
         }
-        
+
         TimeOfDay? t = await showTimePicker(
-          context: context, 
-          initialTime: initial, 
+          context: context,
+          initialTime: initial,
           builder: (context, child) => MediaQuery(data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true), child: child!)
         );
         if (t != null) onSec("${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}");
@@ -1235,7 +1476,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
 
   Future<bool> _onWillPop() async {
     if (!_degisiklikVar) return true;
-    
+
     final result = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -1309,7 +1550,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                       padding: const EdgeInsets.only(bottom: 15),
                       child: InkWell(
                         onTap: () => Navigator.push(
-                          context, 
+                          context,
                           MaterialPageRoute(builder: (c) => EsnafRandevuYonetimEkrani(esnafId: widget.esnaf.id))
                         ),
                         child: Container(
@@ -1337,12 +1578,12 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                     ),
                   _yonetimButonlari(),
                   const SizedBox(height: 15),
-                  
+
                   if (!_isSofor) ...[
                     if (widget.esnaf.kategori == 'Taksi') ...[
                       _bolumKart(
-                        baslik: "Filo Yönetimi", 
-                        initiallyExpanded: false, 
+                        baslik: "Filo Yönetimi",
+                        initiallyExpanded: false,
                         icerik: _filoWidget()
                       ),
                       const SizedBox(height: 15),
@@ -1356,29 +1597,29 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                             width: double.infinity,
                             margin: const EdgeInsets.only(bottom: 20),
                             decoration: BoxDecoration(
-                              color: (acilisSaat == "00:00" && kapanisSaat == "00:00") 
-                                  ? Colors.orange.withValues(alpha: 0.1) 
+                              color: (acilisSaat == "00:00" && kapanisSaat == "00:00")
+                                  ? Colors.orange.withValues(alpha: 0.1)
                                   : Colors.transparent,
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(
                                 color: (acilisSaat == "00:00" && kapanisSaat == "00:00")
-                                    ? Colors.orange 
+                                    ? Colors.orange
                                     : Colors.grey.shade300
                               ),
                             ),
                             child: SwitchListTile(
-                              title: const Text("7/24 Çalışma Modu", 
+                              title: const Text("7/24 Çalışma Modu",
                                 style: TextStyle(fontWeight: FontWeight.bold)),
                               subtitle: Text(
-                                (acilisSaat == "00:00" && kapanisSaat == "00:00") 
-                                    ? "Sistem her gün her saat açık." 
+                                (acilisSaat == "00:00" && kapanisSaat == "00:00")
+                                    ? "Sistem her gün her saat açık."
                                     : "Mesai saatleri geçerli.",
                                 style: const TextStyle(fontSize: 12),
                               ),
                               value: (acilisSaat == "00:00" && kapanisSaat == "00:00"),
                               activeThumbColor: Colors.orange,
                               activeTrackColor: Colors.orange.withValues(alpha: 0.5),
-                              secondary: Icon(Icons.auto_mode, 
+                              secondary: Icon(Icons.auto_mode,
                                 color: (acilisSaat == "00:00" && kapanisSaat == "00:00") ? Colors.orange : Colors.grey),
                               onChanged: (bool value) {
                                 setState(() {
@@ -1418,8 +1659,8 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                             children: [
                               const Text("Randevu Aralığı (Slot)", style: TextStyle(color: Colors.grey)),
                               DropdownButton<int>(
-                                value: slotAraligi,
-                                items: [15, 30, 45, 60].map((m) => DropdownMenuItem(value: m, child: Text("$m dakika"))).toList(),
+                                value: [10, 15, 20, 30, 45, 60].contains(slotAraligi) ? slotAraligi : 30,
+                                items: [10, 15, 20, 30, 45, 60].map((m) => DropdownMenuItem(value: m, child: Text("$m dakika"))).toList(),
                                 onChanged: (v) => setState(() { slotAraligi = v!; _degisiklikVar = true; }),
                               ),
                             ],
@@ -1542,7 +1783,66 @@ class DurakTakipIcerigi extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     ElevatedButton(
-                      onPressed: () {
+                      onPressed: () async {
+                        // SIRAYA GİRERKEN KONUM KONTROLÜ
+                        if (!durakta) {
+                          try {
+                            Position pos = await Geolocator.getCurrentPosition(
+                              locationSettings: const LocationSettings(accuracy: LocationAccuracy.best),
+                            );
+                            double hamMesafe = Geolocator.distanceBetween(
+                              pos.latitude,
+                              pos.longitude,
+                              esnaf.konum.latitude,
+                              esnaf.konum.longitude,
+                            );
+
+                            // GPS hata payını düşerek net mesafeyi buluyoruz.
+                            double netMesafe = hamMesafe - pos.accuracy;
+                            if (netMesafe < 0) netMesafe = 0;
+
+                            if (netMesafe > 5) { // 5 metre net sınır
+                              if (context.mounted) {
+                                showDialog(
+                                  context: context,
+                                  builder: (context) => AlertDialog(
+                                    title: const Icon(Icons.location_off, color: Colors.red, size: 40),
+                                    content: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Text(
+                                          "Durakta Değilsiniz",
+                                          textAlign: TextAlign.center,
+                                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20, color: Colors.black),
+                                        ),
+                                        const SizedBox(height: 15),
+                                        Text(
+                                          "Sıraya girmek için durağın 5 metre yakınında olmalısınız.\n\n"
+                                          "Ölçülen: ${hamMesafe < 1000 ? "${hamMesafe.toStringAsFixed(1)} m" : "${(hamMesafe / 1000).toStringAsFixed(2)} km"}\n"
+                                          "Hata Payı: ±${pos.accuracy < 1000 ? "${pos.accuracy.toStringAsFixed(1)} m" : "${(pos.accuracy / 1000).toStringAsFixed(2)} km"}\n"
+                                          "Net Mesafe: ${netMesafe < 1000 ? "${netMesafe.toStringAsFixed(1)} m" : "${(netMesafe / 1000).toStringAsFixed(2)} km"}",
+                                          textAlign: TextAlign.center,
+                                        ),
+                                      ],
+                                    ),
+                                    actions: [
+                                      TextButton(onPressed: () => Navigator.pop(context), child: const Text("Tamam")),
+                                    ],
+                                  ),
+                                );
+                              }
+                              return;
+                            }
+                          } catch (e) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text("Konum doğrulanamadı. Lütfen GPS'i kontrol edin."), backgroundColor: Colors.orange),
+                              );
+                            }
+                            return;
+                          }
+                        }
+
                         arac['durakta'] = !durakta;
                         if (arac['durakta']) {
                           arac['siraZamani'] = DateTime.now().millisecondsSinceEpoch;

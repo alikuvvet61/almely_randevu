@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../servisler/firestore_servisi.dart';
@@ -46,7 +47,7 @@ class KullaniciRandevuEkrani extends StatelessWidget {
             children: [
               Expanded(
                 child: ListView.builder(
-                  padding: const EdgeInsets.all(15),
+                  padding: const EdgeInsets.fromLTRB(15, 15, 15, 150),
                   itemCount: randevular.length,
                   itemBuilder: (context, i) {
                     final r = randevular[i];
@@ -65,9 +66,20 @@ class KullaniciRandevuEkrani extends StatelessWidget {
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
                                 Expanded(
-                                  child: Text(
-                                    r.esnafAdi,
-                                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blue),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          r.esnafAdi,
+                                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blue),
+                                        ),
+                                      ),
+                                      if (r.seriId != null)
+                                        const Padding(
+                                          padding: EdgeInsets.only(left: 4.0),
+                                          child: Icon(Icons.repeat, size: 16, color: Colors.blueGrey),
+                                        ),
+                                    ],
                                   ),
                                 ),
                                 _durumRozeti(r.durum),
@@ -125,21 +137,24 @@ class KullaniciRandevuEkrani extends StatelessWidget {
                   },
                 ),
               ),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(15),
-                color: Colors.orange.shade50,
-                child: const Row(
-                  children: [
-                    Icon(Icons.info_outline, color: Colors.orange),
-                    SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        "Randevunuzu iptal ettiğinizde ilgili işletmeye otomatik bilgi gönderilecektir.",
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Colors.deepOrange),
+              SafeArea(
+                top: false,
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(15),
+                  color: Colors.orange.shade50,
+                  child: const Row(
+                    children: [
+                      Icon(Icons.info_outline, color: Colors.orange),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          "Randevunuzu iptal ettiğinizde ilgili işletmeye otomatik bilgi gönderilecektir.",
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Colors.deepOrange),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -224,14 +239,15 @@ class KullaniciRandevuEkrani extends StatelessWidget {
             TextButton(onPressed: () => Navigator.pop(context), child: const Text("Vazgeç")),
             ElevatedButton(
               onPressed: () async {
-                await _firestoreServisi.yorumEkle(
-                  esnafId: r.esnafId,
-                  randevuId: r.id,
-                  kullaniciAd: r.kullaniciAd,
-                  kullaniciTel: r.kullaniciTel,
-                  puan: secilenPuan,
-                  yorum: yorumController.text,
-                );
+                await _firestoreServisi.yorumEkle({
+                  'esnafId': r.esnafId,
+                  'randevuId': r.id,
+                  'kullaniciAd': r.kullaniciAd,
+                  'kullaniciTel': r.kullaniciTel,
+                  'puan': secilenPuan,
+                  'yorum': yorumController.text,
+                  'tarih': FieldValue.serverTimestamp(),
+                });
                 if (context.mounted) {
                   Navigator.pop(context);
                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Değerlendirmeniz için teşekkür ederiz!")));
@@ -264,9 +280,9 @@ class KullaniciRandevuEkrani extends StatelessWidget {
                 builder: (context, snapshot) {
                   if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
                   final nedenler = snapshot.data!;
-                  return ListView.builder(
-                    shrinkWrap: true,
+                  return ListView.separated(
                     itemCount: nedenler.length,
+                    separatorBuilder: (context, index) => const Divider(height: 1),
                     itemBuilder: (context, index) {
                       return ListTile(
                         title: Text(nedenler[index]),

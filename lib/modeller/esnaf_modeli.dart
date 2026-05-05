@@ -55,8 +55,12 @@ class EsnafModeli {
 
   factory EsnafModeli.fromFirestore(DocumentSnapshot doc) {
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+    return EsnafModeli.fromMap(data, doc.id);
+  }
+
+  factory EsnafModeli.fromMap(Map<String, dynamic> data, String id) {
     return EsnafModeli(
-      id: doc.id,
+      id: id,
       isletmeAdi: data['isletmeAdi'] ?? '',
       kategori: data['kategori'] ?? '',
       telefon: data['telefon'] ?? '',

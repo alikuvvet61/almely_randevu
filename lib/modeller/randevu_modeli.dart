@@ -15,7 +15,9 @@ class RandevuModeli {
   final String? randevuKanali; // Örn: Koltuk 1, Oda 2
   final String? calisanPersonel; // Örn: Ahmet Yılmaz
   final String? iptalNedeni;
+  final String? seriId; // Periyodik randevular için grup ID
   final bool puanlandi;
+  final DateTime? olusturulmaTarihi;
 
   RandevuModeli({
     required this.id,
@@ -32,7 +34,9 @@ class RandevuModeli {
     this.randevuKanali,
     this.calisanPersonel,
     this.iptalNedeni,
+    this.seriId,
     this.puanlandi = false,
+    this.olusturulmaTarihi,
   });
 
   factory RandevuModeli.fromFirestore(DocumentSnapshot doc) {
@@ -55,7 +59,11 @@ class RandevuModeli {
       randevuKanali: data['randevu_kanali'],
       calisanPersonel: data['calisan_personel'],
       iptalNedeni: data['iptalNedeni'],
+      seriId: data['seriId'],
       puanlandi: data['puanlandi'] ?? false,
+      olusturulmaTarihi: data['olusturulmaTarihi'] != null 
+          ? (data['olusturulmaTarihi'] as Timestamp).toDate() 
+          : null,
     );
   }
 
@@ -74,7 +82,51 @@ class RandevuModeli {
       'randevu_kanali': randevuKanali,
       'calisan_personel': calisanPersonel,
       'iptalNedeni': iptalNedeni,
+      'seriId': seriId,
       'puanlandi': puanlandi,
+      'olusturulmaTarihi': olusturulmaTarihi != null 
+          ? Timestamp.fromDate(olusturulmaTarihi!) 
+          : FieldValue.serverTimestamp(),
     };
+  }
+
+  RandevuModeli copyWith({
+    String? id,
+    String? esnafId,
+    String? esnafAdi,
+    String? esnafTel,
+    String? kullaniciAd,
+    String? kullaniciTel,
+    DateTime? tarih,
+    String? saat,
+    int? sure,
+    String? hizmetAdi,
+    String? durum,
+    String? randevuKanali,
+    String? calisanPersonel,
+    String? iptalNedeni,
+    String? seriId,
+    bool? puanlandi,
+    DateTime? olusturulmaTarihi,
+  }) {
+    return RandevuModeli(
+      id: id ?? this.id,
+      esnafId: esnafId ?? this.esnafId,
+      esnafAdi: esnafAdi ?? this.esnafAdi,
+      esnafTel: esnafTel ?? this.esnafTel,
+      kullaniciAd: kullaniciAd ?? this.kullaniciAd,
+      kullaniciTel: kullaniciTel ?? this.kullaniciTel,
+      tarih: tarih ?? this.tarih,
+      saat: saat ?? this.saat,
+      sure: sure ?? this.sure,
+      hizmetAdi: hizmetAdi ?? this.hizmetAdi,
+      durum: durum ?? this.durum,
+      randevuKanali: randevuKanali ?? this.randevuKanali,
+      calisanPersonel: calisanPersonel ?? this.calisanPersonel,
+      iptalNedeni: iptalNedeni ?? this.iptalNedeni,
+      seriId: seriId ?? this.seriId,
+      puanlandi: puanlandi ?? this.puanlandi,
+      olusturulmaTarihi: olusturulmaTarihi ?? this.olusturulmaTarihi,
+    );
   }
 }

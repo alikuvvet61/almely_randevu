@@ -262,8 +262,9 @@ class _AdminEkraniState extends State<AdminEkrani> {
                             itemBuilder: (context, index) {
                               final kat = kats[index];
                               return ListTile(
-                                leading: Icon(
-                                  _kategoriIkonuGetir(kat['ad'], ikonKod: kat['ikon'] as int?), 
+                                leading: _buildKategoriIkonWidget(
+                                  kat['ad'], 
+                                  ikonKod: kat['ikon'] as int?,
                                   color: _kategoriRengiGetir(kat['ad'], renkKod: kat['renk'] as int?)
                                 ),
                                 title: Text(kat['ad']),
@@ -583,46 +584,57 @@ class _AdminEkraniState extends State<AdminEkrani> {
                 return StreamBuilder<List<Map<String, dynamic>>>(
                   stream: _firestoreServisi.kategorileriGetir(),
                   builder: (context, katSnapshot) {
-                    if (!katSnapshot.hasData) return const CircularProgressIndicator();
+                    if (!katSnapshot.hasData) return const Center(child: CircularProgressIndicator());
                     final kats = katSnapshot.data!;
                     
                     if (kats.isEmpty) {
                       return const Center(child: Text("Lütfen önce kategori ekleyin."));
                     }
 
-                    return ListView.builder(
-                      itemCount: kats.length,
-                      itemBuilder: (context, index) {
-                        final katVerisi = kats[index];
-                        final katAd = katVerisi['ad'];
-                        final kategoriEsnaflari = tumEsnaflar.where((e) => e.kategori == katAd).toList();
-                        
-                        return ExpansionTile(
-                          leading: Icon(_kategoriIkonuGetir(katAd, ikonKod: katVerisi['ikon'] as int?), color: _kategoriRengiGetir(katAd, renkKod: katVerisi['renk'] as int?)),
-                          title: Text("$katAd (${kategoriEsnaflari.length})", style: const TextStyle(fontWeight: FontWeight.bold)),
-                          children: kategoriEsnaflari.isEmpty 
-                            ? [const Padding(padding: EdgeInsets.all(10), child: Text("Bu kategoride kayıtlı esnaf yok.", style: TextStyle(fontSize: 12, color: Colors.grey)))]
-                            : kategoriEsnaflari.map((esnaf) => Card(
-                            margin: const EdgeInsets.symmetric(horizontal: 15, vertical: 5),
-                            elevation: 0.5,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: BorderSide(color: Colors.grey.shade200)),
-                            child: ListTile(
-                              title: Text(esnaf.isletmeAdi, style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
-                              subtitle: Text("Tel: ${esnaf.telefon}\nAdres: ${esnaf.adres}"),
-                              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                                IconButton(icon: const Icon(Icons.edit, color: Colors.orange, size: 20), onPressed: () => _esnafFormu(esnaf: esnaf)),
-                                IconButton(icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20), onPressed: () => _confirmDelete(esnaf)),
-                              ]),
-                            ),
-                          )).toList(),
-                        );
-                      },
+                    return CustomScrollView(
+                      slivers: [
+                        SliverList(
+                          delegate: SliverChildBuilderDelegate(
+                            (context, index) {
+                              final katVerisi = kats[index];
+                              final katAd = katVerisi['ad'];
+                              final kategoriEsnaflari = tumEsnaflar.where((e) => e.kategori == katAd).toList();
+                              
+                              return ExpansionTile(
+                                leading: _buildKategoriIkonWidget(
+                                  katAd, 
+                                  ikonKod: katVerisi['ikon'] as int?,
+                                  color: _kategoriRengiGetir(katAd, renkKod: katVerisi['renk'] as int?)
+                                ),
+                                title: Text("$katAd (${kategoriEsnaflari.length})", style: const TextStyle(fontWeight: FontWeight.bold)),
+                                children: kategoriEsnaflari.isEmpty 
+                                  ? [const Padding(padding: EdgeInsets.all(10), child: Text("Bu kategoride kayıtlı esnaf yok.", style: TextStyle(fontSize: 12, color: Colors.grey)))]
+                                  : kategoriEsnaflari.map((esnaf) => Card(
+                                  margin: const EdgeInsets.symmetric(horizontal: 15, vertical: 5),
+                                  elevation: 0.5,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: BorderSide(color: Colors.grey.shade200)),
+                                  child: ListTile(
+                                    title: Text(esnaf.isletmeAdi, style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
+                                    subtitle: Text("Tel: ${esnaf.telefon}\nAdres: ${esnaf.adres}"),
+                                    trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                                      IconButton(icon: const Icon(Icons.edit, color: Colors.orange, size: 20), onPressed: () => _esnafFormu(esnaf: esnaf)),
+                                      IconButton(icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20), onPressed: () => _confirmDelete(esnaf)),
+                                    ]),
+                                  ),
+                                )).toList(),
+                              );
+                            },
+                            childCount: kats.length,
+                          ),
+                        ),
+                      ],
                     );
                   }
                 );
               },
             ),
           ),
+
         ],
       ),
     );
@@ -669,10 +681,7 @@ class _AdminEkraniState extends State<AdminEkrani> {
     }
   }
 
-  IconData _kategoriIkonuGetir(String kat, {int? ikonKod}) {
-    if (ikonKod != null) {
-      return IconData(ikonKod, fontFamily: 'MaterialIcons');
-    }
+  IconData _kategoriIkonuGetir(String kat) {
     switch (kat.trim()) {
       case 'Kuaför': return Icons.content_cut;
       case 'Taksi': return Icons.local_taxi;
@@ -689,6 +698,21 @@ class _AdminEkraniState extends State<AdminEkrani> {
       case 'Özel Ders': return Icons.school;
       default: return Icons.business;
     }
+  }
+
+  Widget _buildKategoriIkonWidget(String ad, {int? ikonKod, double size = 24, Color? color}) {
+    if (ikonKod != null) {
+      return Text(
+        String.fromCharCode(ikonKod),
+        style: TextStyle(
+          fontFamily: 'MaterialIcons',
+          fontSize: size,
+          color: color,
+          inherit: false,
+        ),
+      );
+    }
+    return Icon(_kategoriIkonuGetir(ad), size: size, color: color);
   }
 
   Widget _adminButonUst(IconData i, String b, Color r, VoidCallback t) => ElevatedButton(

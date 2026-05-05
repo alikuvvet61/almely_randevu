@@ -37,7 +37,11 @@ class KonumServisi {
         
         if (data['status'] == 'OK' && (data['results'] as List).isNotEmpty) {
           final result = data['results'][0];
-          final String tamAdres = result['formatted_address'];
+          String tamAdres = result['formatted_address'];
+          
+          // Plus Code'u temizle (Örn: XJG3+7M, gibi ifadeleri kaldırır)
+          // Adresi bozmadan sadece karmaşık dijital kodu temizler.
+          tamAdres = tamAdres.replaceAll(RegExp(r'[A-Z0-9]{4,}\+[A-Z0-9]{2,},?\s?'), '');
           
           String il = "";
           String ilce = "";

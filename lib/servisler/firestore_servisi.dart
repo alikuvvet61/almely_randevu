@@ -99,109 +99,144 @@ class FirestoreServisi {
       }
     }
   }
+
   Future<void> kategoriSil(String id) async => await _kategorilerRef.doc(id).delete();
 
   // --- HİZMET TANIMLARI ---
   Stream<List<Map<String, dynamic>>> hizmetTanimlariniGetir(String kategori) {
     return _hizmetTanimRef.where('kategori', isEqualTo: kategori).snapshots().map((snap) => 
-      snap.docs.map((doc) => {'id': doc.id, 'ad': doc['ad'], 'kategori': doc['kategori']}).toList());
+      snap.docs.map((doc) {
+        final data = doc.data() as Map<String, dynamic>;
+        return {
+          'id': doc.id,
+          'isim': data['isim'],
+          'sure': data['sure'],
+          'kategori': data['kategori']
+        };
+      }).toList());
   }
 
-  Future<void> hizmetTanimEkle(String ad, String kategori) async => await _hizmetTanimRef.add({'ad': ad, 'kategori': kategori, 'tarih': FieldValue.serverTimestamp()});
+  Future<void> hizmetTanimEkle(String kategori, String isim, int sure) async => 
+      await _hizmetTanimRef.add({'kategori': kategori, 'isim': isim, 'sure': sure});
+
+  Future<void> hizmetTanimSil(String id) async => await _hizmetTanimRef.doc(id).delete();
 
   // --- AJANDA İŞLEMLERİ ---
-  Stream<DocumentSnapshot> gunlukAjandaGetir(String esnafId, DateTime tarih, String? kanal) {
+  Future<Map<String, dynamic>?> gunlukAjandaGetir(String esnafId, DateTime tarih, String? kanal) async {
     String tarihStr = DateFormat('yyyy-MM-dd').format(tarih);
     String k = (kanal != null && kanal.trim().isNotEmpty) ? kanal.trim() : "";
     String docId = k.isNotEmpty ? "${tarihStr}_$k" : tarihStr;
+    
+    var doc = await _esnaflarRef.doc(esnafId).collection('ajanda').doc(docId).get();
+    return doc.exists ? doc.data() : null;
+  }
+
+  Stream<DocumentSnapshot> gunlukAjandaSnapStream(String esnafId, DateTime tarih, String? kanal) {
+    String tarihStr = DateFormat('yyyy-MM-dd').format(tarih);
+    String k = (kanal != null && kanal.trim().isNotEmpty) ? kanal.trim() : "";
+    String docId = k.isNotEmpty ? "${tarihStr}_$k" : tarihStr;
+    
     return _esnaflarRef.doc(esnafId).collection('ajanda').doc(docId).snapshots();
   }
 
   Future<void> ajandaOlustur({
     required String esnafId,
     required List<DateTime> tarihler,
+    required String kanal,
     required String acilis,
     required String kapanis,
-    required int slotDakika,
     String? ogleBaslangic,
     String? ogleBitis,
-    String? kanal,
+    required int slotAraligi,
   }) async {
-    final String kTemiz = (kanal != null && kanal.trim().isNotEmpty) ? kanal.trim() : "";
-    List<String> yeniAktifler = tarihler.map((t) {
-      String tStr = DateFormat('yyyy-MM-dd').format(t);
-      return kTemiz.isNotEmpty ? "${tStr}_$kTemiz" : tStr;
-    }).toList();
+    final batch = _db.batch();
+    List<String> aktifGunIds = [];
 
-    await _esnaflarRef.doc(esnafId).update({
-      'aktifGunler': FieldValue.arrayUnion(yeniAktifler),
-      'calismaSaatleri.acilis': acilis,
-      'calismaSaatleri.kapanis': kapanis,
-      'calismaSaatleri.slotDakika': slotDakika,
-      'calismaSaatleri.slotAraligi': slotDakika,
-    }).timeout(const Duration(seconds: 30));
+    for (var tarih in tarihler) {
+      String tarihStr = DateFormat('yyyy-MM-dd').format(tarih);
+      String docId = kanal.isNotEmpty ? "${tarihStr}_$kanal" : tarihStr;
+      aktifGunIds.add(docId);
 
-    const int batchSize = 50;
-    for (var i = 0; i < tarihler.length; i += batchSize) {
-      final batch = _db.batch();
-      final end = (i + batchSize < tarihler.length) ? i + batchSize : tarihler.length;
-      final chunk = tarihler.sublist(i, end);
-
-      for (var tarih in chunk) {
-        String tarihStr = DateFormat('yyyy-MM-dd').format(tarih);
-        String docId = kTemiz.isNotEmpty ? "${tarihStr}_$kTemiz" : tarihStr;
-        DocumentReference docRef = _esnaflarRef.doc(esnafId).collection('ajanda').doc(docId);
-        batch.set(docRef, {
-          'tarih': tarihStr,
-          'kanal': kTemiz,
-          'acilis': acilis,
-          'kapanis': kapanis,
-          'slotDakika': slotDakika,
-          'ogleBaslangic': ogleBaslangic,
-          'ogleBitis': ogleBitis,
-          'olusturulmaTarihi': FieldValue.serverTimestamp(),
-          'kapaliSlotlar': {}, // Map olarak tutulacak: { 'saat': 'neden' }
-        }, SetOptions(merge: true));
-      }
-      await batch.commit().timeout(const Duration(seconds: 60));
-      await Future.delayed(const Duration(milliseconds: 200));
+      DocumentReference docRef = _esnaflarRef.doc(esnafId).collection('ajanda').doc(docId);
+      batch.set(docRef, {
+        'tarih': tarihStr,
+        'kanal': kanal,
+        'acilis': acilis,
+        'kapanis': kapanis,
+        'ogleBaslangic': ogleBaslangic,
+        'ogleBitis': ogleBitis,
+        'slotAraligi': slotAraligi,
+        'kapaliSlotlar': {},
+        'olusturulmaTarihi': FieldValue.serverTimestamp(),
+      });
     }
+
+    // Esnaf belgesindeki aktif günleri güncelle
+    batch.update(_esnaflarRef.doc(esnafId), {
+      'aktifGunler': FieldValue.arrayUnion(aktifGunIds)
+    });
+
+    await batch.commit();
   }
 
   Future<void> ajandaSil(String esnafId, DateTime tarih, String? kanal) async {
     String tarihStr = DateFormat('yyyy-MM-dd').format(tarih);
     String k = (kanal != null && kanal.trim().isNotEmpty) ? kanal.trim() : "";
     String docId = k.isNotEmpty ? "${tarihStr}_$k" : tarihStr;
+
     await _esnaflarRef.doc(esnafId).collection('ajanda').doc(docId).delete();
-    await _esnaflarRef.doc(esnafId).update({'aktifGunler': FieldValue.arrayRemove([docId])});
+    await _esnaflarRef.doc(esnafId).update({
+      'aktifGunler': FieldValue.arrayRemove([docId])
+    });
   }
 
-  Future<void> slotKapatAc(String esnafId, DateTime tarih, String? kanal, String saat, {String? neden}) async {
+  Future<void> topluAjandaSil({
+    required String esnafId,
+    required DateTime baslangic,
+    required DateTime bitis,
+    String? kanal,
+  }) async {
+    int gunSayisi = bitis.difference(baslangic).inDays;
+    final batch = _db.batch();
+    List<String> silinecekIds = [];
+
+    for (int i = 0; i <= gunSayisi; i++) {
+      DateTime gun = baslangic.add(Duration(days: i));
+      String tarihStr = DateFormat('yyyy-MM-dd').format(gun);
+      String k = (kanal != null && kanal.trim().isNotEmpty) ? kanal.trim() : "";
+      String docId = k.isNotEmpty ? "${tarihStr}_$k" : tarihStr;
+      
+      silinecekIds.add(docId);
+      batch.delete(_esnaflarRef.doc(esnafId).collection('ajanda').doc(docId));
+    }
+
+    batch.update(_esnaflarRef.doc(esnafId), {
+      'aktifGunler': FieldValue.arrayRemove(silinecekIds)
+    });
+
+    await batch.commit();
+  }
+
+  Future<void> slotKapatAc(String esnafId, DateTime tarih, String? kanal, String saat, bool kapat, {String? neden}) async {
     String tarihStr = DateFormat('yyyy-MM-dd').format(tarih);
     String k = (kanal != null && kanal.trim().isNotEmpty) ? kanal.trim() : "";
     String docId = k.isNotEmpty ? "${tarihStr}_$k" : tarihStr;
     DocumentReference docRef = _esnaflarRef.doc(esnafId).collection('ajanda').doc(docId);
-    
+
     await _db.runTransaction((transaction) async {
-      DocumentSnapshot snapshot = await transaction.get(docRef);
+      var snapshot = await transaction.get(docRef);
       Map<String, dynamic> kapaliSlotlar = {};
       
       if (snapshot.exists) {
-        final data = snapshot.data() as Map<String, dynamic>;
-        var rawKapali = data['kapaliSlotlar'];
-        if (rawKapali is Map) {
-          kapaliSlotlar = Map<String, dynamic>.from(rawKapali);
-        } else if (rawKapali is List) {
-          // Eski liste formatını map'e çevir (Geriye dönük uyumluluk)
-          for (var s in rawKapali) {
-            kapaliSlotlar[s.toString()] = "Belirtilmedi";
-          }
+        var data = snapshot.data() as Map<String, dynamic>;
+        if (data.containsKey('kapaliSlotlar')) {
+          kapaliSlotlar = Map<String, dynamic>.from(data['kapaliSlotlar']);
         }
-
-        if (kapaliSlotlar.containsKey(saat)) {
-          kapaliSlotlar.remove(saat);
-        } else {
+        
+        if (kapat) {
           kapaliSlotlar[saat] = neden ?? "Belirtilmedi";
+        } else {
+          kapaliSlotlar.remove(saat);
         }
         transaction.update(docRef, {'kapaliSlotlar': kapaliSlotlar});
       } else {
@@ -233,10 +268,23 @@ class FirestoreServisi {
     }
   }
 
+  Future<void> tumAjandalariTemizle() async {
+    final esnaflar = await _esnaflarRef.get();
+    for (var esnafDoc in esnaflar.docs) {
+      final ajandaSnap = await esnafDoc.reference.collection('ajanda').get();
+      final batch = _db.batch();
+      for (var doc in ajandaSnap.docs) {
+        batch.delete(doc.reference);
+      }
+      await batch.commit();
+    }
+  }
+
   // --- RANDEVU İŞLEMLERİ ---
   Stream<List<RandevuModeli>> randevulariGetir(String esnafId, DateTime tarih) {
     DateTime bas = DateTime(tarih.year, tarih.month, tarih.day);
     DateTime bit = bas.add(const Duration(days: 1));
+    
     return _randevularRef
         .where('esnafId', isEqualTo: esnafId)
         .where('tarih', isGreaterThanOrEqualTo: Timestamp.fromDate(bas))
@@ -244,7 +292,7 @@ class FirestoreServisi {
         .snapshots()
         .map((snap) => snap.docs
             .map((doc) => RandevuModeli.fromFirestore(doc))
-            .where((r) => r.durum != 'İptal Edildi' && r.durum != 'Reddedildi')
+            .where((r) => r.durum == 'Beklemede' || r.durum == 'Onaylandı' || r.durum == 'Onay bekliyor')
             .toList());
   }
 
@@ -255,10 +303,8 @@ class FirestoreServisi {
         .map((snap) {
           var list = snap.docs.map((doc) => RandevuModeli.fromFirestore(doc)).toList();
           list.sort((a, b) {
-            // Tarihe göre azalan (en yeni en üstte)
             int d = b.tarih.compareTo(a.tarih);
             if (d != 0) return d;
-            // Saatlere göre azalan (aynı gün içindeki en geç saat en üstte)
             return b.saat.compareTo(a.saat);
           });
           return list;
@@ -272,10 +318,8 @@ class FirestoreServisi {
         .map((snap) {
           var list = snap.docs.map((doc) => RandevuModeli.fromFirestore(doc)).toList();
           list.sort((a, b) {
-            // Tarihe göre azalan (en yeni en üstte)
             int d = b.tarih.compareTo(a.tarih);
             if (d != 0) return d;
-            // Saatlere göre azalan
             return b.saat.compareTo(a.saat);
           });
           return list;
@@ -283,182 +327,232 @@ class FirestoreServisi {
   }
 
   Future<void> randevuEkle(RandevuModeli randevu) async => await _randevularRef.add(randevu.toMap());
+  
+  Future<bool> randevuCakisiyorMu({
+    required String esnafId,
+    required DateTime tarih,
+    required String saat,
+    required int sure,
+    String? kanal,
+    String? haricRandevuId,
+  }) async {
+    DateTime bas = DateTime(tarih.year, tarih.month, tarih.day);
+    DateTime bit = bas.add(const Duration(days: 1));
+
+    var query = _randevularRef
+        .where('esnafId', isEqualTo: esnafId)
+        .where('tarih', isGreaterThanOrEqualTo: Timestamp.fromDate(bas))
+        .where('tarih', isLessThan: Timestamp.fromDate(bit));
+
+    var snap = await query.get();
+    
+    int yeniBas = _saatiDakikayaCevir(saat);
+    int yeniBit = yeniBas + sure;
+
+    for (var doc in snap.docs) {
+      if (doc.id == haricRandevuId) continue;
+      
+      final data = doc.data() as Map<String, dynamic>;
+      if (data['durum'] == 'Reddedildi' || data['durum'] == 'İptal Edildi') continue;
+      
+      // Kanal kontrolü (Eğer kanal belirtilmişse sadece o kanaldaki çakışmalara bak)
+      if (kanal != null && kanal.isNotEmpty && data['randevuKanali'] != kanal) continue;
+
+      int mevcutBas = _saatiDakikayaCevir(data['saat']);
+      int mevcutSure = data['sure'] ?? 30;
+      int mevcutBit = mevcutBas + mevcutSure;
+
+      // Çakışma mantığı: (yeniBas < mevcutBit) && (yeniBit > mevcutBas)
+      if (yeniBas < mevcutBit && yeniBit > mevcutBas) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  int _saatiDakikayaCevir(String saat) {
+    try {
+      final parcalar = saat.split(':');
+      return int.parse(parcalar[0]) * 60 + int.parse(parcalar[1]);
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  Future<void> randevuSerisiniSil(String seriId) async {
+    final snap = await _randevularRef.where('seriId', isEqualTo: seriId).get();
+    final batch = _db.batch();
+    for (var doc in snap.docs) {
+      batch.delete(doc.reference);
+    }
+    await batch.commit();
+  }
+
   Future<void> randevuSil(String id) async => await _randevularRef.doc(id).delete();
   
-  Future<void> randevuDurumGuncelle(String id, String yeniDurum, {String? aliciTel, String? esnafAdi, String? tarihSaat}) async {
-    await _randevularRef.doc(id).update({'durum': yeniDurum, 'guncellemeTarihi': FieldValue.serverTimestamp()});
-    
-    if (aliciTel != null) {
-      String baslik = "Randevu Durumu Güncellendi";
-      String icerik = "Randevunuz $yeniDurum olarak güncellendi.";
-      
+  Future<void> randevuDurumGuncelle(
+    String id, 
+    String yeniDurum, {
+    String? iptalNedeni, 
+    String? aliciTel, 
+    String? esnafAdi, 
+    String? tarihSaat
+  }) async {
+    Map<String, dynamic> veri = {
+      'durum': yeniDurum,
+      'guncellemeTarihi': FieldValue.serverTimestamp(),
+    };
+    if (iptalNedeni != null) veri['iptalNedeni'] = iptalNedeni;
+    await _randevularRef.doc(id).update(veri);
+
+    // Bildirim gönder
+    if (aliciTel != null && esnafAdi != null && tarihSaat != null) {
+      String baslik = "";
+      String icerik = "";
+
       if (yeniDurum == 'Onaylandı') {
-        baslik = "Randevunuz Onaylandı! ✅";
-        icerik = "$esnafAdi işletmesindeki $tarihSaat randevunuz onaylanmıştır.";
+        baslik = "Randevu Onaylandı ✅";
+        icerik = "Sayın müşterimiz, $esnafAdi bünyesindeki $tarihSaat tarihli randevunuz onaylanmıştır. Sizi bekliyoruz.";
       } else if (yeniDurum == 'Reddedildi') {
-        baslik = "Randevunuz Reddedildi ❌";
-        icerik = "$esnafAdi işletmesindeki $tarihSaat randevu talebiniz reddedildi.";
+        baslik = "Randevu Durumu Hakkında ℹ️";
+        icerik = "$esnafAdi işletmesindeki $tarihSaat randevunuz maalesef onaylanamadı.${iptalNedeni != null ? ' Not: $iptalNedeni' : ''}";
+      } else if (yeniDurum == 'İptal Edildi') {
+        baslik = "Randevu İptal Bilgisi ⚠️";
+        icerik = "$esnafAdi işletmesindeki $tarihSaat tarihli randevunuz iptal edilmiştir.";
       }
 
-      await FirebaseFirestore.instance.collection('bildirimler').add({
-        'aliciTel': aliciTel,
-        'baslik': baslik,
-        'icerik': icerik,
-        'okundu': false,
-        'tarih': FieldValue.serverTimestamp(),
-      });
+      if (baslik.isNotEmpty) {
+        await FirebaseFirestore.instance.collection('bildirimler').add({
+          'aliciTel': aliciTel,
+          'baslik': baslik,
+          'icerik': icerik,
+          'okundu': false,
+          'tarih': FieldValue.serverTimestamp(),
+        });
+      }
     }
   }
 
   Future<void> randevuIptalEt(String id, String neden, {String? aliciTel, String? esnafAdi, String? tarihSaat}) async {
-    await _randevularRef.doc(id).update({'durum': 'İptal Edildi', 'iptalNedeni': neden, 'iptalTarihi': FieldValue.serverTimestamp()});
-
-    if (aliciTel != null) {
-      await FirebaseFirestore.instance.collection('bildirimler').add({
-        'aliciTel': aliciTel,
-        'baslik': "Randevu İptal Edildi ⚠️",
-        'icerik': "$esnafAdi işletmesindeki $tarihSaat randevunuz iptal edildi. Neden: $neden",
-        'okundu': false,
-        'tarih': FieldValue.serverTimestamp(),
-      });
-    }
-  }
-
-  // --- YORUM VE PUANLAMA ---
-  Stream<List<Map<String, dynamic>>> esnafYorumlariniGetir(String esnafId) {
-    return _yorumlarRef
-        .where('esnafId', isEqualTo: esnafId)
-        .snapshots()
-        .map((snap) {
-      final list = snap.docs.map((doc) {
-        final d = doc.data() as Map<String, dynamic>;
-        d['id'] = doc.id;
-        return d;
-      }).toList();
-      
-      // Sıralamayı bellekte yap (İndeks hatasını önler)
-      list.sort((a, b) {
-        Timestamp t1 = a['tarih'] ?? Timestamp.now();
-        Timestamp t2 = b['tarih'] ?? Timestamp.now();
-        return t2.compareTo(t1);
-      });
-      
-      return list;
-    });
-  }
-
-  Future<void> yorumEkle({
-    required String esnafId,
-    required String randevuId,
-    required String kullaniciAd,
-    required String kullaniciTel,
-    required double puan,
-    required String yorum,
-  }) async {
-    await _db.runTransaction((transaction) async {
-      // 1. Esnaf belgesini al (ortalama puan için)
-      DocumentReference esnafRef = _esnaflarRef.doc(esnafId);
-      DocumentSnapshot esnafSnap = await transaction.get(esnafRef);
-      
-      if (!esnafSnap.exists) {
-        throw Exception("Esnaf bulunamadı.");
-      }
-
-      // 2. Yorumu ekle
-      DocumentReference yeniYorumRef = _yorumlarRef.doc();
-      transaction.set(yeniYorumRef, {
-        'esnafId': esnafId,
-        'randevuId': randevuId,
-        'kullaniciAd': kullaniciAd,
-        'kullaniciTel': kullaniciTel,
-        'puan': puan,
-        'yorum': yorum,
-        'tarih': FieldValue.serverTimestamp(),
-      });
-
-      // 3. Randevuyu 'Puanlandı' olarak işaretle (Sadece randevuId 'genel' değilse)
-      if (!randevuId.startsWith('genel')) {
-        transaction.update(_randevularRef.doc(randevuId), {'puanlandi': true});
-      }
-
-      // 4. Esnafın ortalama puanını güncelle
-      Map<String, dynamic> data = esnafSnap.data() as Map<String, dynamic>;
-      double eskiPuan = (data['puan'] ?? 0.0).toDouble();
-      int eskiYorumSayisi = (data['yorumSayisi'] ?? 0).toInt();
-      
-      int yeniYorumSayisi = eskiYorumSayisi + 1;
-      double yeniPuan = ((eskiPuan * eskiYorumSayisi) + puan) / yeniYorumSayisi;
-      
-      transaction.update(esnafRef, {
-        'puan': yeniPuan,
-        'yorumSayisi': yeniYorumSayisi,
-      });
-    });
-  }
-
-  // --- YÖNETİCİ AYARLARI ---
-  Stream<List<String>> iptalNedenleriniGetir(String tip) {
-    return _ayarlarRef.doc('randevu_iptal_nedenleri').snapshots().map((doc) {
-      if (!doc.exists) return tip == 'kullanici' ? ['Planlarım değişti', 'Yanlışlıkla aldım'] : ['Hizmet veremeyeceğim', 'Personel eksikliği'];
-      return List<String>.from(doc.get(tip == 'kullanici' ? 'kullanici_nedenler' : 'esnaf_nedenler') ?? []);
-    });
+    await randevuDurumGuncelle(id, 'Reddedildi', iptalNedeni: neden, aliciTel: aliciTel, esnafAdi: esnafAdi, tarihSaat: tarihSaat);
   }
 
   Future<void> iptalNedeniEkle(String tip, String neden) async {
-    String alan = tip == 'kullanici' ? 'kullanici_nedenler' : 'esnaf_nedenler';
-    await _ayarlarRef.doc('randevu_iptal_nedenleri').set({
-      alan: FieldValue.arrayUnion([neden])
-    }, SetOptions(merge: true));
-  }
-
-  Future<void> iptalNedeniGuncelle(String tip, String eskiNeden, String yeniNeden) async {
-    String alan = tip == 'kullanici' ? 'kullanici_nedenler' : 'esnaf_nedenler';
-    DocumentReference docRef = _ayarlarRef.doc('randevu_iptal_nedenleri');
-    await _db.runTransaction((transaction) async {
-      DocumentSnapshot snapshot = await transaction.get(docRef);
-      if (snapshot.exists) {
-        List<dynamic> liste = List.from(snapshot.get(alan) ?? []);
-        int index = liste.indexOf(eskiNeden);
-        if (index != -1) {
-          liste[index] = yeniNeden;
-          transaction.update(docRef, {alan: liste});
-        }
-      }
+    await _db.collection('iptal_nedenleri').add({
+      'tip': tip,
+      'neden': neden,
+      'tarih': FieldValue.serverTimestamp(),
     });
   }
 
   Future<void> iptalNedeniSil(String tip, String neden) async {
-    String alan = tip == 'kullanici' ? 'kullanici_nedenler' : 'esnaf_nedenler';
-    await _ayarlarRef.doc('randevu_iptal_nedenleri').update({
-      alan: FieldValue.arrayRemove([neden])
+    final query = await _db.collection('iptal_nedenleri')
+        .where('tip', isEqualTo: tip)
+        .where('neden', isEqualTo: neden)
+        .limit(1)
+        .get();
+    for (var doc in query.docs) {
+      await doc.reference.delete();
+    }
+  }
+
+  Future<void> iptalNedeniGuncelle(String tip, String eskiNeden, String yeniNeden) async {
+    final query = await _db.collection('iptal_nedenleri')
+        .where('tip', isEqualTo: tip)
+        .where('neden', isEqualTo: eskiNeden)
+        .limit(1)
+        .get();
+    for (var doc in query.docs) {
+      await doc.reference.update({'neden': yeniNeden});
+    }
+  }
+
+  Stream<List<String>> iptalNedenleriniGetir(String tip) {
+    return _db.collection('iptal_nedenleri')
+        .where('tip', isEqualTo: tip)
+        .snapshots()
+        .map((snap) {
+          if (snap.docs.isEmpty) {
+            return tip == 'esnaf' 
+              ? ["Yoğunluk nedeniyle", "Hizmet veremiyoruz", "Personel eksikliği", "Sistem hatası"]
+              : ["Planım değişti", "Yanlış saat seçimi", "Acil işim çıktı", "Fiyat yüksek geldi"];
+          }
+          return snap.docs.map((doc) => (doc.data())['neden'] as String).toList();
+        });
+  }
+  
+  Future<bool> onayliRandevuVarMi(String esnafId, DateTime tarih, String? kanal) async {
+    DateTime bas = DateTime(tarih.year, tarih.month, tarih.day);
+    DateTime bit = bas.add(const Duration(days: 1));
+    
+    var query = _randevularRef
+        .where('esnafId', isEqualTo: esnafId)
+        .where('tarih', isGreaterThanOrEqualTo: Timestamp.fromDate(bas))
+        .where('tarih', isLessThan: Timestamp.fromDate(bit));
+
+    var snap = await query.get();
+    
+    return snap.docs.any((doc) {
+      final data = doc.data() as Map<String, dynamic>;
+      final bool durumOnayli = data['durum'] == 'Onaylandı';
+      
+      if (kanal != null && kanal.isNotEmpty) {
+        return durumOnayli && data['randevu_kanali'] == kanal;
+      }
+      return durumOnayli;
     });
   }
 
-  Future<void> tumAjandalariTemizle() async {
-    try {
-      var esnaflar = await _esnaflarRef.get();
-      for (var esnafDoc in esnaflar.docs) {
-        await esnafDoc.reference.update({
-          'aktifGunler': [],
-          'calismaSaatleri': FieldValue.delete()
-        });
-        var ajandaDocs = await esnafDoc.reference.collection('ajanda').get();
-        if (ajandaDocs.docs.isNotEmpty) {
-          for (var i = 0; i < ajandaDocs.docs.length; i += 500) {
-            final batch = _db.batch();
-            final end = (i + 500 < ajandaDocs.docs.length) ? i + 500 : ajandaDocs.docs.length;
-            for (var j = i; j < end; j++) {
-              batch.delete(ajandaDocs.docs[j].reference);
-            }
-            await batch.commit();
-          }
-        }
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        debugPrint("Ajanda temizleme hatası: $e");
-      }
-      rethrow;
+  // --- YORUM İŞLEMLERİ ---
+  Stream<List<Map<String, dynamic>>> yorumlariGetir(String esnafId) {
+    return _yorumlarRef
+        .where('esnafId', isEqualTo: esnafId)
+        .orderBy('tarih', descending: true)
+        .snapshots()
+        .map((snap) => snap.docs.map((doc) => {
+          'id': doc.id,
+          ...doc.data() as Map<String, dynamic>
+        }).toList());
+  }
+
+  Future<void> yorumEkle(Map<String, dynamic> yorum) async {
+    await _yorumlarRef.add(yorum);
+    
+    // Esnaf puanını ve yorum sayısını güncelle
+    var esnafDoc = await _esnaflarRef.doc(yorum['esnafId']).get();
+    if (esnafDoc.exists) {
+      var data = esnafDoc.data() as Map<String, dynamic>;
+      int eskiSayi = data['yorumSayisi'] ?? 0;
+      double eskiPuan = (data['puan'] ?? 0).toDouble();
+      
+      int yeniSayi = eskiSayi + 1;
+      double yeniPuan = ((eskiPuan * eskiSayi) + yorum['puan']) / yeniSayi;
+      
+      await _esnaflarRef.doc(yorum['esnafId']).update({
+        'yorumSayisi': yeniSayi,
+        'puan': yeniPuan
+      });
     }
+  }
+
+  // --- TAKSİ ÇAĞRI İŞLEMLERİ ---
+  Future<void> taksiCagir(Map<String, dynamic> talep) async {
+    await _db.collection('taksi_talepleri').add({
+      ...talep,
+      'durum': 'Bekliyor',
+      'tarih': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Stream<List<DocumentSnapshot>> aktifTaksiTalepleriniDinle(String esnafId) {
+    return _db.collection('taksi_talepleri')
+        .where('esnafId', isEqualTo: esnafId)
+        .where('durum', isEqualTo: 'Bekliyor')
+        .snapshots()
+        .map((snap) => snap.docs);
+  }
+
+  Future<void> taksiTalebiGuncelle(String talepId, Map<String, dynamic> veri) async {
+    await _db.collection('taksi_talepleri').doc(talepId).update(veri);
   }
 }

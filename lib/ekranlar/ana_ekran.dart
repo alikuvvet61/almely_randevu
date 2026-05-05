@@ -17,10 +17,7 @@ class _AnaEkranState extends State<AnaEkran> {
   final FirestoreServisi firestoreServisi = FirestoreServisi();
   Position? _currentPosition;
 
-  IconData _getKategoriIkon(String ad, int? ikonKod) {
-    if (ikonKod != null) {
-      return IconData(ikonKod, fontFamily: 'MaterialIcons');
-    }
+  IconData _getKategoriIkon(String ad) {
     switch (ad.trim()) {
       case 'Kuaför': return Icons.content_cut;
       case 'Taksi': return Icons.local_taxi;
@@ -37,6 +34,22 @@ class _AnaEkranState extends State<AnaEkran> {
       case 'Özel Ders': return Icons.school;
       default: return Icons.business;
     }
+  }
+
+  Widget _buildKategoriIcon(String ad, int? ikonKod, {double size = 45, Color color = Colors.white}) {
+    if (ikonKod != null) {
+      // Dinamik ikonlar için Text widget'ı kullanarak tree-shake hatasını baypas ediyoruz
+      return Text(
+        String.fromCharCode(ikonKod),
+        style: TextStyle(
+          fontFamily: 'MaterialIcons',
+          fontSize: size,
+          color: color,
+          inherit: false,
+        ),
+      );
+    }
+    return Icon(_getKategoriIkon(ad), size: size, color: color);
   }
 
   Color _getKategoriRenk(String ad, int? renkKod) {
@@ -338,94 +351,109 @@ class _AnaEkranState extends State<AnaEkran> {
             ),
         ],
       ),
-      body: Column(
-        children: [
+      body: CustomScrollView(
+        slivers: [
           if (widget.kullaniciTel != null)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
-              child: InkWell(
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (c) => KullaniciRandevuEkrani(telefon: widget.kullaniciTel!))
-                ),
-                child: Container(
-                  padding: const EdgeInsets.all(15),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.shade50,
-                    borderRadius: BorderRadius.circular(15),
-                    border: Border.all(color: Colors.blue.shade100),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
+                child: InkWell(
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (c) => KullaniciRandevuEkrani(telefon: widget.kullaniciTel!))
                   ),
-                  child: const Row(
-                    children: [
-                      Icon(Icons.calendar_today, color: Colors.blue),
-                      SizedBox(width: 15),
-                      Expanded(
-                        child: Text(
-                          "Randevularım",
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.blue),
+                  child: Container(
+                    padding: const EdgeInsets.all(15),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(15),
+                      border: Border.all(color: Colors.blue.shade100),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.calendar_today, color: Colors.blue),
+                        SizedBox(width: 15),
+                        Expanded(
+                          child: Text(
+                            "Randevularım",
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.blue),
+                          ),
                         ),
-                      ),
-                      Icon(Icons.arrow_forward_ios, size: 16, color: Colors.blue),
-                    ],
+                        Icon(Icons.arrow_forward_ios, size: 16, color: Colors.blue),
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
-          Expanded(
-            child: StreamBuilder<List<Map<String, dynamic>>>(
-              stream: firestoreServisi.kategorileriGetir(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-                final kats = snapshot.data ?? [];
-                
-                if (kats.isEmpty) {
-                  return const Center(child: Text("Henüz kategori eklenmemiş."));
-                }
+          StreamBuilder<List<Map<String, dynamic>>>(
+            stream: firestoreServisi.kategorileriGetir(),
+            builder: (context, snapshot) {
+              final kats = snapshot.data ?? [];
+              
+              // Veri henüz yoksa ve bağlantı bekleniyorsa loading göster
+              if (snapshot.connectionState == ConnectionState.waiting && kats.isEmpty) {
+                return const SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: Center(child: CircularProgressIndicator()),
+                );
+              }
+              
+              // Veri boşsa (gerçekten veri yoksa) uyarı göster
+              if (kats.isEmpty) {
+                return const SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: Center(child: Text("Henüz kategori eklenmemiş.")),
+                );
+              }
 
-                return GridView.builder(
-                  padding: const EdgeInsets.all(15),
+              return SliverPadding(
+                padding: const EdgeInsets.all(15),
+                sliver: SliverGrid(
                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 2,
                     crossAxisSpacing: 12,
                     mainAxisSpacing: 12,
                     childAspectRatio: 1.1,
                   ),
-                  itemCount: kats.length,
-                  itemBuilder: (context, i) {
-                    final kat = kats[i];
-                    final ad = kat['ad'] as String;
-                    final ikonKod = kat['ikon'] as int?;
-                    final renkKod = kat['renk'] as int?;
-                    
-                    return InkWell(
-                      onTap: () => _esnafListesiAc(context, ad),
-                      borderRadius: BorderRadius.circular(15),
-                      child: Card(
-                        elevation: 4,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                        color: _getKategoriRenk(ad, renkKod),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(_getKategoriIkon(ad, ikonKod), size: 45, color: Colors.white),
-                            const SizedBox(height: 10),
-                            Text(
-                              ad,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
+                  delegate: SliverChildBuilderDelegate(
+                    (context, i) {
+                      final kat = kats[i];
+                      final ad = kat['ad'] as String;
+                      final ikonKod = kat['ikon'] as int?;
+                      final renkKod = kat['renk'] as int?;
+                      
+                      return InkWell(
+                        onTap: () => _esnafListesiAc(context, ad),
+                        borderRadius: BorderRadius.circular(15),
+                        child: Card(
+                          elevation: 4,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                          color: _getKategoriRenk(ad, renkKod),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              _buildKategoriIcon(ad, ikonKod),
+                              const SizedBox(height: 10),
+                              Text(
+                                ad,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
-                    );
-                  },
-                );
-              }
-            ),
+                      );
+                    },
+                    childCount: kats.length,
+                  ),
+                ),
+              );
+            }
           ),
         ],
       ),
