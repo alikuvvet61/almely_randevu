@@ -7,13 +7,13 @@ import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../modeller/esnaf_modeli.dart';
-import '../servisler/firestore_servisi.dart';
-import '../servisler/konum_servisi.dart';
-import '../servisler/bildirim_servisi.dart';
-import '../widgets/ana_buton.dart';
-import 'randevu_ekrani.dart';
-import 'tum_yorumlar_ekrani.dart';
+import 'package:almely_randevu/modeller/esnaf_modeli.dart';
+import 'package:almely_randevu/servisler/firestore_servisi.dart';
+import 'package:almely_randevu/servisler/konum_servisi.dart';
+import 'package:almely_randevu/servisler/bildirim_servisi.dart';
+import 'package:almely_randevu/widgets/ana_buton.dart';
+import 'package:almely_randevu/ekranlar/randevu_ekrani.dart';
+import 'package:almely_randevu/ekranlar/tum_yorumlar_ekrani.dart';
 
 class EsnafDetayEkrani extends StatefulWidget {
   final EsnafModeli esnaf;
@@ -81,7 +81,23 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
   Future<void> _aramaYap(String tel) async {
     final Uri url = Uri.parse('tel:$tel');
     if (await canLaunchUrl(url)) {
-      await launchUrl(url);
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  Future<void> _whatsappAc(String tel) async {
+    String formattedTel = tel.replaceAll(RegExp(r'[^0-9]'), '');
+    if (formattedTel.startsWith('0')) formattedTel = formattedTel.substring(1);
+    if (!formattedTel.startsWith('90')) formattedTel = '90$formattedTel';
+    
+    final Uri url = Uri.parse("whatsapp://send?phone=$formattedTel");
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+    } else {
+      final Uri webUrl = Uri.parse("https://wa.me/$formattedTel");
+      if (await canLaunchUrl(webUrl)) {
+        await launchUrl(webUrl, mode: LaunchMode.externalApplication);
+      }
     }
   }
 
@@ -113,7 +129,7 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
     bool acik = _suAnAcikMi();
     if (!acik) return _rozet("Şu An Kapalı", Colors.red);
     if (isTaksi) {
-      int duraktakiAracSayisi = _guncelEsnaf.araclar?.where((a) => a['durakta'] == true).length ?? 0;
+      int duraktakiAracSayisi = _guncelEsnaf.araclar?.where((a) => a['durakta'] == true && a['durum'] != 'İstirahatte').length ?? 0;
       if (duraktakiAracSayisi > 0) {
         return _rozet("Müsait", Colors.green);
       } else {
@@ -247,9 +263,9 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
                       ],
                     ),
                   ),
-                  if (_guncelEsnaf.araclar != null && _guncelEsnaf.araclar!.isNotEmpty) ...[
+                  if ((_guncelEsnaf.araclar != null && _guncelEsnaf.araclar!.isNotEmpty) && (_guncelEsnaf.kategori == 'Taksi' || _guncelEsnaf.aracOdakliSistem)) ...[
                     const SizedBox(height: 25),
-                    const Text("Aktif Araç Filosu", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    Text(_guncelEsnaf.aracOdakliSistem ? "Bugün Çalışan Araçlarımız" : "Personel Listesi", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 10),
                     Stack(
                       alignment: Alignment.center,
@@ -257,8 +273,20 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
                         SizedBox(
                           height: 100,
                           child: Builder(builder: (context) {
-                            final duraktakiAraclar = _guncelEsnaf.araclar!.where((a) => a['durakta'] == true).toList();
-                            final digerAraclar = _guncelEsnaf.araclar!.where((a) => a['durakta'] != true).toList();
+                            final duraktakiAraclar = _guncelEsnaf.araclar!
+                                .where((a) {
+                                  bool istirahatli = a['durum'] == 'İstirahatte';
+                                  if (_guncelEsnaf.istirahatliAraclariGizle && istirahatli) return false;
+                                  return a['durakta'] == true;
+                                })
+                                .toList();
+                            final digerAraclar = _guncelEsnaf.araclar!
+                                .where((a) {
+                                  bool istirahatli = a['durum'] == 'İstirahatte';
+                                  if (_guncelEsnaf.istirahatliAraclariGizle && istirahatli) return false;
+                                  return a['durakta'] != true;
+                                })
+                                .toList();
                             duraktakiAraclar.sort((a, b) {
                               int t1 = a['siraZamani'] ?? 0;
                               int t2 = b['siraZamani'] ?? 0;
@@ -298,7 +326,7 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
                                         ],
                                       ),
                                       const SizedBox(height: 4),
-                                      Text(arac['soforAd'] ?? arac['sofor'] ?? "Şoför belirtilmemiş", style: const TextStyle(color: Colors.white70, fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis),
+                                      Text(arac['soforAd'] ?? arac['sofor'] ?? (_guncelEsnaf.aracOdakliSistem ? "Şoför belirtilmemiş" : "Personel belirtilmemiş"), style: const TextStyle(color: Colors.white70, fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis),
                                       const Spacer(),
                                       if (durakta)
                                         Row(
@@ -306,7 +334,7 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
                                           children: [
                                             const Icon(Icons.circle, size: 6, color: Colors.greenAccent),
                                             const SizedBox(width: 4),
-                                            Flexible(child: Text(siraNo == 1 ? "Sıradaki Araç" : "$siraNo. Sırada", style: const TextStyle(color: Colors.greenAccent, fontSize: 9, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis)),
+                                            Flexible(child: Text(siraNo == 1 ? (_guncelEsnaf.aracOdakliSistem ? "Sıradaki Araç" : "Sıradaki Personel") : "$siraNo. Sırada", style: const TextStyle(color: Colors.greenAccent, fontSize: 9, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis)),
                                           ],
                                         )
                                       else
@@ -358,20 +386,20 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
                       ],
                     ),
                   ],
-                  if (_guncelEsnaf.kanallar != null && _guncelEsnaf.kanallar!.isNotEmpty) ...[
+                  if (_guncelEsnaf.kategori != 'Taksi' && _guncelEsnaf.kanallar != null && _guncelEsnaf.kanallar!.isNotEmpty) ...[
                     const SizedBox(height: 25),
-                    const Text("Randevu ve İletişim Kanalları", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    const Text("Kullanılabilir Randevu Alanları", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 10),
                     Wrap(
                       spacing: 10,
                       runSpacing: 10,
                       children: _guncelEsnaf.kanallar!.map((kanal) => Container(
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        decoration: BoxDecoration(color: Colors.green.shade50, borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.green.shade200)),
+                        decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.blue.shade200)),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.check_circle, size: 16, color: Colors.green),
+                            const Icon(Icons.check_circle, size: 16, color: Colors.blue),
                             const SizedBox(width: 8),
                             Text(kanal.toString(), style: const TextStyle(fontWeight: FontWeight.w600)),
                           ],
@@ -380,15 +408,61 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
                     ),
                   ],
                   const SizedBox(height: 20),
-                  const Text("İletişim", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  const Text("İletişim ve Hızlı Randevu", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 10),
                   ListTile(
                     contentPadding: EdgeInsets.zero,
                     leading: const Icon(Icons.phone_android, color: Colors.green),
                     title: Text(_guncelEsnaf.telefon),
-                    subtitle: const Text("Randevu için arayabilirsiniz"),
-                    trailing: ElevatedButton(onPressed: () => _aramaYap(_guncelEsnaf.telefon), child: const Text("Ara")),
+                    subtitle: const Text("İşletme İletişim Hattı"),
+                    trailing: ElevatedButton.icon(
+                      onPressed: () => _aramaYap(_guncelEsnaf.telefon),
+                      icon: const Icon(Icons.phone, size: 18),
+                      label: const Text("Ara"),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green.shade50,
+                        foregroundColor: Colors.green.shade700,
+                        elevation: 0,
+                        side: BorderSide(color: Colors.green.shade200),
+                      ),
+                    ),
                   ),
+                  if (_guncelEsnaf.whatsapp != null && _guncelEsnaf.whatsapp!.isNotEmpty)
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.chat_bubble_outline, color: Colors.green),
+                      title: Text(_guncelEsnaf.whatsapp!),
+                      subtitle: const Text("WhatsApp üzerinden yazabilirsiniz"),
+                      trailing: ElevatedButton.icon(
+                        onPressed: () => _whatsappAc(_guncelEsnaf.whatsapp!),
+                        icon: const Icon(Icons.chat_bubble_outline, size: 18),
+                        label: const Text("WhatsApp"),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green.shade50,
+                          foregroundColor: Colors.green.shade700,
+                          elevation: 0,
+                          side: BorderSide(color: Colors.green.shade200),
+                        ),
+                      ),
+                    ),
+                  if (_guncelEsnaf.telefonRandevu != null && _guncelEsnaf.telefonRandevu!.isNotEmpty)
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.phone_callback, color: Colors.orange),
+                      title: Text(_guncelEsnaf.telefonRandevu!),
+                      subtitle: const Text("Telefonla randevu alabilirsiniz"),
+                      trailing: ElevatedButton.icon(
+                        onPressed: () => _aramaYap(_guncelEsnaf.telefonRandevu!),
+                        icon: const Icon(Icons.phone_callback, size: 18),
+                        label: const Text("Ara"),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.orange.shade50,
+                          foregroundColor: Colors.orange.shade700,
+                          elevation: 0,
+                          side: BorderSide(color: Colors.orange.shade200),
+                        ),
+                      ),
+                    ),
                   const Divider(height: 40),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -668,7 +742,10 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
     }
     List<Map<String, dynamic>> duraktakiAraclar = [];
     if (_guncelEsnaf.araclar != null) {
-      duraktakiAraclar = _guncelEsnaf.araclar!.where((a) => a['durakta'] == true).map((a) => Map<String, dynamic>.from(a as Map)).toList();
+      duraktakiAraclar = _guncelEsnaf.araclar!
+          .where((a) => a['durakta'] == true && a['durum'] != 'İstirahatte')
+          .map((a) => Map<String, dynamic>.from(a as Map))
+          .toList();
       duraktakiAraclar.sort((a, b) {
         // 1. siraZamani'na göre (en eski giren 1. olur)
         int t1 = a['siraZamani'] ?? 0;

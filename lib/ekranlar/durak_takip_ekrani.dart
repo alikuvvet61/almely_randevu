@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:intl/intl.dart';
 import '../modeller/esnaf_modeli.dart';
 
 class DurakTakipEkrani extends StatefulWidget {
@@ -16,21 +17,25 @@ class DurakTakipEkrani extends StatefulWidget {
 
 class _DurakTakipEkraniState extends State<DurakTakipEkrani> {
   List<Map<String, dynamic>> araclar = [];
+  Map<String, dynamic> gunlukAjanda = {};
   StreamSubscription? _aracSubscription;
+  StreamSubscription? _ajandaSubscription;
 
   @override
   void initState() {
     super.initState();
-    _araclariDinle();
+    _verileriDinle();
   }
 
   @override
   void dispose() {
     _aracSubscription?.cancel();
+    _ajandaSubscription?.cancel();
     super.dispose();
   }
 
-  void _araclariDinle() {
+  void _verileriDinle() {
+    // Araç listesini dinle
     _aracSubscription = FirebaseFirestore.instance
         .collection('esnaflar')
         .doc(widget.esnaf.id)
@@ -41,37 +46,62 @@ class _DurakTakipEkraniState extends State<DurakTakipEkrani> {
         if (data != null) {
           List<Map<String, dynamic>> hamListe = List<Map<String, dynamic>>.from(data['araclar'] ?? []);
           
-          // Kesin Sıralama Mantığı:
           hamListe.sort((a, b) {
-            // 1. Durakta olanları (true) en başa al
             bool aDurakta = a['durakta'] == true;
             bool bDurakta = b['durakta'] == true;
-
-            if (aDurakta != bDurakta) {
-              return aDurakta ? -1 : 1;
-            }
-
-            // 2. Her ikisi de duraktaysa, siraZamani'na göre (en eski giren 1. olur)
+            if (aDurakta != bDurakta) return aDurakta ? -1 : 1;
             if (aDurakta && bDurakta) {
               int aZaman = a['siraZamani'] ?? 0;
               int bZaman = b['siraZamani'] ?? 0;
               if (aZaman != bZaman) return aZaman.compareTo(bZaman);
             }
-            
-            // 3. Her ikisi de dışarıdaysa veya zamanlar eşitse plakaya göre
-            String aPlaka = a['plaka'] ?? "";
-            String bPlaka = b['plaka'] ?? "";
-            return aPlaka.compareTo(bPlaka);
+            return (a['plaka'] ?? "").compareTo(b['plaka'] ?? "");
           });
 
-          if (mounted) {
-            setState(() {
-              araclar = hamListe;
-            });
-          }
+          setState(() => araclar = hamListe);
         }
       }
     });
+
+    // Bugünün ajanda verisini dinle
+    String ayKey = DateFormat('yyyy-MM').format(DateTime.now());
+    String gunKey = DateFormat('yyyy-MM-dd').format(DateTime.now());
+
+    _ajandaSubscription = FirebaseFirestore.instance
+        .collection('esnaflar')
+        .doc(widget.esnaf.id)
+        .collection('taksi_ajanda')
+        .doc(ayKey)
+        .snapshots()
+        .listen((snapshot) {
+      if (snapshot.exists && mounted) {
+        setState(() {
+          gunlukAjanda = Map<String, dynamic>.from(snapshot.data()?[gunKey] ?? {});
+        });
+      }
+    });
+  }
+
+  String _getDurumEtiketi(Map<String, dynamic> arac) {
+    String plaka = arac['plaka'] ?? "";
+    String gunAdi = DateFormat('EEEE', 'tr_TR').format(DateTime.now());
+
+    // 1. Öncelik: Aylık Ajanda (Özel Gün Tanımı)
+    if (gunlukAjanda.containsKey(plaka)) {
+      String durum = gunlukAjanda[plaka];
+      if (durum == 'I') return "İSTİRAHAT";
+      if (durum == 'N') return "NÖBETÇİ";
+      return ""; // 'C' ise ekstra etiket gösterme
+    }
+
+    // 2. Öncelik: Haftalık Şablon
+    bool calisiyor = (arac['calismaGunleri'] ?? {})[gunAdi] ?? true;
+    if (!calisiyor) return "İSTİRAHAT";
+
+    bool nobetci = ((arac['nobetBilgileri'] ?? {})[gunAdi] ?? {})['nobetci'] ?? false;
+    if (nobetci) return "NÖBETÇİ";
+
+    return "";
   }
 
   Future<void> _kaydet() async {
@@ -111,6 +141,7 @@ class _DurakTakipEkraniState extends State<DurakTakipEkrani> {
                     bool durakta = arac['durakta'] ?? false;
                     String durum = arac['durum'] ?? 'Müsait';
                     bool kendiAraci = _isSofor && arac['soforTel'] == widget.soforTel;
+                    String ajandaEtiketi = _getDurumEtiketi(arac);
 
                     Color durumRengi = Colors.green;
                     IconData durumIkonu = Icons.local_taxi;
@@ -121,6 +152,9 @@ class _DurakTakipEkraniState extends State<DurakTakipEkrani> {
                     } else if (durum == 'Mola') {
                       durumRengi = Colors.orange;
                       durumIkonu = Icons.coffee_rounded;
+                    } else if (durum == 'İstirahatte') {
+                      durumRengi = Colors.grey;
+                      durumIkonu = Icons.hotel_rounded;
                     }
 
                     int siraNo = 0;
@@ -165,6 +199,24 @@ class _DurakTakipEkraniState extends State<DurakTakipEkrani> {
                                   decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(4)),
                                   child: const Text("Siz", style: TextStyle(fontSize: 9, color: Colors.blue, fontWeight: FontWeight.bold)),
                                 ),
+                              if (ajandaEtiketi.isNotEmpty)
+                                Container(
+                                  margin: const EdgeInsets.only(left: 4),
+                                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: ajandaEtiketi == "NÖBETÇİ" ? Colors.indigo.shade50 : Colors.red.shade50,
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(color: ajandaEtiketi == "NÖBETÇİ" ? Colors.indigo.shade200 : Colors.red.shade200),
+                                  ),
+                                  child: Text(
+                                    ajandaEtiketi,
+                                    style: TextStyle(
+                                      fontSize: 9, 
+                                      color: ajandaEtiketi == "NÖBETÇİ" ? Colors.indigo : Colors.red, 
+                                      fontWeight: FontWeight.bold
+                                    ),
+                                  ),
+                                ),
                             ],
                           ),
                           subtitle: Text(
@@ -177,33 +229,41 @@ class _DurakTakipEkraniState extends State<DurakTakipEkrani> {
                               ? Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    SizedBox(
-                                      height: 32,
-                                      child: ElevatedButton(
-                                        onPressed: () => _sirayaGirCik(idx, durakta),
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: durakta ? Colors.orange.shade50 : Colors.green.shade50,
-                                          foregroundColor: durakta ? Colors.orange : Colors.green,
-                                          elevation: 0,
-                                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                                        ),
-                                        child: Text(
-                                          kendiAraci
-                                              ? (durakta ? "Sıradan Çık" : "Sıraya Gir")
-                                              : (durakta ? "Sıradan Çıkar" : "Sıraya Al"),
-                                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                    if (durakta || durum != 'İstirahatte')
+                                      SizedBox(
+                                        height: 32,
+                                        child: ElevatedButton(
+                                          onPressed: () => _sirayaGirCik(idx, durakta),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: durakta ? Colors.orange.shade50 : Colors.green.shade50,
+                                            foregroundColor: durakta ? Colors.orange : Colors.green,
+                                            elevation: 0,
+                                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                                          ),
+                                          child: Text(
+                                            kendiAraci
+                                                ? (durakta ? "Sıradan Çık" : "Sıraya Gir")
+                                                : (durakta ? "Sıradan Çıkar" : "Sıraya Al"),
+                                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                          ),
                                         ),
                                       ),
-                                    ),
                                     PopupMenuButton<String>(
                                       onSelected: (String yeniDurum) async {
-                                        setState(() => araclar[idx]['durum'] = yeniDurum);
+                                        setState(() {
+                                          araclar[idx]['durum'] = yeniDurum;
+                                          // İstirahat seçilirse sıradan çıkar
+                                          if (yeniDurum == 'İstirahatte') {
+                                            araclar[idx]['durakta'] = false;
+                                          }
+                                        });
                                         await _kaydet();
                                       },
                                       itemBuilder: (context) => [
                                         const PopupMenuItem(value: 'Müsait', child: Text("Müsait")),
                                         const PopupMenuItem(value: 'Meşgul', child: Text("Meşgul")),
                                         const PopupMenuItem(value: 'Mola', child: Text("Mola")),
+                                        const PopupMenuItem(value: 'İstirahatte', child: Text("İstirahatte")),
                                       ],
                                     ),
                                   ],
@@ -225,6 +285,14 @@ class _DurakTakipEkraniState extends State<DurakTakipEkrani> {
 
   Future<void> _sirayaGirCik(int idx, bool durakta) async {
     if (!durakta) {
+      if (araclar[idx]['durum'] == 'İstirahatte') {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("İstirahatte olan araç sıraya giremez."), backgroundColor: Colors.red),
+          );
+        }
+        return;
+      }
       try {
         var esDoc = await FirebaseFirestore.instance.collection('esnaflar').doc(widget.esnaf.id).get();
         GeoPoint guncelDurakKonumu = widget.esnaf.konum;

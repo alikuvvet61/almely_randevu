@@ -55,66 +55,99 @@ class _EsnafParametreEkraniState extends State<EsnafParametreEkrani> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _parametreKart(
-            baslik: "Randevu Onay Modu",
-            altBaslik: "Yeni gelen randevular otomatik mi onaylansın yoksa siz mi onaylayacaksınız?",
-            icerik: DropdownButtonFormField<String>(
-              initialValue: _esnaf!.randevuOnayModu.isEmpty ? 'Manuel' : _esnaf!.randevuOnayModu,
-              decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
-              items: const [
-                DropdownMenuItem(value: 'Manuel', child: Text("Manuel (Ben onaylayacağım)")),
-                DropdownMenuItem(value: 'Otomatik', child: Text("Otomatik (Anında onaylansın)")),
-              ],
-              onChanged: (v) {
-                if (v != null) {
-                  _guncelle({'randevuOnayModu': v});
-                }
-              },
+          if (_esnaf!.kategori != 'Taksi') ...[
+            _parametreKart(
+              baslik: "Randevu Onay Modu",
+              altBaslik: "Yeni gelen randevular otomatik mi onaylansın yoksa siz mi onaylayacaksınız?",
+              icerik: DropdownButtonFormField<String>(
+                key: ValueKey(_esnaf!.randevuOnayModu),
+                initialValue: _esnaf!.randevuOnayModu.isEmpty ? 'Manuel' : _esnaf!.randevuOnayModu,
+                decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
+                items: const [
+                  DropdownMenuItem(value: 'Manuel', child: Text("Manuel (Ben onaylayacağım)")),
+                  DropdownMenuItem(value: 'Otomatik', child: Text("Otomatik (Anında onaylansın)")),
+                ],
+                onChanged: (v) {
+                  if (v != null) {
+                    _guncelle({'randevuOnayModu': v});
+                  }
+                },
+              ),
             ),
-          ),
-          const SizedBox(height: 15),
-          _parametreKart(
-            baslik: "Aynı Gün Randevu Engelleme",
-            altBaslik: "Bir müşteri aynı gün içerisinde sadece 1 randevu alabilsin mi?",
-            icerik: SwitchListTile(
-              title: const Text("Aktif Et", style: TextStyle(fontSize: 14)),
-              value: _esnaf!.ayniGunRandevuEngelle,
-              onChanged: (v) => _guncelle({'ayniGunRandevuEngelle': v}),
+            const SizedBox(height: 15),
+            _parametreKart(
+              baslik: "Aynı Gün Randevu Engelleme",
+              altBaslik: "Bir müşteri aynı gün içerisinde sadece 1 randevu alabilsin mi?",
+              icerik: SwitchListTile(
+                title: const Text("Aktif Et", style: TextStyle(fontSize: 14)),
+                value: _esnaf!.ayniGunRandevuEngelle,
+                onChanged: (v) => _guncelle({'ayniGunRandevuEngelle': v}),
+              ),
             ),
-          ),
-          const SizedBox(height: 15),
-          _parametreKart(
-            baslik: "Slot Görünüm Modu",
-            altBaslik: "Randevu saatleri '10:00' yerine '10:00 - 11:00' şeklinde mi görünsün? (Örn: Halı Sahalar için)",
-            icerik: SwitchListTile(
-              title: const Text("Aralıklı Göster", style: TextStyle(fontSize: 14)),
-              value: _esnaf!.slotAralikliGoster,
-              onChanged: (v) => _guncelle({'slotAralikliGoster': v}),
+            const SizedBox(height: 15),
+            _parametreKart(
+              baslik: "Slot Görünüm Modu",
+              altBaslik: "Randevu saatleri '10:00' yerine '10:00 - 11:00' şeklinde mi görünsün? (Örn: Halı Sahalar için)",
+              icerik: SwitchListTile(
+                title: const Text("Aralıklı Göster", style: TextStyle(fontSize: 14)),
+                value: _esnaf!.slotAralikliGoster,
+                onChanged: (v) => _guncelle({'slotAralikliGoster': v}),
+              ),
             ),
-          ),
-          const SizedBox(height: 15),
-          _parametreKart(
-            baslik: "Personel Odaklı Randevu Sistemi",
-            altBaslik: "Müşteri kanal/saha yerine personeli seçsin. Randevu personelin bağlı olduğu kanala/sahaya alınır. Bu seçenek açıldığında personel seçimi zorunlu olur.",
-            icerik: SwitchListTile(
-              title: const Text("Personel Adına Alınsın", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-              value: _esnaf!.randevularPersonelAdinaAlinsin,
-              onChanged: (v) async {
-                // Yerel durumu hemen güncelle ki UI tepki versin
-                setState(() {
-                  _esnaf = _esnaf!.copyWith(
-                    randevularPersonelAdinaAlinsin: v,
-                    personelSecimiZorunlu: v,
-                  );
-                });
-                // Firestore'u güncelle
-                await _guncelle({
-                  'randevularPersonelAdinaAlinsin': v,
-                  'personelSecimiZorunlu': v,
-                });
-              },
+            const SizedBox(height: 15),
+          ],
+          if (_esnaf!.kategori == 'Taksi') ...[
+            _parametreKart(
+              baslik: "Araç Odaklı Sistem",
+              altBaslik: "Randevular doğrudan araç (plaka) adına alınsın.",
+              icerik: SwitchListTile(
+                title: const Text("Araç Adına Alınsın", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                value: _esnaf!.aracOdakliSistem,
+                onChanged: (v) async {
+                  setState(() {
+                    _esnaf = _esnaf!.copyWith(aracOdakliSistem: v);
+                  });
+                  await _guncelle({'aracOdakliSistem': v});
+                },
+              ),
             ),
-          ),
+            const SizedBox(height: 15),
+            _parametreKart(
+              baslik: "Canlı Durak ekranında durumu 'İstirahatte' olan araçları Müşteriler göremesin",
+              altBaslik: "Durumu 'İstirahatte' olan araçlar 'Bugün Çalışan Araçlarımız' listesinde görünmesin.",
+              icerik: SwitchListTile(
+                title: const Text("Listede Gizle", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                value: _esnaf!.istirahatliAraclariGizle,
+                onChanged: (v) async {
+                  setState(() {
+                    _esnaf = _esnaf!.copyWith(istirahatliAraclariGizle: v);
+                  });
+                  await _guncelle({'istirahatliAraclariGizle': v});
+                },
+              ),
+            ),
+          ],
+          if (_esnaf!.kategori != 'Taksi')
+            _parametreKart(
+              baslik: "Personel Odaklı Randevu Sistemi",
+              altBaslik: "Müşteri kanal/saha yerine personeli seçsin. Randevu personelin bağlı olduğu kanala/sahaya alınır. Bu seçenek açıldığında personel seçimi zorunlu olur.",
+              icerik: SwitchListTile(
+                title: const Text("Personel Adına Alınsın", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                value: _esnaf!.randevularPersonelAdinaAlinsin,
+                onChanged: (v) async {
+                  setState(() {
+                    _esnaf = _esnaf!.copyWith(
+                      randevularPersonelAdinaAlinsin: v,
+                      personelSecimiZorunlu: v,
+                    );
+                  });
+                  await _guncelle({
+                    'randevularPersonelAdinaAlinsin': v,
+                    'personelSecimiZorunlu': v,
+                  });
+                },
+              ),
+            ),
         ],
       ),
     );

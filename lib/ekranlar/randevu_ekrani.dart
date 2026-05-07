@@ -34,7 +34,9 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
 
   List<RandevuModeli> _sonRandevular = [];
   Map<String, dynamic>? _gununAjandaVerisi;
+  Map<String, dynamic>? _taksiAjandaVerisi;
   StreamSubscription? _ajandaSub;
+  StreamSubscription? _taksiAjandaSub;
   StreamSubscription? _randevularSub;
 
   late Stream<EsnafModeli> _esnafStream;
@@ -44,11 +46,18 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
     super.initState();
     _esnafStream = _firestoreServisi.esnafGetir(widget.esnaf.id);
 
-    // Otomatik personel/kanal seçimi (Tek seçenek varsa)
-    if (widget.esnaf.randevularPersonelAdinaAlinsin && (widget.esnaf.personeller?.length ?? 0) == 1) {
-      final p = widget.esnaf.personeller!.first;
-      _seciliPersonelNotifier.value = p['isim']?.toString();
-      _seciliKanalNotifier.value = p['kanal']?.toString();
+    // Otomatik personel/kanal/araç seçimi (Tek seçenek varsa)
+    if (widget.esnaf.aracOdakliSistem && widget.esnaf.kategori == 'Taksi') {
+      if ((widget.esnaf.araclar?.length ?? 0) == 1) {
+        final a = widget.esnaf.araclar!.first;
+        _seciliKanalNotifier.value = a['plaka']?.toString();
+      }
+    } else if (widget.esnaf.randevularPersonelAdinaAlinsin) {
+      if ((widget.esnaf.personeller?.length ?? 0) == 1) {
+        final p = widget.esnaf.personeller!.first;
+        _seciliPersonelNotifier.value = p['isim']?.toString();
+        _seciliKanalNotifier.value = p['kanal']?.toString();
+      }
     } else if (widget.esnaf.kanallar != null && widget.esnaf.kanallar!.isNotEmpty) {
       if (widget.esnaf.kanallar!.length == 1) {
         _seciliKanalNotifier.value = widget.esnaf.kanallar!.first.toString();
@@ -60,6 +69,8 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
     if (widget.kullaniciTel != null) {
       _telController.text = widget.kullaniciTel!;
     }
+
+    _seciliKanalNotifier.addListener(_updateStreams);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _otomatikTarihSec(widget.esnaf);
@@ -83,6 +94,7 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
     final kanal = _seciliKanalNotifier.value;
     if (tarih != null) {
       _ajandaSub?.cancel();
+      _taksiAjandaSub?.cancel();
       _randevularSub?.cancel();
 
       _ajandaSub = _firestoreServisi.gunlukAjandaSnapStream(widget.esnaf.id, tarih, kanal).listen((snap) {
@@ -91,26 +103,34 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
             setState(() {
               _gununAjandaVerisi = snap.data() as Map<String, dynamic>?;
             });
-          } else if (kanal != null && kanal.isNotEmpty) {
+          } else {
             // EĞER KANALA ÖZEL AJANDA YOKSA GENEL AJANDAYA BAK (FALLBACK)
             _firestoreServisi.gunlukAjandaSnapStream(widget.esnaf.id, tarih, null).first.then((genelSnap) {
-              if (mounted && genelSnap.exists) {
-                setState(() {
-                  _gununAjandaVerisi = genelSnap.data() as Map<String, dynamic>?;
-                });
-              } else if (mounted) {
-                setState(() {
-                  _gununAjandaVerisi = null;
-                });
+              if (mounted) {
+                if (genelSnap.exists) {
+                  setState(() {
+                    _gununAjandaVerisi = genelSnap.data() as Map<String, dynamic>?;
+                  });
+                } else {
+                  setState(() {
+                    _gununAjandaVerisi = null;
+                  });
+                }
               }
-            });
-          } else {
-            setState(() {
-              _gununAjandaVerisi = null;
             });
           }
         }
       });
+
+      if (widget.esnaf.kategori == 'Taksi') {
+        _taksiAjandaSub = _firestoreServisi.taksiAjandasiSnapStream(widget.esnaf.id, tarih).listen((snap) {
+          if (mounted) {
+            setState(() {
+              _taksiAjandaVerisi = snap.data() as Map<String, dynamic>?;
+            });
+          }
+        });
+      }
 
       _randevularSub = _firestoreServisi.randevulariGetir(widget.esnaf.id, tarih).listen((list) {
         if (mounted) {
@@ -162,10 +182,14 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
           .get();
 
       List<String> docIds = [];
+      Set<String> taksiAyKeys = {};
       for (var tarih in taranacakTarihler) {
         String tarihStr = DateFormat('yyyy-MM-dd').format(tarih);
         String k = (seciliKanal != null && seciliKanal.trim().isNotEmpty) ? seciliKanal.trim() : "";
         docIds.add(k.isNotEmpty ? "${tarihStr}_$k" : tarihStr);
+        if (esnaf.kategori == 'Taksi') {
+          taksiAyKeys.add(DateFormat('yyyy-MM').format(tarih));
+        }
       }
 
       final ajandaSnaplerFuture = FirebaseFirestore.instance.collection('esnaflar')
@@ -173,13 +197,23 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
           .where(FieldPath.documentId, whereIn: docIds)
           .get();
 
+      Future<QuerySnapshot?> taksiAjandaSnaplerFuture = Future.value(null);
+      if (taksiAyKeys.isNotEmpty) {
+        taksiAjandaSnaplerFuture = FirebaseFirestore.instance.collection('esnaflar')
+            .doc(esnaf.id).collection('taksi_ajanda')
+            .where(FieldPath.documentId, whereIn: taksiAyKeys.toList())
+            .get();
+      }
+
       final results = await Future.wait([
         randevularSnapFuture.timeout(const Duration(seconds: 20)),
-        ajandaSnaplerFuture.timeout(const Duration(seconds: 20))
+        ajandaSnaplerFuture.timeout(const Duration(seconds: 20)),
+        taksiAjandaSnaplerFuture.timeout(const Duration(seconds: 20)),
       ]);
 
       final randevularSnap = results[0] as QuerySnapshot;
       final ajandaSnapler = results[1] as QuerySnapshot;
+      final taksiAjandaSnapler = results[2];
 
       final tumBlokRandevulari = randevularSnap.docs
           .map((doc) => RandevuModeli.fromFirestore(doc))
@@ -189,6 +223,13 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
       Map<String, Map<String, dynamic>> ajandaHaritasi = {};
       for (var doc in ajandaSnapler.docs) {
         ajandaHaritasi[doc.id] = doc.data() as Map<String, dynamic>;
+      }
+
+      Map<String, dynamic> tumTaksiAjandaVerisi = {};
+      if (taksiAjandaSnapler != null) {
+        for (var doc in taksiAjandaSnapler.docs) {
+          tumTaksiAjandaVerisi.addAll(doc.data() as Map<String, dynamic>);
+        }
       }
 
       for (var tarih in taranacakTarihler) {
@@ -206,7 +247,7 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
         final slotlar = _slotlariUret(esnaf, ajandaVerisi);
 
         for (var s in slotlar) {
-          if (_saatMusaitMi(esnaf, s, gununRandevulari, toplamSure, ajandaVerisi: ajandaVerisi, hedefTarih: tarih)) {
+          if (_saatMusaitMi(esnaf, s, gununRandevulari, toplamSure, ajandaVerisi: ajandaVerisi, hedefTarih: tarih, hariciTaksiAjandasi: tumTaksiAjandaVerisi)) {
             if (mounted) {
               _seciliTarihNotifier.value = tarih;
               _updateStreams();
@@ -230,7 +271,9 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
 
   @override
   void dispose() {
+    _seciliKanalNotifier.removeListener(_updateStreams);
     _ajandaSub?.cancel();
+    _taksiAjandaSub?.cancel();
     _randevularSub?.cancel();
     _adController.dispose();
     _telController.dispose();
@@ -323,7 +366,29 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
     return slotlar;
   }
 
-  String? _saatNedenKapali(EsnafModeli esnaf, String slot, List<RandevuModeli> randevular, int hizmetSuresi, {Map<String, dynamic>? ajandaVerisi, DateTime? hedefTarih}) {
+  String? _saatNedenKapali(EsnafModeli esnaf, String slot, List<RandevuModeli> randevular, int hizmetSuresi, {Map<String, dynamic>? ajandaVerisi, DateTime? hedefTarih, Map<String, dynamic>? hariciTaksiAjandasi}) {
+    final tarih = hedefTarih ?? _seciliTarihNotifier.value;
+    final kanal = _seciliKanalNotifier.value;
+
+    // TAKSİ ÖZEL KONTROLÜ
+    if (esnaf.kategori == 'Taksi' && tarih != null && kanal != null && kanal.isNotEmpty) {
+      String tarihKey = DateFormat('yyyy-MM-dd').format(tarih);
+      final taksiVerisi = hariciTaksiAjandasi ?? _taksiAjandaVerisi;
+      var gunlukVeri = taksiVerisi?[tarihKey] as Map<String, dynamic>?;
+      if (gunlukVeri != null && gunlukVeri.containsKey(kanal)) {
+        String durum = gunlukVeri[kanal];
+        if (durum == 'I') return "İstirahatte";
+      } else {
+        // Ajanda kaydı yoksa şablona bak
+        var arac = (esnaf.araclar ?? []).firstWhere((a) => a['plaka'] == kanal, orElse: () => null);
+        if (arac != null) {
+          String gunAdi = DateFormat('EEEE', 'tr_TR').format(tarih);
+          bool calisiyor = (arac['calismaGunleri'] ?? {})[gunAdi] ?? true;
+          if (!calisiyor) return "İstirahatte";
+        }
+      }
+    }
+
     final calisma = ajandaVerisi ?? esnaf.calismaSaatleri;
     if (calisma == null) return "Çalışma saati yok";
 
@@ -368,13 +433,11 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
     if (kMin <= acilisDakika || kapanis == "00:00" || kapanis == "24:00") kMin += 1440;
     if (sBitis > kMin) return "";
 
-    final tarih = hedefTarih ?? _seciliTarihNotifier.value;
     if (tarih != null && tarih.day == DateTime.now().day && tarih.month == DateTime.now().month && tarih.year == DateTime.now().year) {
       int simdiDakika = DateTime.now().hour * 60 + DateTime.now().minute;
       if (sBaslangic <= simdiDakika) return "Geçmiş saat";
     }
 
-    final kanal = _seciliKanalNotifier.value;
     for (var r in randevular) {
       if (kanal != null && kanal.isNotEmpty && r.randevuKanali != kanal) continue;
 
@@ -396,8 +459,8 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
     return null;
   }
 
-  bool _saatMusaitMi(EsnafModeli esnaf, String slot, List<RandevuModeli> randevular, int hizmetSuresi, {Map<String, dynamic>? ajandaVerisi, DateTime? hedefTarih}) {
-    return _saatNedenKapali(esnaf, slot, randevular, hizmetSuresi, ajandaVerisi: ajandaVerisi, hedefTarih: hedefTarih) == null;
+  bool _saatMusaitMi(EsnafModeli esnaf, String slot, List<RandevuModeli> randevular, int hizmetSuresi, {Map<String, dynamic>? ajandaVerisi, DateTime? hedefTarih, Map<String, dynamic>? hariciTaksiAjandasi}) {
+    return _saatNedenKapali(esnaf, slot, randevular, hizmetSuresi, ajandaVerisi: ajandaVerisi, hedefTarih: hedefTarih, hariciTaksiAjandasi: hariciTaksiAjandasi) == null;
   }
 
   Future<void> _randevuKaydet(EsnafModeli esnaf, Map<String, dynamic>? ajanda) async {
@@ -421,6 +484,9 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
 
     String durm = esnaf.randevuOnayModu == 'Otomatik' ? 'Onaylandı' : 'Onay bekliyor';
 
+    final isTaksi = esnaf.kategori == 'Taksi';
+    final aracModu = isTaksi && esnaf.aracOdakliSistem;
+
     final yeniRandevu = RandevuModeli(
       id: '',
       esnafId: esnaf.id,
@@ -433,7 +499,7 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
       sure: toplamSure,
       hizmetAdi: hizmetler.map((h) => h['isim']).join(' + '),
       randevuKanali: kanal,
-      calisanPersonel: personel,
+      calisanPersonel: aracModu ? null : personel,
       durum: durm,
     );
 
@@ -628,17 +694,19 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                       builder: (context, seciliHizmetler, _) {
                         if (seciliHizmetler.isEmpty) return const SliverToBoxAdapter(child: SizedBox.shrink());
 
-                        bool personelModu = esnaf.randevularPersonelAdinaAlinsin;
-                        bool kanalSecilmeli = !personelModu && (esnaf.kanallar?.length ?? 0) > 1;
+                        bool isTaksi = esnaf.kategori == 'Taksi';
+                        bool aracModu = isTaksi && esnaf.aracOdakliSistem;
+                        bool personelModu = !aracModu && esnaf.randevularPersonelAdinaAlinsin;
+                        bool kanalSecilmeli = !personelModu && !aracModu && (esnaf.kanallar?.length ?? 0) > 1;
 
                         return SliverMainAxisGroup(
                           slivers: [
-                            // Adım 2: Personel / Bölüm Seçimi
+                            // Adım 2: Personel / Araç / Bölüm Seçimi
                             SliverList(
                               delegate: SliverChildListDelegate([
-                                if (personelModu || kanalSecilmeli) ...[
-                                  _adimBasligi("2", personelModu ? "Personel Seçin" : "Bölüm / Masa Seçin"),
-                                  if (personelModu)
+                                if (aracModu || personelModu || kanalSecilmeli) ...[
+                                  _adimBasligi("2", aracModu ? "Araç Seçimi" : (personelModu ? "Personel Seçimi" : "Bölüm / Masa Seçimi")),
+                                  if (aracModu || personelModu)
                                     _personelSeciciWidget(esnaf)
                                   else
                                     _kanalSeciciWidget(esnaf),
@@ -650,11 +718,11 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                               ]),
                             ),
 
-                            // Adım 3: Tarih Seçimi (Personel/Kanal seçimine bağlı)
+                            // Adım 3: Tarih Seçimi (Personel/Kanal/Araç seçimine bağlı)
                             ValueListenableBuilder<String?>(
-                              valueListenable: personelModu ? _seciliPersonelNotifier : _seciliKanalNotifier,
+                              valueListenable: (aracModu || (isTaksi && personelModu)) ? _seciliKanalNotifier : (personelModu ? _seciliPersonelNotifier : _seciliKanalNotifier),
                               builder: (context, secim, _) {
-                                bool secimGerekiyor = personelModu || kanalSecilmeli;
+                                bool secimGerekiyor = aracModu || personelModu || kanalSecilmeli;
                                 if (secimGerekiyor && secim == null) return const SliverToBoxAdapter(child: SizedBox.shrink());
 
                                 return SliverMainAxisGroup(
@@ -816,7 +884,28 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
             valueListenable: _seciliTarihNotifier,
             builder: (context, seciliTarih, _) {
               List<DateTime> aktifTarihler = _getAktifTarihler(esnaf);
-              if (aktifTarihler.isEmpty) return const Center(child: Text("Müsait tarih yok."));
+              if (aktifTarihler.isEmpty) {
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(20.0),
+                    child: Column(
+                      children: [
+                        const Icon(Icons.calendar_today_outlined, size: 40, color: Colors.grey),
+                        const SizedBox(height: 10),
+                        const Text("Seçili kriterlere uygun müsait tarih bulunamadı.", 
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.grey)
+                        ),
+                        if (esnaf.kategori == 'Taksi' && kanal != null)
+                          const Padding(
+                            padding: EdgeInsets.only(top: 8.0),
+                            child: Text("(Araç istirahatte olabilir)", style: TextStyle(color: Colors.red, fontSize: 12, fontWeight: FontWeight.bold)),
+                          ),
+                      ],
+                    ),
+                  ),
+                );
+              }
               return SizedBox(
                 height: 80,
                 child: ListView.builder(
@@ -883,28 +972,37 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
   }
 
   Widget _personelSeciciWidget(EsnafModeli esnaf) {
+    final isTaksi = esnaf.kategori == 'Taksi';
+    final aracModu = isTaksi && esnaf.aracOdakliSistem;
+    final liste = (isTaksi && (aracModu || esnaf.randevularPersonelAdinaAlinsin)) ? (esnaf.araclar ?? []) : (esnaf.personeller ?? []);
+
     return ValueListenableBuilder<String?>(
-      valueListenable: _seciliPersonelNotifier,
-      builder: (context, seciliPersonel, _) {
+      valueListenable: (isTaksi && (aracModu || esnaf.randevularPersonelAdinaAlinsin)) ? _seciliKanalNotifier : _seciliPersonelNotifier,
+      builder: (context, secili, _) {
         return Wrap(
           spacing: 10,
-          children: (esnaf.personeller ?? []).map((p) {
-            String pIsim = p['isim'] ?? "";
-            String pKanal = p['kanal'] ?? "";
-            bool secili = seciliPersonel == pIsim;
+          children: liste.map((item) {
+            String isim = (isTaksi && (aracModu || esnaf.randevularPersonelAdinaAlinsin)) ? (item['plaka'] ?? "") : (item['isim'] ?? "");
+            String kanal = (isTaksi && (aracModu || esnaf.randevularPersonelAdinaAlinsin)) ? (item['plaka'] ?? "") : (item['kanal'] ?? "");
+            bool seciliMi = secili == ((isTaksi && (aracModu || esnaf.randevularPersonelAdinaAlinsin)) ? kanal : isim);
+
             return ChoiceChip(
               avatar: CircleAvatar(
-                backgroundColor: secili ? Colors.white24 : Colors.indigo.shade50,
-                child: Text(pIsim[0], style: TextStyle(fontSize: 10, color: secili ? Colors.white : Colors.indigo)),
+                backgroundColor: seciliMi ? Colors.white24 : Colors.indigo.shade50,
+                child: Text(isim.isNotEmpty ? isim[0] : "?", style: TextStyle(fontSize: 10, color: seciliMi ? Colors.white : Colors.indigo)),
               ),
-              label: Text(pIsim),
-              selected: secili,
+              label: Text(isim),
+              selected: seciliMi,
               selectedColor: Colors.indigo,
-              labelStyle: TextStyle(color: secili ? Colors.white : Colors.black87),
+              labelStyle: TextStyle(color: seciliMi ? Colors.white : Colors.black87),
               onSelected: (val) {
                 if (val) {
-                  _seciliPersonelNotifier.value = pIsim;
-                  _seciliKanalNotifier.value = pKanal;
+                  if (isTaksi && (aracModu || esnaf.randevularPersonelAdinaAlinsin)) {
+                    _seciliKanalNotifier.value = kanal;
+                  } else {
+                    _seciliPersonelNotifier.value = isim;
+                    _seciliKanalNotifier.value = kanal;
+                  }
                   _seciliSaatNotifier.value = null;
                   _otomatikTarihSec(esnaf);
                   _updateStreams();

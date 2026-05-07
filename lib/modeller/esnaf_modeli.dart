@@ -18,11 +18,15 @@ class EsnafModeli {
   final List<dynamic>? personeller; 
   final List<dynamic>? aktifGunler; 
   final List<dynamic>? araclar; // Taksi durağı araçları
+  final String? whatsapp; // WhatsApp hattı
+  final String? telefonRandevu; // Randevu için telefon hattı
   final String randevuOnayModu; // 'Otomatik' veya 'Manuel'
   final bool ayniGunRandevuEngelle; // Aynı gün birden fazla randevu engelleme
   final bool slotAralikliGoster; // Randevu saatlerini aralık (10:00-11:00) şeklinde göster
   final bool personelSecimiZorunlu; // Randevu alırken personel seçimi zorunlu mu?
   final bool randevularPersonelAdinaAlinsin; // Personel seçildiğinde personelin kanalı kullanılsın
+  final bool aracOdakliSistem; // Taksi için araç odaklı sistem (randevular plakaya alınır)
+  final bool istirahatliAraclariGizle; // İstirahatte olan araçlar listede gizlensin mi?
 
   final double puan; // Ortalama Puan
   final int yorumSayisi; // Toplam Yorum Sayısı
@@ -44,11 +48,15 @@ class EsnafModeli {
     this.personeller,
     this.aktifGunler,
     this.araclar,
+    this.whatsapp,
+    this.telefonRandevu,
     this.randevuOnayModu = 'Manuel',
     this.ayniGunRandevuEngelle = false,
     this.slotAralikliGoster = false,
     this.personelSecimiZorunlu = false,
     this.randevularPersonelAdinaAlinsin = false,
+    this.aracOdakliSistem = false,
+    this.istirahatliAraclariGizle = true,
     this.puan = 0.0,
     this.yorumSayisi = 0,
   });
@@ -76,11 +84,15 @@ class EsnafModeli {
       personeller: data['personeller'] ?? [],
       aktifGunler: data['aktifGunler'] ?? [],
       araclar: data['araclar'] ?? [],
+      whatsapp: data['whatsapp'],
+      telefonRandevu: data['telefonRandevu'],
       randevuOnayModu: data['randevuOnayModu'] ?? 'Manuel',
       ayniGunRandevuEngelle: data['ayniGunRandevuEngelle'] ?? false,
       slotAralikliGoster: data['slotAralikliGoster'] ?? false,
       personelSecimiZorunlu: data['personelSecimiZorunlu'] ?? false,
       randevularPersonelAdinaAlinsin: data['randevularPersonelAdinaAlinsin'] ?? false,
+      aracOdakliSistem: data['aracOdakliSistem'] ?? false,
+      istirahatliAraclariGizle: data['istirahatliAraclariGizle'] ?? true,
       puan: (data['puan'] ?? 0.0).toDouble(),
       yorumSayisi: data['yorumSayisi'] ?? 0,
     );
@@ -103,11 +115,15 @@ class EsnafModeli {
       'personeller': personeller,
       'aktifGunler': aktifGunler,
       'araclar': araclar,
+      'whatsapp': whatsapp,
+      'telefonRandevu': telefonRandevu,
       'randevuOnayModu': randevuOnayModu,
       'ayniGunRandevuEngelle': ayniGunRandevuEngelle,
       'slotAralikliGoster': slotAralikliGoster,
       'personelSecimiZorunlu': personelSecimiZorunlu,
       'randevularPersonelAdinaAlinsin': randevularPersonelAdinaAlinsin,
+      'aracOdakliSistem': aracOdakliSistem,
+      'istirahatliAraclariGizle': istirahatliAraclariGizle,
       'puan': puan,
       'yorumSayisi': yorumSayisi,
     };
@@ -130,11 +146,15 @@ class EsnafModeli {
     List<dynamic>? personeller,
     List<dynamic>? aktifGunler,
     List<dynamic>? araclar,
+    String? whatsapp,
+    String? telefonRandevu,
     String? randevuOnayModu,
     bool? ayniGunRandevuEngelle,
     bool? slotAralikliGoster,
     bool? personelSecimiZorunlu,
     bool? randevularPersonelAdinaAlinsin,
+    bool? aracOdakliSistem,
+    bool? istirahatliAraclariGizle,
     double? puan,
     int? yorumSayisi,
   }) {
@@ -155,11 +175,15 @@ class EsnafModeli {
       personeller: personeller ?? this.personeller,
       aktifGunler: aktifGunler ?? this.aktifGunler,
       araclar: araclar ?? this.araclar,
+      whatsapp: whatsapp ?? this.whatsapp,
+      telefonRandevu: telefonRandevu ?? this.telefonRandevu,
       randevuOnayModu: randevuOnayModu ?? this.randevuOnayModu,
       ayniGunRandevuEngelle: ayniGunRandevuEngelle ?? this.ayniGunRandevuEngelle,
       slotAralikliGoster: slotAralikliGoster ?? this.slotAralikliGoster,
       personelSecimiZorunlu: personelSecimiZorunlu ?? this.personelSecimiZorunlu,
       randevularPersonelAdinaAlinsin: randevularPersonelAdinaAlinsin ?? this.randevularPersonelAdinaAlinsin,
+      aracOdakliSistem: aracOdakliSistem ?? this.aracOdakliSistem,
+      istirahatliAraclariGizle: istirahatliAraclariGizle ?? this.istirahatliAraclariGizle,
       puan: puan ?? this.puan,
       yorumSayisi: yorumSayisi ?? this.yorumSayisi,
     );

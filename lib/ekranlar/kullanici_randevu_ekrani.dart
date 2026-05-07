@@ -88,10 +88,10 @@ class KullaniciRandevuEkrani extends StatelessWidget {
                             const Divider(height: 25),
                             _bilgiSatiri(Icons.event, "${DateFormat('dd MMMM yyyy', 'tr_TR').format(r.tarih)} - ${r.saat}"),
                             _bilgiSatiri(Icons.content_cut, r.hizmetAdi),
-                            if (r.calisanPersonel != null)
-                              _bilgiSatiri(Icons.person, "Personel: ${r.calisanPersonel}"),
                             if (r.randevuKanali != null)
-                              _bilgiSatiri(Icons.layers, "Bölüm: ${r.randevuKanali}"),
+                              _bilgiSatiri(Icons.layers, r.randevuKanali!.contains(RegExp(r'[0-9]{2}\s[A-Z]+\s[0-9]+')) ? "Araç: ${r.randevuKanali}" : "Bölüm: ${r.randevuKanali}"),
+                            if (r.calisanPersonel != null && !r.randevuKanali!.contains(RegExp(r'[0-9]{2}\s[A-Z]+\s[0-9]+')))
+                              _bilgiSatiri(Icons.person, "Personel: ${r.calisanPersonel}"),
                             
                             if (r.durum == 'İptal Edildi' && r.iptalNedeni != null)
                               Padding(

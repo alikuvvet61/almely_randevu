@@ -26,6 +26,11 @@ class FirestoreServisi {
     return _esnaflarRef.doc(id).snapshots().map((doc) => EsnafModeli.fromFirestore(doc));
   }
 
+  Future<EsnafModeli?> esnafGetirDoc(String id) async {
+    var doc = await _esnaflarRef.doc(id).get();
+    return doc.exists ? EsnafModeli.fromFirestore(doc) : null;
+  }
+
   Stream<List<EsnafModeli>> kategoriyeGoreGetir(String kategori) {
     return _esnaflarRef
         .where('kategori', isEqualTo: kategori)
@@ -139,6 +144,11 @@ class FirestoreServisi {
     return _esnaflarRef.doc(esnafId).collection('ajanda').doc(docId).snapshots();
   }
 
+  Stream<DocumentSnapshot> taksiAjandasiSnapStream(String esnafId, DateTime tarih) {
+    String ayKey = DateFormat('yyyy-MM').format(tarih);
+    return _esnaflarRef.doc(esnafId).collection('taksi_ajanda').doc(ayKey).snapshots();
+  }
+
   Future<void> ajandaOlustur({
     required String esnafId,
     required List<DateTime> tarihler,
@@ -149,34 +159,40 @@ class FirestoreServisi {
     String? ogleBitis,
     required int slotAraligi,
   }) async {
-    final batch = _db.batch();
-    List<String> aktifGunIds = [];
+    // Firestore batch limiti 500'dür. Veriyi 400'lük parçalara bölerek işleyelim.
+    const int chunkLimit = 400;
+    for (var i = 0; i < tarihler.length; i += chunkLimit) {
+      final batch = _db.batch();
+      final chunk = tarihler.sublist(i, i + chunkLimit > tarihler.length ? tarihler.length : i + chunkLimit);
+      List<String> aktifGunIds = [];
 
-    for (var tarih in tarihler) {
-      String tarihStr = DateFormat('yyyy-MM-dd').format(tarih);
-      String docId = kanal.isNotEmpty ? "${tarihStr}_$kanal" : tarihStr;
-      aktifGunIds.add(docId);
+      for (var tarih in chunk) {
+        String tarihStr = DateFormat('yyyy-MM-dd').format(tarih);
+        String temizKanal = kanal.trim();
+        String docId = temizKanal.isNotEmpty ? "${tarihStr}_$temizKanal" : tarihStr;
+        aktifGunIds.add(docId);
 
-      DocumentReference docRef = _esnaflarRef.doc(esnafId).collection('ajanda').doc(docId);
-      batch.set(docRef, {
-        'tarih': tarihStr,
-        'kanal': kanal,
-        'acilis': acilis,
-        'kapanis': kapanis,
-        'ogleBaslangic': ogleBaslangic,
-        'ogleBitis': ogleBitis,
-        'slotAraligi': slotAraligi,
-        'kapaliSlotlar': {},
-        'olusturulmaTarihi': FieldValue.serverTimestamp(),
+        DocumentReference docRef = _esnaflarRef.doc(esnafId).collection('ajanda').doc(docId);
+        batch.set(docRef, {
+          'tarih': tarihStr,
+          'kanal': temizKanal,
+          'acilis': acilis,
+          'kapanis': kapanis,
+          'ogleBaslangic': ogleBaslangic,
+          'ogleBitis': ogleBitis,
+          'slotAraligi': slotAraligi,
+          'kapaliSlotlar': {},
+          'olusturulmaTarihi': FieldValue.serverTimestamp(),
+        });
+      }
+
+      // Esnaf belgesindeki aktif günleri güncelle (Bu kısım da her parça için yapılmalı)
+      batch.update(_esnaflarRef.doc(esnafId), {
+        'aktifGunler': FieldValue.arrayUnion(aktifGunIds)
       });
+
+      await batch.commit();
     }
-
-    // Esnaf belgesindeki aktif günleri güncelle
-    batch.update(_esnaflarRef.doc(esnafId), {
-      'aktifGunler': FieldValue.arrayUnion(aktifGunIds)
-    });
-
-    await batch.commit();
   }
 
   Future<void> ajandaSil(String esnafId, DateTime tarih, String? kanal) async {
@@ -356,7 +372,7 @@ class FirestoreServisi {
       if (data['durum'] == 'Reddedildi' || data['durum'] == 'İptal Edildi') continue;
       
       // Kanal kontrolü (Eğer kanal belirtilmişse sadece o kanaldaki çakışmalara bak)
-      if (kanal != null && kanal.isNotEmpty && data['randevuKanali'] != kanal) continue;
+      if (kanal != null && kanal.isNotEmpty && data['randevu_kanali'] != kanal) continue;
 
       int mevcutBas = _saatiDakikayaCevir(data['saat']);
       int mevcutSure = data['sure'] ?? 30;

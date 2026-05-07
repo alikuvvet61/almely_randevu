@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import '../servisler/firestore_servisi.dart';
-import '../modeller/randevu_modeli.dart';
+import 'package:almely_randevu/servisler/firestore_servisi.dart';
+import 'package:almely_randevu/modeller/randevu_modeli.dart';
+import 'package:almely_randevu/modeller/esnaf_modeli.dart';
 
 class EsnafRandevuYonetimEkrani extends StatefulWidget {
   final String esnafId;
-  const EsnafRandevuYonetimEkrani({super.key, required this.esnafId});
+  final EsnafModeli? esnaf; // Esnaf nesnesini opsiyonel olarak alalım
+  const EsnafRandevuYonetimEkrani({super.key, required this.esnafId, this.esnaf});
 
   @override
   State<EsnafRandevuYonetimEkrani> createState() => _EsnafRandevuYonetimEkraniState();
@@ -13,6 +15,25 @@ class EsnafRandevuYonetimEkrani extends StatefulWidget {
 
 class _EsnafRandevuYonetimEkraniState extends State<EsnafRandevuYonetimEkrani> {
   final FirestoreServisi _firestoreServisi = FirestoreServisi();
+  EsnafModeli? _esnaf;
+
+  @override
+  void initState() {
+    super.initState();
+    _esnaf = widget.esnaf;
+    if (_esnaf == null) {
+      _esnafYukle();
+    }
+  }
+
+  Future<void> _esnafYukle() async {
+    final e = await _firestoreServisi.esnafGetirDoc(widget.esnafId);
+    if (e != null && mounted) {
+      setState(() {
+        _esnaf = e;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -142,8 +163,30 @@ class _EsnafRandevuYonetimEkraniState extends State<EsnafRandevuYonetimEkrani> {
             _bilgiSatiri(Icons.phone, r.kullaniciTel),
             _bilgiSatiri(Icons.event, "${DateFormat('dd MMMM yyyy, EEEE', 'tr_TR').format(r.tarih)} - ${r.saat}"),
             _bilgiSatiri(Icons.content_cut, r.hizmetAdi),
-            if (r.randevuKanali != null) _bilgiSatiri(Icons.layers, "Kanal: ${r.randevuKanali}"),
-            if (r.calisanPersonel != null) _bilgiSatiri(Icons.person, "Personel: ${r.calisanPersonel}"),
+            if (r.randevuKanali != null) 
+              Builder(
+                builder: (context) {
+                  String label = "Kanal: ${r.randevuKanali}";
+                  IconData icon = Icons.layers;
+
+                  if (_esnaf?.kategori == 'Taksi' && (_esnaf?.aracOdakliSistem ?? false)) {
+                    icon = Icons.local_taxi;
+                    final arac = _esnaf?.araclar?.firstWhere(
+                      (a) => a is Map && a['plaka'] == r.randevuKanali,
+                      orElse: () => null,
+                    );
+                    if (arac != null) {
+                      final sofor = arac['soforAd'] ?? arac['sofor'] ?? '';
+                      label = sofor.isNotEmpty ? "Araç: ${r.randevuKanali} ($sofor)" : "Araç: ${r.randevuKanali}";
+                    } else {
+                      label = "Araç: ${r.randevuKanali}";
+                    }
+                  }
+                  return _bilgiSatiri(icon, label);
+                }
+              ),
+            if (r.calisanPersonel != null && !(_esnaf?.kategori == 'Taksi' && (_esnaf?.aracOdakliSistem ?? false))) 
+              _bilgiSatiri(Icons.person, "Personel: ${r.calisanPersonel}"),
             
             if (r.seriId != null && r.seriId!.isNotEmpty)
               Padding(
