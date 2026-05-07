@@ -1,5 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/foundation.dart';
+
 import 'package:intl/intl.dart';
 import '../modeller/esnaf_modeli.dart';
 import '../modeller/randevu_modeli.dart';
@@ -10,7 +10,7 @@ class FirestoreServisi {
   // Koleksiyon Referansları
   CollectionReference get _esnaflarRef => _db.collection('esnaflar');
   CollectionReference get _randevularRef => _db.collection('randevular');
-  CollectionReference get _ayarlarRef => _db.collection('ayarlar');
+
   CollectionReference get _kategorilerRef => _db.collection('kategoriler');
   CollectionReference get _hizmetTanimRef => _db.collection('hizmet_tanimlari');
   CollectionReference get _yorumlarRef => _db.collection('yorumlar');

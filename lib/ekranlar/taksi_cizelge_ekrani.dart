@@ -130,11 +130,15 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
           if (seciliAraclar.isEmpty) {
             aylikVeri.remove(gunKey);
           } else {
+            Map<String, dynamic> gununVerisi = Map<String, dynamic>.from(aylikVeri[gunKey]!);
             for (var plaka in seciliAraclar) {
-              aylikVeri[gunKey]!.remove(plaka);
+              gununVerisi.remove(plaka);
             }
-            if (aylikVeri[gunKey]!.isEmpty) {
+            
+            if (gununVerisi.isEmpty) {
               aylikVeri.remove(gunKey);
+            } else {
+              aylikVeri[gunKey] = gununVerisi;
             }
           }
         }
@@ -180,14 +184,27 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
         final shouldPop = await _cikisOnayi();
-        final BuildContext currentContext = context;
-        if (!mounted) return;
-        if (shouldPop) {
-          Navigator.of(currentContext).pop();
+        if (mounted && shouldPop) {
+          // ignore: use_build_context_synchronously
+          Navigator.of(context).pop();
         }
       },
       child: Scaffold(
-        appBar: AppBar(title: const Text("Taksi Çizelge")),
+        appBar: AppBar(
+          title: const Text("Taksi Çizelge"),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              onPressed: () {
+                setState(() {
+                  seciliGunler.clear();
+                  _verileriGetir(temizle: true);
+                  degisiklikVar = false;
+                });
+              },
+            ),
+          ],
+        ),
         body: yukleniyor ? const Center(child: CircularProgressIndicator()) : _aylikAjandaSekmesi(),
       ),
     );
@@ -371,11 +388,18 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
           ),
           ...araclar.map((arac) {
             String plaka = arac['plaka'] ?? "";
+            String sofor = arac['soforAd'] ?? arac['sofor'] ?? "";
             if (plaka.isEmpty) return const SizedBox.shrink();
             return Padding(
               padding: const EdgeInsets.only(right: 8.0),
               child: FilterChip(
-                label: Text(plaka),
+                label: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(plaka, style: const TextStyle(fontWeight: FontWeight.bold)),
+                    if (sofor.isNotEmpty) Text(sofor, style: const TextStyle(fontSize: 10)),
+                  ],
+                ),
                 selected: seciliAraclar.contains(plaka),
                 onSelected: (selected) => setState(() => selected ? seciliAraclar.add(plaka) : seciliAraclar.remove(plaka)),
               ),
