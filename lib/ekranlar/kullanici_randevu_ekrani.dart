@@ -13,153 +13,187 @@ class KullaniciRandevuEkrani extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text("Randevularım"),
-        centerTitle: true,
-      ),
-      body: StreamBuilder<List<RandevuModeli>>(
-        stream: _firestoreServisi.kullaniciRandevulariniGetir(telefon),
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return Center(child: Text("Hata: ${snapshot.error}"));
-          }
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text("Randevularım"),
+          centerTitle: true,
+          bottom: const TabBar(
+            tabs: [
+              Tab(text: "Yaklaşanlar"),
+              Tab(text: "Geçmiş"),
+            ],
+            indicatorColor: Colors.blue,
+            labelStyle: TextStyle(fontWeight: FontWeight.bold),
+          ),
+        ),
+        body: StreamBuilder<List<RandevuModeli>>(
+          stream: _firestoreServisi.kullaniciRandevulariniGetir(telefon),
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return Center(child: Text("Hata: ${snapshot.error}"));
+            }
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
 
-          final randevular = snapshot.data ?? [];
-          if (randevular.isEmpty) {
-            return const Center(
+            final tumRandevular = snapshot.data ?? [];
+            final simdi = DateTime.now().subtract(const Duration(hours: 1));
+
+            // Randevuları tarihlerine göre ayır
+            final yaklasanlar = tumRandevular.where((r) => !r.tarih.isBefore(simdi)).toList();
+            final gecmisler = tumRandevular.where((r) => r.tarih.isBefore(simdi)).toList();
+
+            return TabBarView(
+              children: [
+                _randevuListesi(context, yaklasanlar, false),
+                _randevuListesi(context, gecmisler, true),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _randevuListesi(BuildContext context, List<RandevuModeli> liste, bool gecmisMi) {
+    if (liste.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              gecmisMi ? Icons.history : Icons.calendar_today_outlined,
+              size: 80,
+              color: Colors.grey.withValues(alpha: 0.3),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              gecmisMi ? "Geçmiş randevunuz bulunmuyor." : "Yaklaşan randevunuz bulunmuyor.",
+              style: TextStyle(color: Colors.grey.shade600, fontSize: 16),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: liste.length,
+      itemBuilder: (context, i) => _randevuKarti(context, liste[i], gecmisMi),
+    );
+  }
+
+  Widget _randevuKarti(BuildContext context, RandevuModeli r, bool gecmisMi) {
+    return Card(
+      elevation: 2,
+      margin: const EdgeInsets.only(bottom: 16),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          leading: Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.blue.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(Icons.business, color: Colors.blue),
+          ),
+          title: Text(
+            r.esnafAdi,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          ),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 4),
+              Text(
+                "${DateFormat('dd MMMM yyyy', 'tr_TR').format(r.tarih)} - ${r.saat}",
+                style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
+              ),
+              const SizedBox(height: 4),
+              _durumRozeti(r.durum),
+            ],
+          ),
+          children: [
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.all(16),
               child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.calendar_today_outlined, size: 80, color: Colors.grey),
-                  SizedBox(height: 20),
-                  Text("Henüz bir randevunuz bulunmuyor.",
-                      style: TextStyle(color: Colors.grey, fontSize: 16)),
+                  _bilgiSatiri(Icons.content_cut, "Hizmet: ${r.hizmetAdi}"),
+                  if (r.randevuKanali != null)
+                    _bilgiSatiri(
+                      Icons.layers,
+                      r.randevuKanali!.contains(RegExp(r'[0-9]{2}\s[A-Z]+\s[0-9]+'))
+                          ? "Araç: ${r.randevuKanali}"
+                          : "Bölüm: ${r.randevuKanali}",
+                    ),
+                  if (r.calisanPersonel != null && !r.randevuKanali!.contains(RegExp(r'[0-9]{2}\s[A-Z]+\s[0-9]+')))
+                    _bilgiSatiri(Icons.person, "Personel: ${r.calisanPersonel}"),
+                  
+                  if (r.durum == 'İptal Edildi' && r.iptalNedeni != null)
+                    Container(
+                      margin: const EdgeInsets.only(top: 10),
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.red.withValues(alpha: 0.2)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.info_outline, color: Colors.red, size: 16),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              "İptal Nedeni: ${r.iptalNedeni}", 
+                              style: const TextStyle(color: Colors.red, fontSize: 12, fontWeight: FontWeight.w500),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                  const SizedBox(height: 16),
+                  if (!gecmisMi && r.durum != 'İptal Edildi' && r.durum != 'Reddedildi')
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: () => _randevuIptalDialog(context, r),
+                        icon: const Icon(Icons.cancel_outlined),
+                        label: const Text("Randevuyu İptal Et"),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: Colors.red,
+                          elevation: 0,
+                          side: const BorderSide(color: Colors.red),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                      ),
+                    )
+                  else if (gecmisMi && r.durum == 'Onaylandı' && !r.puanlandi)
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: () => _degerlendirmeYapDialog(context, r),
+                        icon: const Icon(Icons.star_outline),
+                        label: const Text("Hizmeti Değerlendir"),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.amber,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                      ),
+                    ),
                 ],
               ),
-            );
-          }
-
-          return Column(
-            children: [
-              Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(15, 15, 15, 150),
-                  itemCount: randevular.length,
-                  itemBuilder: (context, i) {
-                    final r = randevular[i];
-                    final gecmisMi = r.tarih.isBefore(DateTime.now().subtract(const Duration(hours: 1)));
-
-                    return Card(
-                      elevation: 3,
-                      margin: const EdgeInsets.only(bottom: 15),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                      child: Padding(
-                        padding: const EdgeInsets.all(15),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Expanded(
-                                  child: Row(
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          r.esnafAdi,
-                                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blue),
-                                        ),
-                                      ),
-                                      if (r.seriId != null)
-                                        const Padding(
-                                          padding: EdgeInsets.only(left: 4.0),
-                                          child: Icon(Icons.repeat, size: 16, color: Colors.blueGrey),
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                                _durumRozeti(r.durum),
-                              ],
-                            ),
-                            const Divider(height: 25),
-                            _bilgiSatiri(Icons.event, "${DateFormat('dd MMMM yyyy', 'tr_TR').format(r.tarih)} - ${r.saat}"),
-                            _bilgiSatiri(Icons.content_cut, r.hizmetAdi),
-                            if (r.randevuKanali != null)
-                              _bilgiSatiri(Icons.layers, r.randevuKanali!.contains(RegExp(r'[0-9]{2}\s[A-Z]+\s[0-9]+')) ? "Araç: ${r.randevuKanali}" : "Bölüm: ${r.randevuKanali}"),
-                            if (r.calisanPersonel != null && !r.randevuKanali!.contains(RegExp(r'[0-9]{2}\s[A-Z]+\s[0-9]+')))
-                              _bilgiSatiri(Icons.person, "Personel: ${r.calisanPersonel}"),
-                            
-                            if (r.durum == 'İptal Edildi' && r.iptalNedeni != null)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 10),
-                                child: Text("Neden: ${r.iptalNedeni}", 
-                                  style: const TextStyle(color: Colors.red, fontSize: 13, fontWeight: FontWeight.w500)),
-                              ),
-
-                            const SizedBox(height: 15),
-                            if (!gecmisMi && r.durum != 'İptal Edildi' && r.durum != 'Reddedildi')
-                              SizedBox(
-                                width: double.infinity,
-                                child: OutlinedButton.icon(
-                                  onPressed: () => _randevuIptalDialog(context, r),
-                                  icon: const Icon(Icons.cancel, color: Colors.red),
-                                  label: const Text("Randevuyu İptal Et", style: TextStyle(color: Colors.red)),
-                                  style: OutlinedButton.styleFrom(
-                                    side: const BorderSide(color: Colors.red),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                  ),
-                                ),
-                              )
-                            else if (gecmisMi && r.durum == 'Onaylandı' && !r.puanlandi)
-                              SizedBox(
-                                width: double.infinity,
-                                child: ElevatedButton.icon(
-                                  onPressed: () => _degerlendirmeYapDialog(context, r),
-                                  icon: const Icon(Icons.star, color: Colors.white),
-                                  label: const Text("Hizmeti Değerlendir"),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.amber,
-                                    foregroundColor: Colors.white,
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                  ),
-                                ),
-                              )
-                            else if (gecmisMi && r.durum != 'İptal Edildi')
-                               const Center(child: Text("Bu randevunun tarihi geçmiş.", style: TextStyle(color: Colors.grey, fontSize: 12, fontStyle: FontStyle.italic))),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-              SafeArea(
-                top: false,
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(15),
-                  color: Colors.orange.shade50,
-                  child: const Row(
-                    children: [
-                      Icon(Icons.info_outline, color: Colors.orange),
-                      SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          "Randevunuzu iptal ettiğinizde ilgili işletmeye otomatik bilgi gönderilecektir.",
-                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Colors.deepOrange),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          );
-        },
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -169,8 +203,8 @@ class KullaniciRandevuEkrani extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
-          Icon(ikon, size: 18, color: Colors.grey[600]),
-          const SizedBox(width: 10),
+          Icon(ikon, size: 16, color: Colors.grey.shade600),
+          const SizedBox(width: 12),
           Expanded(child: Text(metin, style: const TextStyle(fontSize: 14))),
         ],
       ),
@@ -183,15 +217,15 @@ class KullaniciRandevuEkrani extends StatelessWidget {
     if (durum == 'Reddedildi' || durum == 'İptal Edildi') renk = Colors.red;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
         color: renk.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: renk),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: renk.withValues(alpha: 0.5)),
       ),
       child: Text(
         durum,
-        style: TextStyle(color: renk, fontSize: 12, fontWeight: FontWeight.bold),
+        style: TextStyle(color: renk, fontSize: 11, fontWeight: FontWeight.bold),
       ),
     );
   }
@@ -264,12 +298,15 @@ class KullaniciRandevuEkrani extends StatelessWidget {
   void _randevuIptalDialog(BuildContext context, RandevuModeli r) {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
       builder: (c) => Padding(
-        padding: const EdgeInsets.all(20),
+        padding: EdgeInsets.only(bottom: MediaQuery.of(c).viewInsets.bottom, left: 20, right: 20, top: 20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+            const SizedBox(height: 20),
             const Text("Randevu İptal Nedeni", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 10),
             const Text("Lütfen bir iptal nedeni seçin", style: TextStyle(color: Colors.grey)),
@@ -281,6 +318,7 @@ class KullaniciRandevuEkrani extends StatelessWidget {
                   if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
                   final nedenler = snapshot.data!;
                   return ListView.separated(
+                    shrinkWrap: true,
                     itemCount: nedenler.length,
                     separatorBuilder: (context, index) => const Divider(height: 1),
                     itemBuilder: (context, index) {
@@ -289,10 +327,8 @@ class KullaniciRandevuEkrani extends StatelessWidget {
                         leading: const Icon(Icons.radio_button_off, color: Colors.blue),
                         onTap: () async {
                           String tarihFormat = DateFormat('dd.MM.yyyy').format(r.tarih);
-                          
                           await _firestoreServisi.randevuIptalEt(r.id, nedenler[index]);
 
-                          // Esnafa bildirim gönder
                           await BildirimServisi.bildirimGonder(
                             kullaniciTel: r.esnafTel,
                             baslik: "🚫 Randevu İptal Edildi",
@@ -314,6 +350,7 @@ class KullaniciRandevuEkrani extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             TextButton(onPressed: () => Navigator.pop(c), child: const Text("Vazgeç")),
+            const SizedBox(height: 10),
           ],
         ),
       ),

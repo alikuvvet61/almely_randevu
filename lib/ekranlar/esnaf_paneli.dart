@@ -451,14 +451,14 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
   Widget _talepSatiri(IconData ikon, String baslik, String icerik) {
     return Row(
       children: [
-        Icon(ikon, size: 18, color: Colors.indigo.withValues(alpha: 0.7)),
-        const SizedBox(width: 10),
+        Icon(ikon, size: 20, color: Colors.indigo.withValues(alpha: 0.7)),
+        const SizedBox(width: 12),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(baslik, style: const TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.bold)),
-              Text(icerik, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+              Text(baslik, style: const TextStyle(fontSize: 11, color: Colors.grey, fontWeight: FontWeight.bold)),
+              Text(icerik, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
             ],
           ),
         ),
@@ -821,24 +821,42 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
       return Padding(
         padding: const EdgeInsets.only(bottom: 15),
         child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(15), border: Border.all(color: Colors.red.shade200)),
-          child: Row(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.red.shade50, 
+            borderRadius: BorderRadius.circular(20), 
+            border: Border.all(color: Colors.red.shade200)
+          ),
+          child: Column(
             children: [
-              const Icon(Icons.warning_amber_rounded, color: Colors.red),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text("Zaman Dilimi Uyumsuzluğu!", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red)),
-                    Text("Hizmet süreleriniz mevcut $slotAraligi dk'lık ajanda yapısına uymuyor. Lütfen ajandanızı güncelleyin.", style: const TextStyle(fontSize: 12, color: Colors.black87)),
-                  ],
-                ),
+              Row(
+                children: [
+                  const Icon(Icons.warning_amber_rounded, color: Colors.red, size: 28),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text("Zaman Dilimi Uyumsuzluğu!", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red, fontSize: 15)),
+                        Text("Hizmet süreleriniz mevcut $slotAraligi dk'lık ajanda yapısına uymuyor.", style: const TextStyle(fontSize: 13, color: Colors.black87)),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-              TextButton(
-                onPressed: _topluAjandaOnarim,
-                child: const Text("ŞİMDİ DÜZELT", style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _topluAjandaOnarim,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red, 
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  child: const Text("AJANDAYI ŞİMDİ ONAR VE DÜZELT", style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
               ),
             ],
           ),
@@ -894,107 +912,154 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
       );
     }
 
-    return Column(
+    return GridView.count(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisCount: 2,
+      mainAxisSpacing: 10,
+      crossAxisSpacing: 10,
+      childAspectRatio: 2.5, // Metinler büyüdüğü için oran biraz azaltıldı
       children: [
-        Row(
-          children: [
-            if (isTaksi) ...[
-              Expanded(
-                child: _ozelButon(
-                  ikon: Icons.local_taxi,
-                  renk: Colors.green,
-                  metin: "Canlı Durak Takip",
-                  onTap: () {
-                    final navigator = Navigator.of(context);
-                    navigator.push(MaterialPageRoute(builder: (c) => DurakTakipEkrani(esnaf: _guncelEsnaf, soforTel: widget.soforTel)));
-                  },
-                ),
-              ),
-              const SizedBox(width: 10),
-            ],
-            Expanded(
-              child: _ozelButon(
-                ikon: Icons.list_alt,
-                renk: Colors.indigo,
-                metin: "Randevu Yönetimi",
-                onTap: () async {
-                  final navigator = Navigator.of(context);
-                  int ideal = _idealSlotHesapla();
-                  if (slotAraligi != ideal) {
-                    // Eğer mevcut slot ideal değilse (örn: 5 dk kalmış ama artık 10 dk olabilirse)
-                    bool basarili = await _topluAjandaOnarim();
-                    if (!basarili || !mounted) return;
-                  }
-                  
-                  navigator.push(MaterialPageRoute(builder: (c) => EsnafAjandaEkrani(esnaf: _guncelEsnaf)));
-                },
-              ),
-            ),
-            if (!isTaksi) ...[
-              const SizedBox(width: 10),
-              Expanded(
-                child: _ozelButon(
-                  ikon: Icons.tune,
-                  renk: Colors.orange,
-                  metin: "İşletme Parametreleri",
-                  onTap: () async {
-                    final navigator = Navigator.of(context);
-                    await navigator.push(MaterialPageRoute(builder: (c) => EsnafParametreEkrani(esnafId: widget.esnaf.id)));
-                    _verileriTazele();
-                  },
-                ),
-              ),
-            ]
-          ],
+        _yonetimKarti(
+          icon: Icons.calendar_month,
+          baslik: "Günlük Ajanda",
+          altBaslik: "Saatleri Yönet",
+          renk: Colors.blue,
+          onTap: () async {
+            final navigator = Navigator.of(context);
+            int ideal = _idealSlotHesapla();
+            if (slotAraligi != ideal) {
+              bool basarili = await _topluAjandaOnarim();
+              if (!basarili || !mounted) return;
+            }
+            navigator.push(MaterialPageRoute(builder: (c) => EsnafAjandaEkrani(esnaf: _guncelEsnaf)));
+          },
+        ),
+        _yonetimKarti(
+          icon: Icons.history,
+          baslik: "Randevu Kayıtları",
+          altBaslik: "Onaylananlar/Geçmiş",
+          renk: Colors.indigo,
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (c) => EsnafRandevuYonetimEkrani(esnafId: widget.esnaf.id, esnaf: widget.esnaf))),
         ),
         if (isTaksi) ...[
-          const SizedBox(height: 10),
-          Row(
+          _yonetimKarti(
+            icon: Icons.table_chart,
+            baslik: "Taksi Çizelge",
+            altBaslik: "Nöbet ve İstirahat",
+            renk: Colors.orange,
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (c) => TaksiCizelgeEkrani(esnaf: _guncelEsnaf))),
+          ),
+          _yonetimKarti(
+            icon: Icons.local_taxi,
+            baslik: "Durak Takip",
+            altBaslik: "Sıra ve Konum",
+            renk: Colors.teal,
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (c) => DurakTakipEkrani(esnaf: _guncelEsnaf, soforTel: widget.soforTel))),
+          ),
+        ],
+        _yonetimKarti(
+          icon: Icons.settings_suggest,
+          baslik: "Gelişmiş Ayarlar",
+          altBaslik: "Sistem Parametreleri",
+          renk: Colors.blueGrey,
+          onTap: () async {
+            final navigator = Navigator.of(context);
+            await navigator.push(MaterialPageRoute(builder: (c) => EsnafParametreEkrani(esnafId: widget.esnaf.id)));
+            _verileriTazele();
+          },
+        ),
+        _yonetimKarti(
+          icon: Icons.business,
+          baslik: "İşletme Profili",
+          altBaslik: "Bilgileri Güncelle",
+          renk: Colors.deepPurple,
+          onTap: _esnafDuzenleFormu,
+        ),
+      ],
+    );
+  }
+
+  Widget _yonetimKarti({
+    required IconData icon,
+    required String baslik,
+    required String altBaslik,
+    required Color renk,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: renk.withValues(alpha: 0.1)),
+            boxShadow: [
+              BoxShadow(
+                color: renk.withValues(alpha: 0.05),
+                blurRadius: 4,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(
             children: [
-              Expanded(
-                child: _ozelButon(
-                  ikon: Icons.tune,
-                  renk: Colors.orange,
-                  metin: "İşletme Parametreleri",
-                  onTap: () async {
-                    final navigator = Navigator.of(context);
-                    await navigator.push(MaterialPageRoute(builder: (c) => EsnafParametreEkrani(esnafId: widget.esnaf.id)));
-                    _verileriTazele();
-                  },
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: renk.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
                 ),
+                child: Icon(icon, color: renk, size: 28),
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: _ozelButon(
-                  ikon: Icons.calendar_month,
-                  renk: Colors.teal,
-                  metin: "Çalışma ve Nöbet Çizelgesi",
-                  onTap: () async {
-                    final navigator = Navigator.of(context);
-                    await navigator.push(MaterialPageRoute(builder: (c) => TaksiCizelgeEkrani(esnaf: _guncelEsnaf)));
-                    _verileriTazele();
-                  },
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      baslik,
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.black87),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      altBaslik,
+                      style: TextStyle(color: Colors.grey.shade600, fontSize: 12.5),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
-        ],
-      ],
+        ),
+      ),
     );
   }
 
   Widget _ozelButon({required IconData ikon, required Color renk, required String metin, required VoidCallback onTap}) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(15),
+      borderRadius: BorderRadius.circular(20),
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 15),
-        decoration: BoxDecoration(color: renk.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(15), border: Border.all(color: renk.withValues(alpha: 0.2))),
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        decoration: BoxDecoration(
+          color: renk.withValues(alpha: 0.1), 
+          borderRadius: BorderRadius.circular(20), 
+          border: Border.all(color: renk.withValues(alpha: 0.2)),
+        ),
         child: Column(
           children: [
-            Icon(ikon, color: renk, size: 28),
-            const SizedBox(height: 8),
-            Text(metin, textAlign: TextAlign.center, style: TextStyle(color: renk, fontWeight: FontWeight.bold, fontSize: 12)),
+            Icon(ikon, color: renk, size: 36),
+            const SizedBox(height: 12),
+            Text(metin, textAlign: TextAlign.center, style: TextStyle(color: renk, fontWeight: FontWeight.bold, fontSize: 16)),
           ],
         ),
       ),
@@ -1005,52 +1070,64 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
     return Column(
       children: [
         ...araclar.asMap().entries.map((entry) {
-
           int idx = entry.key;
           var arac = entry.value;
-          return Card(
+          return Container(
             margin: const EdgeInsets.only(bottom: 8),
-            child: Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Row(
-                children: [
-                  Expanded(
-                    flex: 2,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(arac['plaka'] ?? "Plaka Yok", style: const TextStyle(fontWeight: FontWeight.bold)),
-                        Text("${arac['soforAd'] ?? 'İsimsiz'} (${arac['soforTel'] ?? 'No Yok'})", style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                      ],
-                    ),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey.withValues(alpha: 0.2)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.edit, color: Colors.blue),
-                    onPressed: () => _aracDuzenle(idx),
+                  child: const Icon(Icons.local_taxi, color: Colors.blue, size: 24),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(arac['plaka'] ?? "Plaka Yok", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      Text("${arac['soforAd'] ?? 'İsimsiz'} (${arac['soforTel'] ?? 'No Yok'})", style: TextStyle(fontSize: 13.5, color: Colors.grey.shade600)),
+                    ],
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.delete, color: Colors.red),
-                    onPressed: () {
-                      setState(() {
-                        araclar.removeAt(idx);
-                        _degisiklikVar = true;
-                      });
-                    },
-                  ),
-                ],
-              ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.edit_outlined, color: Colors.blue, size: 22),
+                  onPressed: () => _aracDuzenle(idx),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline, color: Colors.red, size: 22),
+                  onPressed: () {
+                    setState(() {
+                      araclar.removeAt(idx);
+                      _degisiklikVar = true;
+                    });
+                  },
+                ),
+              ],
             ),
           );
         }),
-        const SizedBox(height: 10),
-        ElevatedButton.icon(
-          onPressed: _yeniAracEkle,
-          icon: const Icon(Icons.add),
-          label: const Text("Yeni Araç Ekle"),
-          style: ElevatedButton.styleFrom(
-            minimumSize: const Size(double.infinity, 45),
-            backgroundColor: Colors.blue.shade50,
-            foregroundColor: Colors.blue.shade700,
+        const SizedBox(height: 4),
+        SizedBox(
+          height: 32,
+          child: ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              textStyle: const TextStyle(fontSize: 11),
+            ),
+            onPressed: _yeniAracEkle,
+            icon: const Icon(Icons.add, size: 16),
+            label: const Text("Yeni Araç Ekle"),
           ),
         ),
       ],
@@ -1648,31 +1725,50 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
   }
 
   Widget _bolumKart({required String baslik, required Widget icerik, String? bilgiAciklama, bool initiallyExpanded = true}) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-      child: ExpansionTile(
-        initiallyExpanded: initiallyExpanded,
-        shape: const RoundedRectangleBorder(side: BorderSide.none),
-        title: Row(
-          children: [
-            Text(baslik, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
-            if (bilgiAciklama != null)
-              IconButton(
-                icon: const Icon(Icons.info_outline, size: 18, color: Colors.grey),
-                onPressed: () => showDialog(
-                  context: context,
-                  builder: (c) => AlertDialog(title: Text(baslik), content: Text(bilgiAciklama), actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text("Anladım"))]),
-                ),
-              ),
-          ],
-        ),
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: icerik,
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.grey.withValues(alpha: 0.1)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
         ],
+      ),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          initiallyExpanded: initiallyExpanded,
+          shape: const RoundedRectangleBorder(side: BorderSide.none),
+          title: Row(
+            children: [
+              Text(baslik, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.indigo, fontSize: 16)),
+              if (bilgiAciklama != null)
+                IconButton(
+                  icon: const Icon(Icons.info_outline, size: 18, color: Colors.grey),
+                  onPressed: () => showDialog(
+                    context: context,
+                    builder: (c) => AlertDialog(
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                      title: Text(baslik), 
+                      content: Text(bilgiAciklama), 
+                      actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text("Anladım"))]
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: icerik,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1725,8 +1821,8 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
       },
       child: Column(
         children: [
-          Text(etiket, style: const TextStyle(fontSize: 11, color: Colors.grey)),
-          Text(deger, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: deger == "Seçilmedi" ? Colors.red : Colors.blue)),
+          Text(etiket, style: const TextStyle(fontSize: 13, color: Colors.grey)),
+          Text(deger, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: deger == "Seçilmedi" ? Colors.red : Colors.blue)),
         ],
       ),
     );
@@ -1826,23 +1922,49 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                           MaterialPageRoute(builder: (c) => EsnafRandevuYonetimEkrani(esnafId: widget.esnaf.id, esnaf: widget.esnaf))
                         ),
                         child: Container(
-                          padding: const EdgeInsets.all(15),
+                          padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
-                            color: Colors.orange.shade50,
+                            gradient: LinearGradient(
+                              colors: [Colors.orange.shade400, Colors.orange.shade700],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
                             borderRadius: BorderRadius.circular(15),
-                            border: Border.all(color: Colors.orange.shade200),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.orange.withValues(alpha: 0.3),
+                                blurRadius: 8,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
                           ),
                           child: Row(
                             children: [
-                              const Icon(Icons.notification_important, color: Colors.orange),
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.2),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.notification_important, color: Colors.white),
+                              ),
                               const SizedBox(width: 15),
                               Expanded(
-                                child: Text(
-                                  "${bekleyenler.length} Randevu Onay Bekliyor",
-                                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.deepOrange),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      "${bekleyenler.length} Randevu Onay Bekliyor",
+                                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                                    ),
+                                    const Text(
+                                      "Hemen incelemek için tıklayın",
+                                      style: TextStyle(fontSize: 12, color: Colors.white70),
+                                    ),
+                                  ],
                                 ),
                               ),
-                              const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.orange),
+                              const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.white),
                             ],
                           ),
                         ),
@@ -2010,9 +2132,9 @@ class DurakTakipIcerigi extends StatelessWidget {
     });
 
     return ListView.separated(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(8),
       itemCount: siraliAraclar.length,
-      separatorBuilder: (context, index) => const Divider(),
+      separatorBuilder: (context, index) => const Divider(height: 1),
       itemBuilder: (context, idx) {
         final arac = siraliAraclar[idx];
         final bool durakta = arac['durakta'] ?? false;
@@ -2035,117 +2157,138 @@ class DurakTakipIcerigi extends StatelessWidget {
         }
 
         return ListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           leading: CircleAvatar(
+            radius: 20,
             backgroundColor: durumRengi.withValues(alpha: 0.1),
-            child: Icon(durumIkonu, color: durumRengi),
+            child: Icon(durumIkonu, color: durumRengi, size: 22),
           ),
           title: Row(
             children: [
-              Text(arac['plaka'] ?? "Plaka Yok", style: const TextStyle(fontWeight: FontWeight.bold)),
+              Text(arac['plaka'] ?? "Plaka Yok", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               if (kendiAraci)
                 Container(
                   margin: const EdgeInsets.only(left: 8),
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(4)),
+                  decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(6)),
                   child: const Text("SİZ", style: TextStyle(fontSize: 10, color: Colors.blue, fontWeight: FontWeight.bold)),
                 ),
             ],
           ),
-          subtitle: Text("${arac['soforAd'] ?? 'Şoför Belirtilmemiş'} - $durum ${durakta ? '(Durakta)' : ''}"),
+          subtitle: Text(
+            "${arac['soforAd'] ?? 'Şoför Belirtilmemiş'} - $durum ${durakta ? '(Durakta)' : ''}",
+            style: const TextStyle(fontSize: 13),
+          ),
           trailing: (soforTel == null || kendiAraci)
               ? Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    ElevatedButton(
-                      onPressed: () async {
-                        // SIRAYA GİRERKEN KONUM KONTROLÜ
-                        if (!durakta) {
-                          try {
-                            Position pos = await Geolocator.getCurrentPosition(
-                              locationSettings: const LocationSettings(accuracy: LocationAccuracy.best),
-                            );
-                            double hamMesafe = Geolocator.distanceBetween(
-                              pos.latitude,
-                              pos.longitude,
-                              esnaf.konum.latitude,
-                              esnaf.konum.longitude,
-                            );
+                    SizedBox(
+                      height: 40,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          backgroundColor: durakta ? Colors.orange.shade50 : Colors.green.shade50,
+                          foregroundColor: durakta ? Colors.orange : Colors.green,
+                          elevation: 0,
+                          textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                        ),
+                        onPressed: () async {
+                          if (!durakta) {
+                            try {
+                              Position pos = await Geolocator.getCurrentPosition(
+                                locationSettings: const LocationSettings(accuracy: LocationAccuracy.best),
+                              );
+                              
+                              double lat = (esnaf is EsnafModeli) ? esnaf.konum.latitude : (esnaf['konum']?['latitude'] ?? 0.0);
+                              double lon = (esnaf is EsnafModeli) ? esnaf.konum.longitude : (esnaf['konum']?['longitude'] ?? 0.0);
 
-                            // GPS hata payını düşerek net mesafeyi buluyoruz.
-                            double netMesafe = hamMesafe - pos.accuracy;
-                            if (netMesafe < 0) netMesafe = 0;
+                              double hamMesafe = Geolocator.distanceBetween(
+                                pos.latitude,
+                                pos.longitude,
+                                lat,
+                                lon,
+                              );
 
-                            if (netMesafe > 5) { // 5 metre net sınır
-                              if (context.mounted) {
-                                showDialog(
-                                  context: context,
-                                  builder: (context) => AlertDialog(
-                                    title: const Icon(Icons.location_off, color: Colors.red, size: 40),
-                                    content: Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        const Text(
-                                          "Durakta Değilsiniz",
-                                          textAlign: TextAlign.center,
-                                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20, color: Colors.black),
-                                        ),
-                                        const SizedBox(height: 15),
-                                        Text(
-                                          "Sıraya girmek için durağın 5 metre yakınında olmalısınız.\n\n"
-                                          "Ölçülen: ${hamMesafe < 1000 ? "${hamMesafe.toStringAsFixed(1)} m" : "${(hamMesafe / 1000).toStringAsFixed(2)} km"}\n"
-                                          "Hata Payı: ±${pos.accuracy < 1000 ? "${pos.accuracy.toStringAsFixed(1)} m" : "${(pos.accuracy / 1000).toStringAsFixed(2)} km"}\n"
-                                          "Net Mesafe: ${netMesafe < 1000 ? "${netMesafe.toStringAsFixed(1)} m" : "${(netMesafe / 1000).toStringAsFixed(2)} km"}",
-                                          textAlign: TextAlign.center,
-                                        ),
+                              double netMesafe = hamMesafe - pos.accuracy;
+                              if (netMesafe < 0) netMesafe = 0;
+
+                              double limit = (esnaf is EsnafModeli)
+                                  ? esnaf.konumDogrulamaMesafesi
+                                  : (esnaf['konumDogrulamaMesafesi']?.toDouble() ?? 10.0);
+
+                              if (netMesafe > limit) {
+                                if (context.mounted) {
+                                  showDialog(
+                                    context: context,
+                                    builder: (context) => AlertDialog(
+                                      title: const Icon(Icons.location_off, color: Colors.red, size: 32),
+                                      content: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Text(
+                                            "Durakta Değilsiniz",
+                                            textAlign: TextAlign.center,
+                                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black),
+                                          ),
+                                          const SizedBox(height: 10),
+                                          Text(
+                                            "Sıraya girmek için durağın ${limit.round()} metre yakınında olmalısınız.\n\n"
+                                            "Ölçülen: ${hamMesafe < 1000 ? "${hamMesafe.toStringAsFixed(1)} m" : "${(hamMesafe / 1000).toStringAsFixed(2)} km"}\n"
+                                            "Hata Payı: ±${pos.accuracy < 1000 ? "${pos.accuracy.toStringAsFixed(1)} m" : "${(pos.accuracy / 1000).toStringAsFixed(2)} km"}\n"
+                                            "Net Mesafe: ${netMesafe < 1000 ? "${netMesafe.toStringAsFixed(1)} m" : "${(netMesafe / 1000).toStringAsFixed(2)} km"}",
+                                            textAlign: TextAlign.center,
+                                            style: const TextStyle(fontSize: 11),
+                                          ),
+                                        ],
+                                      ),
+                                      actions: [
+                                        TextButton(onPressed: () => Navigator.pop(context), child: const Text("Tamam")),
                                       ],
                                     ),
-                                    actions: [
-                                      TextButton(onPressed: () => Navigator.pop(context), child: const Text("Tamam")),
-                                    ],
-                                  ),
+                                  );
+                                }
+                                return;
+                              }
+                            } catch (e) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text("Konum doğrulanamadı. Lütfen GPS'i kontrol edin."), backgroundColor: Colors.orange),
                                 );
                               }
                               return;
                             }
-                          } catch (e) {
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text("Konum doğrulanamadı. Lütfen GPS'i kontrol edin."), backgroundColor: Colors.orange),
-                              );
-                            }
-                            return;
                           }
-                        }
 
-                        arac['durakta'] = !durakta;
-                        if (arac['durakta']) {
-                          arac['siraZamani'] = DateTime.now().millisecondsSinceEpoch;
-                          arac['durum'] = "Müsait";
-                        } else {
-                          arac['siraZamani'] = 0;
-                        }
-                        onKaydet();
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: durakta ? Colors.orange.shade50 : Colors.green.shade50,
-                        foregroundColor: durakta ? Colors.orange : Colors.green,
-                        elevation: 0,
-                      ),
-                      child: Text(
-                        kendiAraci ? (durakta ? "Sıradan Çık" : "Sıraya Gir") : (durakta ? "Sıradan Çıkar" : "Sıraya Al"),
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                          arac['durakta'] = !durakta;
+                          if (arac['durakta']) {
+                            arac['siraZamani'] = DateTime.now().millisecondsSinceEpoch;
+                            arac['durum'] = "Müsait";
+                          } else {
+                            arac['siraZamani'] = 0;
+                          }
+                          onKaydet();
+                        },
+                        child: Text(kendiAraci ? (durakta ? "Sıradan Çık" : "Sıraya Gir") : (durakta ? "Sıradan Çıkar" : "Sıraya Al")),
                       ),
                     ),
-                    PopupMenuButton<String>(
-                      onSelected: (String yeniDurum) {
-                        arac['durum'] = yeniDurum;
-                        onKaydet();
-                      },
-                      itemBuilder: (context) => [
-                        const PopupMenuItem(value: 'Müsait', child: Text("Müsait")),
-                        const PopupMenuItem(value: 'Meşgul', child: Text("Meşgul")),
-                        const PopupMenuItem(value: 'Mola', child: Text("Mola")),
-                      ],
+                    const SizedBox(width: 8),
+                    SizedBox(
+                      width: 36,
+                      height: 40,
+                      child: PopupMenuButton<String>(
+                        padding: EdgeInsets.zero,
+                        icon: const Icon(Icons.more_vert, size: 24),
+                        onSelected: (String yeniDurum) {
+                          arac['durum'] = yeniDurum;
+                          onKaydet();
+                        },
+                        itemBuilder: (context) => [
+                          const PopupMenuItem(value: 'Müsait', child: Text("Müsait", style: TextStyle(fontSize: 14))),
+                          const PopupMenuItem(value: 'Meşgul', child: Text("Meşgul", style: TextStyle(fontSize: 14))),
+                          const PopupMenuItem(value: 'Mola', child: Text("Mola", style: TextStyle(fontSize: 14))),
+                        ],
+                      ),
                     ),
                   ],
                 )
@@ -2155,3 +2298,4 @@ class DurakTakipIcerigi extends StatelessWidget {
     );
   }
 }
+

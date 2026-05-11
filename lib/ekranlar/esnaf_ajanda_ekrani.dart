@@ -581,9 +581,12 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
         }
 
         return Scaffold(
-          backgroundColor: Colors.grey.shade100,
+          backgroundColor: Colors.grey.shade50,
           appBar: AppBar(
-            title: Text("${guncelEsnaf.isletmeAdi} Ajandası"),
+            title: Text("${guncelEsnaf.isletmeAdi} Ajandası", style: const TextStyle(fontWeight: FontWeight.bold)),
+            backgroundColor: Colors.white,
+            foregroundColor: Colors.black,
+            elevation: 0,
             actions: [
               StreamBuilder<DocumentSnapshot>(
                 stream: _firestoreServisi.gunlukAjandaSnapStream(guncelEsnaf.id, _seciliTarih, _seciliKanallar.isNotEmpty ? _seciliKanallar.first : null),
@@ -608,16 +611,16 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       IconButton(
-                        icon: const Icon(Icons.date_range, color: Colors.red),
+                        icon: const Icon(Icons.date_range_rounded, color: Colors.blue),
                         onPressed: () => _topluAjandaSilFormu(),
                         tooltip: "Tarih Aralığı Sil",
                       ),
                       IconButton(
-                        icon: Icon(tumuKapali ? Icons.lock_open : Icons.lock, color: tumuKapali ? Colors.green : Colors.orange),
+                        icon: Icon(tumuKapali ? Icons.lock_open_rounded : Icons.lock_rounded, color: tumuKapali ? Colors.green : Colors.orange),
                         onPressed: () => _tumuKapatAcFormu(data, tumuKapali),
                         tooltip: tumuKapali ? "Tüm Günü Aç" : "Tüm Günü Kapat",
                       ),
-                      IconButton(onPressed: _ajandaSilOnay, icon: const Icon(Icons.delete_sweep, color: Colors.red)),
+                      IconButton(onPressed: _ajandaSilOnay, icon: const Icon(Icons.delete_sweep_rounded, color: Colors.red)),
                     ],
                   );
                 },
@@ -627,7 +630,9 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
           body: Column(
             children: [
               _tarihSecici(),
+              const Divider(height: 1),
               _kanalSecici(guncelEsnaf),
+              const Divider(height: 1),
               Expanded(
                 child: _seciliKanallar.isEmpty 
                   ? _kanalSecilmediMesaji(guncelEsnaf)
@@ -638,7 +643,6 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                         
                         String tarihStr = DateFormat('yyyy-MM-dd').format(_seciliTarih);
                         
-                        // Seçili kanallardan herhangi biri için bugün ajanda var mı?
                         bool herhangiBiriAktif = _seciliKanallar.any((kanal) {
                           String temizKanal = kanal.trim();
                           String anahtar = temizKanal.isNotEmpty ? "${tarihStr}_$temizKanal" : tarihStr;
@@ -646,7 +650,6 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                         });
 
                         if (!herhangiBiriAktif) {
-                          // Eğer sadece 1 kanal seçiliyse ve bu kanalın başka günlerde ajandası varsa "İstirahat Günü" göster
                           bool kanalAjandasiVarMi = _seciliKanallar.length == 1 && (guncelEsnaf.aktifGunler ?? []).any((gun) => gun.toString().contains(_seciliKanallar.first.trim()));
                           
                           if (kanalAjandasiVarMi && guncelEsnaf.kategori == 'Taksi') {
@@ -672,6 +675,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
       }
     );
   }
+
 
   void _tumuKapatAcFormu(Map<String, dynamic> data, bool ac) {
     if (ac) {
@@ -736,18 +740,26 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
 
   Widget _tarihSecici() {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.symmetric(vertical: 4),
       color: Colors.white,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          IconButton(icon: const Icon(Icons.chevron_left), onPressed: () {
-            _seciliTarih = _seciliTarih.subtract(const Duration(days: 1));
-            _ajandaStreamGuncelle();
-          }),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.chevron_left, size: 24), 
+            onPressed: () {
+              _seciliTarih = _seciliTarih.subtract(const Duration(days: 1));
+              _ajandaStreamGuncelle();
+            }
+          ),
           TextButton.icon(
-            icon: const Icon(Icons.calendar_today, size: 16),
-            label: Text(DateFormat('dd MMMM yyyy, EEEE', 'tr_TR').format(_seciliTarih), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87)),
+            style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+            icon: const Icon(Icons.calendar_today, size: 20),
+            label: Text(
+              DateFormat('dd MMM yyyy, EEEE', 'tr_TR').format(_seciliTarih), 
+              style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87, fontSize: 18)
+            ),
             onPressed: () async {
               final p = await showDatePicker(context: context, initialDate: _seciliTarih, firstDate: DateTime.now().subtract(const Duration(days: 365)), lastDate: DateTime.now().add(const Duration(days: 365)), locale: const Locale('tr', 'TR'));
               if (p != null) {
@@ -756,10 +768,14 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
               }
             },
           ),
-          IconButton(icon: const Icon(Icons.chevron_right), onPressed: () {
-            _seciliTarih = _seciliTarih.add(const Duration(days: 1));
-            _ajandaStreamGuncelle();
-          }),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.chevron_right, size: 24), 
+            onPressed: () {
+              _seciliTarih = _seciliTarih.add(const Duration(days: 1));
+              _ajandaStreamGuncelle();
+            }
+          ),
         ],
       ),
     );
@@ -815,12 +831,12 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
     }
 
     return Container(
-      height: 75,
+      height: 65,
       width: double.infinity,
       color: Colors.white,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         itemCount: tumKanallar.length,
         itemBuilder: (context, index) {
           String kanalAdi = tumKanallar[index];
@@ -850,20 +866,21 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4),
             child: ChoiceChip(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              visualDensity: VisualDensity.comfortable,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               label: Column(
                 mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(kanalAdi, 
                     style: TextStyle(
-                      fontSize: 14, 
+                      fontSize: 15, 
                       fontWeight: FontWeight.bold,
                       color: isSelected ? Colors.white : Colors.blue.shade900
                     )
                   ),
                   if (soforAdi != null && soforAdi.isNotEmpty) 
-                    Text(soforAdi, style: TextStyle(fontSize: 10, color: isSelected ? Colors.white70 : Colors.black54)),
+                    Text(soforAdi, style: TextStyle(fontSize: 13, color: isSelected ? Colors.white70 : Colors.black54)),
                 ],
               ),
               selected: isSelected,
@@ -917,7 +934,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
             "Lütfen üst listeden $label seçin",
             textAlign: TextAlign.center,
             style: const TextStyle(
-              fontSize: 16,
+              fontSize: 18,
               fontWeight: FontWeight.bold,
               color: Colors.grey,
             ),
@@ -937,12 +954,12 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(color: Colors.orange.shade50, shape: BoxShape.circle),
-              child: Icon(Icons.nightlight_round, size: 60, color: Colors.orange.shade400),
+              child: Icon(Icons.nightlight_round, size: 70, color: Colors.orange.shade400),
             ),
             const SizedBox(height: 20),
             Text(
               "${_seciliKanallar.first} için İstirahat Günü",
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87),
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black87),
             ),
             const SizedBox(height: 10),
             const Text(
@@ -1012,7 +1029,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(8)),
-                          child: Text("${_seciliKanallar.where((k) => k != 'Durak').length} Araç Seçili", style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blue)),
+                          child: Text("${_seciliKanallar.where((k) => k != 'Durak').length} Araç Seçili", style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.blue)),
                         ),
                     ],
                   ),
@@ -1025,7 +1042,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                           Row(
                             children: [
                               const Expanded(
-                                child: Text("Seçili araçlar için çalışılacak ilk günü seç", style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                                child: Text("Seçili araçlar için çalışılacak ilk günü seç", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
                               ),
                               OutlinedButton.icon(
                                 style: OutlinedButton.styleFrom(
@@ -1042,18 +1059,18 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                                   );
                                   if (d != null) setState(() => _birGunCalisIlkGun = d);
                                 },
-                                icon: const Icon(Icons.calendar_month, size: 16),
+                                icon: const Icon(Icons.calendar_month, size: 20),
                                 label: Text(
                                   _birGunCalisIlkGun == null 
                                     ? "İlk Gün Seç" 
                                     : DateFormat('dd/MM/yyyy').format(_birGunCalisIlkGun!),
-                                  style: const TextStyle(fontSize: 11),
+                                  style: const TextStyle(fontSize: 13),
                                 ),
                               ),
                             ],
                           ),
                           const SizedBox(height: 12),
-                          const Text("Ne kadarlık plan oluşturmak istiyorsunuz?", style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                          const Text("Ne kadarlık plan oluşturmak istiyorsunuz?", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
                           const SizedBox(height: 8),
                           Row(
                             children: [
@@ -1064,7 +1081,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                                   child: TextField(
                                     controller: _periyotController,
                                     keyboardType: TextInputType.number,
-                                    style: const TextStyle(fontSize: 13),
+                                    style: const TextStyle(fontSize: 15),
                                     decoration: InputDecoration(
                                       hintText: "Sayı",
                                       isDense: true,
@@ -1094,7 +1111,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                                     child: DropdownButton<String>(
                                       value: _periyotBirim,
                                       isExpanded: true,
-                                      style: const TextStyle(fontSize: 13, color: Colors.black),
+                                      style: const TextStyle(fontSize: 15, color: Colors.black),
                                       items: ["Gün", "Ay", "Yıl"].map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
                                       onChanged: (v) => setState(() => _periyotBirim = v!),
                                     ),
@@ -1136,8 +1153,8 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                   if (esnaf.kategori == 'Taksi') ...[
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
-                      title: const Text("1 Gün Çalış 1 Gün İstirahat (1/1)", style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.indigo)),
-                      subtitle: const Text("Araçlar için dönüşümlü çalışma sistemi", style: TextStyle(fontSize: 11)),
+                      title: const Text("1 Gün Çalış 1 Gün İstirahat (1/1)", style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.indigo)),
+                      subtitle: const Text("Araçlar için dönüşümlü çalışma sistemi", style: TextStyle(fontSize: 13)),
                       value: _birGunCalisBirGunYat,
                       onChanged: (v) => setState(() => _birGunCalisBirGunYat = v),
                     ),
@@ -1161,7 +1178,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                               _birGunCalisBirGunYat 
                                 ? "İşletmeniz 7/24 modundadır. 1/1 sistemi seçili olduğu için mesai saatleri otomatik 00:00-00:00 olarak ayarlanacaktır."
                                 : "İşletmeniz 7/24 çalışma modundadır. Gün ve saat seçimi yapmanıza gerek yoktur. Tüm günler otomatik olarak 00:00-00:00 arası oluşturulacaktır.",
-                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
                             ),
                           ),
                         ],
@@ -1175,7 +1192,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                       Wrap(
                         spacing: 8,
                         children: _calismaGunleri.keys.map((gun) => FilterChip(
-                          label: Text(gun, style: const TextStyle(fontSize: 12)),
+                          label: Text(gun, style: const TextStyle(fontSize: 14)),
                           selected: _calismaGunleri[gun]!,
                           onSelected: (v) => setState(() => _calismaGunleri[gun] = v),
                         )).toList(),
@@ -1189,7 +1206,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                           Expanded(
                             child: ListTile(
                               contentPadding: EdgeInsets.zero,
-                              title: const Text("Başlangıç", style: TextStyle(fontSize: 12, color: Colors.green)), 
+                              title: const Text("Başlangıç", style: TextStyle(fontSize: 14, color: Colors.green)), 
                               subtitle: Text(_seciliAcilisSaat ?? "--:--", style: const TextStyle(fontWeight: FontWeight.bold)), 
                               onTap: () => _saatSec(true)
                             )
@@ -1197,7 +1214,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                           Expanded(
                             child: ListTile(
                               contentPadding: EdgeInsets.zero,
-                              title: const Text("Bitiş", style: TextStyle(fontSize: 12, color: Colors.red)), 
+                              title: const Text("Bitiş", style: TextStyle(fontSize: 14, color: Colors.red)), 
                               subtitle: Text(_seciliKapanisSaat ?? "--:--", style: const TextStyle(fontWeight: FontWeight.bold)), 
                               onTap: () => _saatSec(false)
                             )
@@ -1208,7 +1225,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                       const Text("Öğle Arası", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
-                        title: const Text("Öğle arası uygula", style: TextStyle(fontSize: 13)),
+                        title: const Text("Öğle arası uygula", style: TextStyle(fontSize: 15)),
                         value: _ogleArasiVar,
                         onChanged: (v) => setState(() => _ogleArasiVar = v),
                       ),
@@ -1253,7 +1270,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           DropdownButtonFormField<int>(
-                            initialValue: [5, 10, 15, 20, 30, 45, 60, 90, 120].contains(_slotAraligi) ? _slotAraligi : 30,
+                            value: [5, 10, 15, 20, 30, 45, 60, 90, 120].contains(_slotAraligi) ? _slotAraligi : 30,
                             decoration: InputDecoration(
                               labelText: "Slot Aralığı (Dakika)", 
                               border: const OutlineInputBorder(),
@@ -1267,17 +1284,25 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                           if (uyumsuzlukVar)
                             Padding(
                               padding: const EdgeInsets.only(top: 8, left: 4),
-                              child: Row(
-                                children: [
-                                  const Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 16),
-                                  const SizedBox(width: 5),
-                                  Expanded(
-                                    child: Text(
-                                      "Bazı hizmet süreleriniz bu aralıkla tam bölünmüyor. Randevu alırken kaymalar olabilir.",
-                                      style: TextStyle(color: Colors.orange.shade800, fontSize: 11, fontWeight: FontWeight.bold),
+                              child: Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 24),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(
+                                        "Bazı hizmet süreleriniz ($_slotAraligi dk) ile tam bölünmüyor. Randevu alırken kaymalar olabilir.",
+                                        style: TextStyle(color: Colors.orange.shade900, fontSize: 14, fontWeight: FontWeight.w500),
+                                      ),
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
                             ),
                         ],
@@ -1553,11 +1578,11 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
         final randevular = snapshot.data ?? [];
         final kapaliSlotlarRaw = ajanda['kapaliSlotlar'] ?? {};
         
-        if (slotlar.isEmpty) return const Center(child: Padding(padding: EdgeInsets.all(20.0), child: Text("Hatalı saat ayarları. Lütfen mesai saatlerini kontrol edin.", textAlign: TextAlign.center)));
+        if (slotlar.isEmpty) return const Center(child: Padding(padding: EdgeInsets.all(20.0), child: Text("Hatalı saat ayarları. Lütfen mesai saatlerini kontrol edin.", textAlign: TextAlign.center, style: TextStyle(fontSize: 12))));
 
         final Set<String> islenmisRandevular = {};
         return ListView.builder(
-          padding: const EdgeInsets.all(10),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
           itemCount: slotlar.length,
           itemBuilder: (context, index) {
             final saat = slotlar[index];
@@ -1577,16 +1602,15 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
 
             if (r.isEmpty) {
               bool kapaliMi = false;
-              String neden = "Esnaf tarafından kapatıldı";
+              String neden = "Kapatıldı";
               
               if (kapaliSlotlarRaw is Map) {
                 kapaliMi = kapaliSlotlarRaw.containsKey(saat);
-                neden = kapaliSlotlarRaw[saat] ?? "Esnaf tarafından kapatıldı";
+                neden = kapaliSlotlarRaw[saat] ?? "Kapatıldı";
               } else if (kapaliSlotlarRaw is List) {
                 kapaliMi = kapaliSlotlarRaw.contains(saat);
               }
 
-              // Öğle arası kontrolü
               bool ogleArasiMi = false;
               if (ajanda['ogleBaslangic'] != null && ajanda['ogleBitis'] != null) {
                 int sDk = _saatiDakikayaCevir(saat);
@@ -1594,135 +1618,171 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                 int oBitDk = _saatiDakikayaCevir(ajanda['ogleBitis']);
                 
                 if (sDk >= oBasDk && sDk < oBitDk) {
-                  // Sadece öğle arasının başlangıç saatinde göster
                   if (saat == ajanda['ogleBaslangic']) {
                     ogleArasiMi = true;
                     kapaliMi = true;
                     neden = "Öğle Arası";
                   } else {
-                    // Diğer öğle arası slotlarını tamamen gizle
                     return const SizedBox.shrink();
                   }
                 }
               }
 
-              return Opacity(
-                opacity: kapaliMi ? 0.6 : 1.0,
-                child: Card(
-                  elevation: 0,
-                  color: ogleArasiMi ? Colors.blue.shade50 : (kapaliMi ? Colors.grey.shade50 : Colors.white),
-                  margin: const EdgeInsets.only(bottom: 8),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10), 
-                    side: BorderSide(color: ogleArasiMi ? Colors.blue.shade100 : (kapaliMi ? Colors.grey.shade200 : Colors.grey.shade200))
+              return Container(
+                margin: const EdgeInsets.only(bottom: 6),
+                height: 60,
+                decoration: BoxDecoration(
+                  color: ogleArasiMi ? Colors.blue.withValues(alpha: 0.05) : (kapaliMi ? Colors.grey.withValues(alpha: 0.05) : Colors.white),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: ogleArasiMi 
+                      ? Colors.blue.withValues(alpha: 0.2) 
+                      : (kapaliMi ? Colors.grey.withValues(alpha: 0.2) : Colors.grey.withValues(alpha: 0.1))
                   ),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 4),
-                    child: Row(
-                      children: [
-                        _saatGostergesi(
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 105,
+                      decoration: BoxDecoration(
+                        color: ogleArasiMi ? Colors.blue.withValues(alpha: 0.1) : (kapaliMi ? Colors.grey.withValues(alpha: 0.1) : Colors.blue.withValues(alpha: 0.02)),
+                        borderRadius: const BorderRadius.horizontal(left: Radius.circular(7)),
+                      ),
+                      child: Center(
+                        child: _saatGostergesi(
                           ogleArasiMi ? ajanda['ogleBaslangic'] : saat, 
                           ogleArasiMi ? ajanda['ogleBitis'] : bitisSaati, 
                           ogleArasiMi ? true : esnaf.slotAralikliGoster, 
-                          ogleArasiMi ? Colors.blue : (kapaliMi ? Colors.grey : Colors.black87)
+                          ogleArasiMi ? Colors.blue : (kapaliMi ? Colors.grey : Colors.blue.shade700)
                         ),
-                        const SizedBox(width: 15),
-                        Expanded(
-                          child: IgnorePointer(
-                            ignoring: kapaliMi,
-                            child: InkWell(
-                              onTap: () => _esnafRandevuEkleFormu(saat, slotDakika, esnaf.hizmetler ?? [], esnafAraclar: esnaf.araclar),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(ogleArasiMi ? "Öğle Arası" : (kapaliMi ? "Randevuya Kapalı" : "Boş Slot"), 
-                                      style: TextStyle(
-                                        color: ogleArasiMi ? Colors.blue : (kapaliMi ? Colors.grey : Colors.black54), 
-                                        fontSize: 16, 
-                                        fontWeight: ogleArasiMi ? FontWeight.bold : FontWeight.normal,
-                                        fontStyle: (kapaliMi && !ogleArasiMi) ? FontStyle.italic : FontStyle.normal
-                                      )),
-                                    if (kapaliMi && neden.isNotEmpty && !ogleArasiMi)
-                                      Text("Neden: $neden", style: const TextStyle(fontSize: 10, color: Colors.redAccent)),
-                                  ],
-                                ),
+                      ),
+                    ),
+                    Expanded(
+                      child: InkWell(
+                        onTap: kapaliMi ? null : () => _esnafRandevuEkleFormu(saat, slotDakika, esnaf.hizmetler ?? [], esnafAraclar: esnaf.araclar),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: Row(
+                            children: [
+                              Text(
+                                ogleArasiMi ? "Öğle Arası" : (kapaliMi ? "Kapalı" : "Boş Slot"), 
+                                style: TextStyle(
+                                  color: ogleArasiMi ? Colors.blue : (kapaliMi ? Colors.grey.shade600 : Colors.black54), 
+                                  fontSize: 17, 
+                                  fontWeight: ogleArasiMi ? FontWeight.bold : FontWeight.w500,
+                                )
                               ),
-                            ),
+                              if (kapaliMi && neden.isNotEmpty && !ogleArasiMi)
+                                Expanded(
+                                  child: Text(
+                                    " ($neden)", 
+                                    style: const TextStyle(fontSize: 14, color: Colors.redAccent, overflow: TextOverflow.ellipsis),
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
-                        if (!ogleArasiMi) IconButton(
-                          icon: Icon(kapaliMi ? Icons.lock : Icons.lock_open, color: kapaliMi ? Colors.red.shade400 : Colors.green.shade400, size: 22),
-                          onPressed: () => _slotKapatAcFormu(saat, kapaliMi),
-                          tooltip: kapaliMi ? "Saati Aç" : "Saati Kapat",
-                        ),
-                        if (ogleArasiMi) const Padding(
-                          padding: EdgeInsets.all(12),
-                          child: Icon(Icons.restaurant, color: Colors.blue, size: 22),
-                        ),
-                        if (!kapaliMi) IconButton(
-                          icon: const Icon(Icons.add_circle_outline, color: Colors.blue, size: 22),
-                          onPressed: () => _esnafRandevuEkleFormu(saat, slotDakika, esnaf.hizmetler ?? [], esnafAraclar: esnaf.araclar),
-                          tooltip: "Randevu Ekle",
-                        ),
-                      ],
+                      ),
                     ),
-                  ),
+                    if (!ogleArasiMi) 
+                      IconButton(
+                        icon: Icon(kapaliMi ? Icons.lock_rounded : Icons.lock_open_rounded, color: kapaliMi ? Colors.red.shade300 : Colors.green.shade300, size: 26),
+                        padding: EdgeInsets.zero,
+                        visualDensity: VisualDensity.compact,
+                        constraints: const BoxConstraints(),
+                        onPressed: () => _slotKapatAcFormu(saat, kapaliMi),
+                      ),
+                    if (ogleArasiMi) 
+                      const Padding(
+                        padding: EdgeInsets.only(right: 12),
+                        child: Icon(Icons.restaurant_rounded, color: Colors.blue, size: 26),
+                      ),
+                    if (!kapaliMi) 
+                      IconButton(
+                        icon: const Icon(Icons.add_circle_outline_rounded, color: Colors.blue, size: 26),
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        visualDensity: VisualDensity.compact,
+                        constraints: const BoxConstraints(),
+                        onPressed: () => _esnafRandevuEkleFormu(saat, slotDakika, esnaf.hizmetler ?? [], esnafAraclar: esnaf.araclar),
+                      ),
+                  ],
                 ),
               );
             }
 
-            // Birden fazla randevu varsa hepsini göster
             return Column(
               children: r.map((randevu) {
                 if (islenmisRandevular.contains(randevu.id)) return const SizedBox.shrink();
                 islenmisRandevular.add(randevu.id);
 
-                return Card(
-                  elevation: 4,
-                  color: Colors.orange.shade50,
-                  margin: const EdgeInsets.only(bottom: 8),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15), side: BorderSide(color: Colors.orange.shade200, width: 1.5)),
-                  child: InkWell(
-                    onTap: () => _randevuIslemMenusu(randevu),
-                    borderRadius: BorderRadius.circular(15),
-                    child: Padding(
-                      padding: const EdgeInsets.all(15),
-                      child: Row(
-                        children: [
-                          _saatGostergesi(randevu.saat, bitisSaati, esnaf.slotAralikliGoster, Colors.orange),
-                          const SizedBox(width: 15),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 6),
+                  height: 70, 
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.orange.withValues(alpha: 0.3), width: 1),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 105,
+                        decoration: BoxDecoration(
+                          color: Colors.orange.withValues(alpha: 0.1),
+                          borderRadius: const BorderRadius.horizontal(left: Radius.circular(7)),
+                        ),
+                        child: Center(
+                          child: _saatGostergesi(randevu.saat, bitisSaati, esnaf.slotAralikliGoster, Colors.orange.shade800),
+                        ),
+                      ),
+                      Expanded(
+                        child: InkWell(
+                          onTap: () => _randevuIslemMenusu(randevu),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            child: Row(
                               children: [
-                                Row(
-                                  children: [
-                                    Expanded(child: Text(randevu.kullaniciAd, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.orange.shade900))),
-                                    if (_seciliKanallar.length > 1) 
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                        decoration: BoxDecoration(color: Colors.orange.shade100, borderRadius: BorderRadius.circular(4)),
-                                        child: Text(randevu.randevuKanali ?? '', style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold)),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Text(
+                                        randevu.kullaniciAd, 
+                                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.orange.shade900),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
                                       ),
-                                  ],
+                                      Text(
+                                        randevu.hizmetAdi, 
+                                        style: const TextStyle(fontSize: 15, color: Colors.black87),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                                const SizedBox(height: 4),
-                                Text("${randevu.hizmetAdi} (${randevu.kullaniciTel})", style: const TextStyle(fontSize: 13, color: Colors.black87)),
+                                if (_seciliKanallar.length > 1) 
+                                  Container(
+                                    margin: const EdgeInsets.symmetric(horizontal: 6),
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(color: Colors.orange.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(6)),
+                                    child: Text(randevu.randevuKanali ?? '', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.orange)),
+                                  ),
+                                Text(
+                                  randevu.kullaniciTel, 
+                                  style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+                                ),
                               ],
                             ),
                           ),
-                          Column(
-                            children: [
-                              const Icon(Icons.verified, color: Colors.green, size: 28),
-                              const SizedBox(height: 4),
-                              const Text("ONAYLI", style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 10))
-                            ]
-                          ),
-                        ],
+                        ),
                       ),
-                    ),
+                      const Padding(
+                        padding: EdgeInsets.only(right: 12),
+                        child: Icon(Icons.check_circle_rounded, color: Colors.green, size: 28),
+                      ),
+                    ],
                   ),
                 );
               }).toList(),
@@ -1732,6 +1792,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
       },
     );
   }
+
 
   void _slotKapatAcFormu(String saat, bool kapali) {
     if (kapali) {
@@ -1789,13 +1850,14 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
   Widget _saatGostergesi(String baslangic, String bitis, bool aralikliMi, Color renk) {
     if (!aralikliMi) {
       return SizedBox(
-        width: 60,
-        child: Text(baslangic, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: renk)),
+        width: 85,
+        child: Center(child: Text(baslangic, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: renk))),
       );
     }
     return Text(
-      "$baslangic - $bitis",
-      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: renk),
+      "$baslangic\n$bitis",
+      textAlign: TextAlign.center,
+      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: renk, height: 1.1),
     );
   }
 
@@ -1817,7 +1879,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(20)),
-                  child: const Text("Periyodik Randevu Serisi", style: TextStyle(fontSize: 10, color: Colors.blue, fontWeight: FontWeight.bold)),
+                  child: const Text("Periyodik Randevu Serisi", style: TextStyle(fontSize: 12, color: Colors.blue, fontWeight: FontWeight.bold)),
                 ),
               ),
             const Divider(height: 40),
@@ -1872,9 +1934,9 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
       onTap: onTap,
       child: Column(
         children: [
-          CircleAvatar(radius: 25, backgroundColor: renk.withValues(alpha: 0.1), child: Icon(ikon, color: renk)),
+          CircleAvatar(radius: 28, backgroundColor: renk.withValues(alpha: 0.1), child: Icon(ikon, color: renk)),
           const SizedBox(height: 8),
-          Text(etiket, style: TextStyle(color: renk, fontWeight: FontWeight.bold, fontSize: 12)),
+          Text(etiket, style: TextStyle(color: renk, fontWeight: FontWeight.bold, fontSize: 14)),
         ],
       ),
     );

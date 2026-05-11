@@ -27,6 +27,7 @@ class EsnafModeli {
   final bool randevularPersonelAdinaAlinsin; // Personel seçildiğinde personelin kanalı kullanılsın
   final bool aracOdakliSistem; // Taksi için araç odaklı sistem (randevular plakaya alınır)
   final bool istirahatliAraclariGizle; // İstirahatte olan araçlar listede gizlensin mi?
+  final double konumDogrulamaMesafesi; // Taksi sıraya giriş için konum doğrulama mesafesi (metre)
 
   final double puan; // Ortalama Puan
   final int yorumSayisi; // Toplam Yorum Sayısı
@@ -57,6 +58,7 @@ class EsnafModeli {
     this.randevularPersonelAdinaAlinsin = false,
     this.aracOdakliSistem = false,
     this.istirahatliAraclariGizle = true,
+    this.konumDogrulamaMesafesi = 10.0,
     this.puan = 0.0,
     this.yorumSayisi = 0,
   });
@@ -93,6 +95,7 @@ class EsnafModeli {
       randevularPersonelAdinaAlinsin: data['randevularPersonelAdinaAlinsin'] ?? false,
       aracOdakliSistem: data['aracOdakliSistem'] ?? false,
       istirahatliAraclariGizle: data['istirahatliAraclariGizle'] ?? true,
+      konumDogrulamaMesafesi: (data['konumDogrulamaMesafesi'] ?? 10.0).toDouble(),
       puan: (data['puan'] ?? 0.0).toDouble(),
       yorumSayisi: data['yorumSayisi'] ?? 0,
     );
@@ -124,6 +127,7 @@ class EsnafModeli {
       'randevularPersonelAdinaAlinsin': randevularPersonelAdinaAlinsin,
       'aracOdakliSistem': aracOdakliSistem,
       'istirahatliAraclariGizle': istirahatliAraclariGizle,
+      'konumDogrulamaMesafesi': konumDogrulamaMesafesi,
       'puan': puan,
       'yorumSayisi': yorumSayisi,
     };
@@ -155,6 +159,7 @@ class EsnafModeli {
     bool? randevularPersonelAdinaAlinsin,
     bool? aracOdakliSistem,
     bool? istirahatliAraclariGizle,
+    double? konumDogrulamaMesafesi,
     double? puan,
     int? yorumSayisi,
   }) {
@@ -184,6 +189,7 @@ class EsnafModeli {
       randevularPersonelAdinaAlinsin: randevularPersonelAdinaAlinsin ?? this.randevularPersonelAdinaAlinsin,
       aracOdakliSistem: aracOdakliSistem ?? this.aracOdakliSistem,
       istirahatliAraclariGizle: istirahatliAraclariGizle ?? this.istirahatliAraclariGizle,
+      konumDogrulamaMesafesi: konumDogrulamaMesafesi ?? this.konumDogrulamaMesafesi,
       puan: puan ?? this.puan,
       yorumSayisi: yorumSayisi ?? this.yorumSayisi,
     );
