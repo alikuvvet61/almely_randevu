@@ -48,8 +48,8 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
 
     // Otomatik personel/kanal/araç seçimi (Tek seçenek varsa)
     if (widget.esnaf.aracOdakliSistem && widget.esnaf.kategori == 'Taksi') {
-      if ((widget.esnaf.araclar?.length ?? 0) == 1) {
-        final a = widget.esnaf.araclar!.first;
+      if (widget.esnaf.araclar.length == 1) {
+        final a = widget.esnaf.araclar.first;
         _seciliKanalNotifier.value = a['plaka']?.toString();
       }
     } else if (widget.esnaf.randevularPersonelAdinaAlinsin) {
@@ -347,8 +347,17 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
     List<String> slotlar = [];
     final calisma = ajandaVerisi ?? esnaf.calismaSaatleri;
     if (calisma == null) return [];
+    
+    // 7/24 Modu Kontrolü: acilis ve kapanis ikisi de "00:00" ise veya ayniysa
     String acilis = calisma['acilis'] ?? "09:00";
     String kapanis = calisma['kapanis'] ?? "18:00";
+    bool is724 = (acilis == "00:00" && kapanis == "00:00") || (calisma['is724'] == true);
+    
+    if (is724) {
+      acilis = "00:00";
+      kapanis = "24:00";
+    }
+
     int slotAraligi = calisma['slotDakika'] ?? calisma['slotAraligi'] ?? 30;
 
     if (slotAraligi <= 0) return [];
@@ -378,9 +387,31 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
       if (gunlukVeri != null && gunlukVeri.containsKey(kanal)) {
         String durum = gunlukVeri[kanal];
         if (durum == 'I') return "İstirahatte";
+        
+        // Nöbetçi Araçlar İçin Saat Kısıtlaması
+        if (durum == 'N' && esnaf.nobetBaslangic != null && esnaf.nobetBaslangic != "Seçilmedi" && esnaf.nobetBitis != null && esnaf.nobetBitis != "Seçilmedi") {
+          int sDk = _saatiDakikayaCevir(slot);
+          int nBas = _saatiDakikayaCevir(esnaf.nobetBaslangic!);
+          int nBit = _saatiDakikayaCevir(esnaf.nobetBitis!);
+          
+          // Nöbetçi araç sadece nöbet saatleri arasında çalışabilir
+          bool musait = false;
+          if (nBit > nBas) {
+            // Normal aralık (örn: 08:00 - 20:00)
+            musait = sDk >= nBas && sDk < nBit;
+          } else {
+            // Gece aşan aralık (örn: 20:00 - 08:00)
+            musait = sDk >= nBas || sDk < nBit;
+          }
+          
+          if (!musait) return "Mesai Dışı";
+        }
       } else {
         // Ajanda kaydı yoksa şablona bak
-        var arac = (esnaf.araclar ?? []).firstWhere((a) => a['plaka'] == kanal, orElse: () => null);
+        final arac = esnaf.araclar.cast<Map<String, dynamic>?>().firstWhere(
+          (a) => a?['plaka'] == kanal,
+          orElse: () => null,
+        );
         if (arac != null) {
           String gunAdi = DateFormat('EEEE', 'tr_TR').format(tarih);
           bool calisiyor = (arac['calismaGunleri'] ?? {})[gunAdi] ?? true;
@@ -945,18 +976,74 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
     return ValueListenableBuilder<String?>(
       valueListenable: _seciliKanalNotifier,
       builder: (context, seciliKanal, _) {
+        final tarih = _seciliTarihNotifier.value;
+        String tarihKey = tarih != null ? DateFormat('yyyy-MM-dd').format(tarih) : "";
+        final taksiVerisi = _taksiAjandaVerisi;
+        var gunlukVeri = (tarihKey.isNotEmpty && taksiVerisi != null) ? taksiVerisi[tarihKey] as Map<String, dynamic>? : null;
+
+        List<dynamic> kanallar = List.from(esnaf.kanallar ?? []);
+
+        // Taksi için Filtreleme ve Sıralama
+        if (esnaf.kategori == 'Taksi' && gunlukVeri != null) {
+          // İstirahatli ve gizlenmesi gerekenleri çıkar
+          if (esnaf.istirahatliAraclariGizle) {
+            kanallar.removeWhere((k) => gunlukVeri[k.toString()] == 'I');
+          }
+
+          // Sıralama: Nöbetçi > Çalışan > Diğerleri
+          kanallar.sort((a, b) {
+            String pA = a.toString();
+            String pB = b.toString();
+            String dA = gunlukVeri[pA] ?? "";
+            String dB = gunlukVeri[pB] ?? "";
+
+            int sA = dA == 'N' ? 0 : (dA == 'C' ? 1 : 2);
+            int sB = dB == 'N' ? 0 : (dB == 'C' ? 1 : 2);
+
+            if (sA != sB) return sA.compareTo(sB);
+            return pA.compareTo(pB);
+          });
+        }
+
         return Wrap(
           spacing: 10,
-          children: (esnaf.kanallar ?? []).map((k) {
-            bool secili = seciliKanal == k.toString();
+          children: kanallar.map((k) {
+            String plaka = k.toString();
+            bool secili = seciliKanal == plaka;
+            String? durumEtiketi;
+            Color chipColor = Colors.indigo;
+
+            if (esnaf.kategori == 'Taksi' && gunlukVeri != null) {
+              String durum = gunlukVeri[plaka] ?? "";
+              if (durum == 'N') {
+                durumEtiketi = "Nöbetçi";
+                chipColor = Colors.orange.shade700;
+              } else if (durum == 'I') {
+                durumEtiketi = "İstirahat";
+              }
+            }
+
             return ChoiceChip(
-              label: Text(k.toString()),
+              label: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(plaka),
+                  if (durumEtiketi != null) ...[
+                    const SizedBox(width: 4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                      decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(4)),
+                      child: Text(durumEtiketi, style: const TextStyle(fontSize: 10, color: Colors.white)),
+                    ),
+                  ],
+                ],
+              ),
               selected: secili,
-              selectedColor: Colors.indigo,
+              selectedColor: chipColor,
               labelStyle: TextStyle(color: secili ? Colors.white : Colors.black87),
               onSelected: (val) {
                 if (val) {
-                  _seciliKanalNotifier.value = k.toString();
+                  _seciliKanalNotifier.value = plaka;
                   _seciliSaatNotifier.value = null;
                   _otomatikTarihSec(esnaf);
                   _updateStreams();
@@ -974,7 +1061,7 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
   Widget _personelSeciciWidget(EsnafModeli esnaf) {
     final isTaksi = esnaf.kategori == 'Taksi';
     final aracModu = isTaksi && esnaf.aracOdakliSistem;
-    final liste = (isTaksi && (aracModu || esnaf.randevularPersonelAdinaAlinsin)) ? (esnaf.araclar ?? []) : (esnaf.personeller ?? []);
+    final List<dynamic> liste = (isTaksi && (aracModu || esnaf.randevularPersonelAdinaAlinsin)) ? esnaf.araclar : (esnaf.personeller ?? []);
 
     return ValueListenableBuilder<String?>(
       valueListenable: (isTaksi && (aracModu || esnaf.randevularPersonelAdinaAlinsin)) ? _seciliKanalNotifier : _seciliPersonelNotifier,

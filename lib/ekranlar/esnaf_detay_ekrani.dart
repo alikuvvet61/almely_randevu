@@ -288,9 +288,16 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
                                 })
                                 .toList();
                             duraktakiAraclar.sort((a, b) {
+                              // 1. Öncelik: Nöbet Sırası
+                              int n1 = a['nobetSirasi'] ?? 999999;
+                              int n2 = b['nobetSirasi'] ?? 999999;
+                              if (n1 != n2) return n1.compareTo(n2);
+                              
+                              // 2. Öncelik: Sıra zamanı
                               int t1 = a['siraZamani'] ?? 0;
                               int t2 = b['siraZamani'] ?? 0;
                               if (t1 != t2) return t1.compareTo(t2);
+
                               return (a['plaka'] ?? "").compareTo(b['plaka'] ?? "");
                             });
                             final tumAraclar = [...duraktakiAraclar, ...digerAraclar];
@@ -747,12 +754,17 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
           .map((a) => Map<String, dynamic>.from(a as Map))
           .toList();
       duraktakiAraclar.sort((a, b) {
-        // 1. siraZamani'na göre (en eski giren 1. olur)
+        // 1. Nöbet Sırasına göre
+        int n1 = a['nobetSirasi'] ?? 999999;
+        int n2 = b['nobetSirasi'] ?? 999999;
+        if (n1 != n2) return n1.compareTo(n2);
+
+        // 2. siraZamani'na göre (en eski giren 1. olur)
         int t1 = a['siraZamani'] ?? 0;
         int t2 = b['siraZamani'] ?? 0;
         if (t1 != t2) return t1.compareTo(t2);
         
-        // 2. Zamanlar eşitse plakaya göre (tutarlılık için)
+        // 3. Zamanlar eşitse plakaya göre (tutarlılık için)
         String p1 = a['plaka'] ?? "";
         String p2 = b['plaka'] ?? "";
         return p1.compareTo(p2);

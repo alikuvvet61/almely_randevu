@@ -56,8 +56,8 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
     
     if (widget.esnaf.kanallar != null && widget.esnaf.kanallar!.isNotEmpty) {
       _seciliKanallar.add(widget.esnaf.kanallar!.first.toString());
-    } else if (widget.esnaf.kategori == 'Taksi' && (widget.esnaf.aracOdakliSistem || widget.esnaf.randevularPersonelAdinaAlinsin) && widget.esnaf.araclar != null && widget.esnaf.araclar!.isNotEmpty) {
-      _seciliKanallar.add(widget.esnaf.araclar!.first['plaka']);
+    } else if (widget.esnaf.kategori == 'Taksi' && (widget.esnaf.aracOdakliSistem || widget.esnaf.randevularPersonelAdinaAlinsin) && widget.esnaf.araclar.isNotEmpty) {
+      _seciliKanallar.add(widget.esnaf.araclar.first['plaka']);
     } else {
       _seciliKanallar.add("Uygulama");
     }
@@ -788,14 +788,9 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
     final isTaksi = esnaf.kategori == 'Taksi';
     final aracModu = isTaksi && esnaf.aracOdakliSistem;
 
-    if (isTaksi && (aracModu || esnaf.randevularPersonelAdinaAlinsin) && esnaf.araclar != null && esnaf.araclar!.isNotEmpty) {
-      for (var arac in esnaf.araclar!) {
-        String plaka = "";
-        if (arac is Map) {
-          plaka = arac['plaka'] ?? "";
-        } else if (arac is String) {
-          plaka = arac;
-        }
+    if (isTaksi && (aracModu || esnaf.randevularPersonelAdinaAlinsin) && esnaf.araclar.isNotEmpty) {
+      for (var arac in esnaf.araclar) {
+        String plaka = arac['plaka'] ?? "";
         
         if (plaka.isNotEmpty && !tumKanallar.contains(plaka)) {
           tumKanallar.add(plaka);
@@ -844,8 +839,8 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
 
           // Taksi ise şoför adını çek
           if (esnaf.kategori == 'Taksi' && (esnaf.aracOdakliSistem || esnaf.randevularPersonelAdinaAlinsin)) {
-             final a = esnaf.araclar?.firstWhere(
-                (element) => element is Map && element['plaka'] == kanalAdi,
+             final a = esnaf.araclar.cast<Map<String, dynamic>?>().firstWhere(
+                (element) => element?['plaka'] == kanalAdi,
                 orElse: () => null,
               );
               if (a != null) {
@@ -1270,7 +1265,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           DropdownButtonFormField<int>(
-                            value: [5, 10, 15, 20, 30, 45, 60, 90, 120].contains(_slotAraligi) ? _slotAraligi : 30,
+                            initialValue: [5, 10, 15, 20, 30, 45, 60, 90, 120].contains(_slotAraligi) ? _slotAraligi : 30,
                             decoration: InputDecoration(
                               labelText: "Slot Aralığı (Dakika)", 
                               border: const OutlineInputBorder(),

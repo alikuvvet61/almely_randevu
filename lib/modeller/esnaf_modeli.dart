@@ -15,9 +15,12 @@ class EsnafModeli {
   final Map<String, dynamic>? calismaSaatleri;
   final List<dynamic>? hizmetler;
   final List<dynamic>? kanallar;
-  final List<dynamic>? personeller; 
-  final List<dynamic>? aktifGunler; 
-  final List<dynamic>? araclar; // Taksi durağı araçları
+  final List<dynamic>? personeller;
+  final List<dynamic>? aktifGunler;
+  final List<Map<String, dynamic>> araclar; // Taksi durağı araçları
+  final int? nobetSirasi; // Nöbet sıralaması
+  final String? nobetBaslangic; // Nöbet başlangıç saati
+  final String? nobetBitis; // Nöbet bitiş saati
   final String? whatsapp; // WhatsApp hattı
   final String? telefonRandevu; // Randevu için telefon hattı
   final String randevuOnayModu; // 'Otomatik' veya 'Manuel'
@@ -48,7 +51,10 @@ class EsnafModeli {
     this.kanallar,
     this.personeller,
     this.aktifGunler,
-    this.araclar,
+    this.araclar = const [],
+    this.nobetSirasi,
+    this.nobetBaslangic,
+    this.nobetBitis,
     this.whatsapp,
     this.telefonRandevu,
     this.randevuOnayModu = 'Manuel',
@@ -85,7 +91,14 @@ class EsnafModeli {
       kanallar: data['kanallar'] ?? [],
       personeller: data['personeller'] ?? [],
       aktifGunler: data['aktifGunler'] ?? [],
-      araclar: data['araclar'] ?? [],
+      araclar: List<Map<String, dynamic>>.from(data['araclar'] ?? []).map((item) {
+        final mapItem = Map<String, dynamic>.from(item);
+        mapItem.putIfAbsent('nobetSirasi', () => null);
+        return mapItem;
+      }).toList(),
+      nobetSirasi: data['nobetSirasi'],
+      nobetBaslangic: data['nobetBaslangic'],
+      nobetBitis: data['nobetBitis'],
       whatsapp: data['whatsapp'],
       telefonRandevu: data['telefonRandevu'],
       randevuOnayModu: data['randevuOnayModu'] ?? 'Manuel',
@@ -118,6 +131,9 @@ class EsnafModeli {
       'personeller': personeller,
       'aktifGunler': aktifGunler,
       'araclar': araclar,
+      'nobetSirasi': nobetSirasi,
+      'nobetBaslangic': nobetBaslangic,
+      'nobetBitis': nobetBitis,
       'whatsapp': whatsapp,
       'telefonRandevu': telefonRandevu,
       'randevuOnayModu': randevuOnayModu,
@@ -149,7 +165,10 @@ class EsnafModeli {
     List<dynamic>? kanallar,
     List<dynamic>? personeller,
     List<dynamic>? aktifGunler,
-    List<dynamic>? araclar,
+    List<Map<String, dynamic>>? araclar,
+    int? nobetSirasi,
+    String? nobetBaslangic,
+    String? nobetBitis,
     String? whatsapp,
     String? telefonRandevu,
     String? randevuOnayModu,
@@ -180,6 +199,9 @@ class EsnafModeli {
       personeller: personeller ?? this.personeller,
       aktifGunler: aktifGunler ?? this.aktifGunler,
       araclar: araclar ?? this.araclar,
+      nobetSirasi: nobetSirasi ?? this.nobetSirasi,
+      nobetBaslangic: nobetBaslangic ?? this.nobetBaslangic,
+      nobetBitis: nobetBitis ?? this.nobetBitis,
       whatsapp: whatsapp ?? this.whatsapp,
       telefonRandevu: telefonRandevu ?? this.telefonRandevu,
       randevuOnayModu: randevuOnayModu ?? this.randevuOnayModu,

@@ -98,14 +98,19 @@ class _DurakTakipEkraniState extends State<DurakTakipEkrani> {
         bool bDurakta = b['durakta'] == true;
         if (aDurakta != bDurakta) return aDurakta ? -1 : 1;
 
-        // 3. Öncelik: Sıra zamanı (Duraktakiler için)
+        // 3. Öncelik: Nöbet Sırası (Nöbetçiler en üstte olsun istenirse)
+        int aNobetSira = a['nobetSirasi'] ?? 999999;
+        int bNobetSira = b['nobetSirasi'] ?? 999999;
+        if (aNobetSira != bNobetSira) return aNobetSira.compareTo(bNobetSira);
+
+        // 4. Öncelik: Sıra zamanı (Duraktakiler için)
         if (aDurakta && bDurakta) {
           int aZaman = a['siraZamani'] ?? 0;
           int bZaman = b['siraZamani'] ?? 0;
           if (aZaman != bZaman) return aZaman.compareTo(bZaman);
         }
 
-        // 4. Öncelik: Plaka
+        // 5. Öncelik: Plaka
         return (a['plaka'] ?? "").compareTo(b['plaka'] ?? "");
       });
     });

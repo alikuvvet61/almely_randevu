@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../modeller/esnaf_modeli.dart';
+import 'esnaf_paneli.dart';
 
 class TaksiCizelgeEkrani extends StatefulWidget {
   final EsnafModeli esnaf;
@@ -288,7 +289,12 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
           degisenAylar.add(ayKey);
           
           final gunMap = Map<String, dynamic>.from(aylikVeri[tKey] ?? {});
-          bool calismaGunu = ((i - baslangicGun) % 2 == 0);
+          
+          bool calismaGunu = false;
+          int diff = i - baslangicGun;
+          if (seciliDurum == '1-1') {
+            calismaGunu = (diff % 2 == 0);
+          }
           
           for (var p in benzersizPlakalar) {
             if (gunMap[p] == 'N') continue;
@@ -452,7 +458,7 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
               ? "Seçilen günden itibaren ay sonuna kadar kayıtları temizlemek için alttaki 'İleri Temizle' butonuna dokunun." 
               : "Günlere dokunarak tek tek silebilir veya bir gün seçip ileriye doğru toplu temizlik yapabilirsiniz.")
           : (seciliDurum == '1-1' 
-              ? "Seçili araçlar 'Çalış', diğerleri 'İstirahat' olacak şekilde tüm aya dönüşümlü 1-1 düzeni uygulanır. İşlemi başlatmak için bir güne dokunun veya 'İleri Uygula' butonunu kullanın."
+              ? "Seçili araçlar 'Çalış', diğerleri 'İst.' olacak şekilde tüm aya dönüşümlü 1 gün çalış 1 gün istirahat düzeni uygulanır. İşlemi başlatmak için bir güne dokunun veya 'İleri Uygula' butonunu kullanın."
               : "Güne dokunarak tekli atama yapabilir veya bir gün seçip 'İleri Uygula' butonuyla toplu işlem yapabilirsiniz."),
         style: TextStyle(color: Colors.red.shade700, fontSize: 13, fontWeight: FontWeight.w500),
         textAlign: TextAlign.center,
@@ -527,7 +533,7 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
                   if (seciliAraclar.isNotEmpty && operasyonModu != null) {
                     if (operasyonModu == 'ekle' && seciliDurum != null) {
                       if (seciliDurum == '1-1') {
-                        // 1/1 DÜZEN MODU
+                        // DÜZEN MODU (1 Gün Çalış 1 Gün İstirahat)
                         int gunSayisi = DateTime(seciliAy.year, seciliAy.month + 1, 0).day;
                         String ayKey = tarihKey.substring(0, 7);
                         degisenAylar.add(ayKey);
@@ -553,7 +559,12 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
                         for (int i = gun; i <= gunSayisi; i++) {
                           String k = DateFormat('yyyy-MM-dd').format(DateTime(seciliAy.year, seciliAy.month, i));
                           final gunMap = Map<String, dynamic>.from(aylikVeri[k] ?? {});
-                          bool calismaGunu = ((i - gun) % 2 == 0);
+                          
+                          bool calismaGunu = false;
+                          int diff = i - gun;
+                          if (seciliDurum == '1-1') {
+                            calismaGunu = (diff % 2 == 0);
+                          }
                           
                           for (var p in benzersizPlakalar) {
                             if (gunMap[p] == 'N') continue; // Nöbetleri koru
@@ -899,7 +910,7 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
           _durumChip('C', 'Çalış', Colors.blue),
           _durumChip('I', 'İst.', Colors.purple),
           _durumChip('N', 'Nöbet', Colors.orange),
-          _durumChip('1-1', '1 gün çalış 1 istirahat', Colors.teal),
+          _durumChip('1-1', '1 Gün İst. 1 Gün Çal.', Colors.teal),
         ],
       ),
     );
@@ -916,16 +927,76 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
         selected: seciliDurum == deger,
         selectedColor: renk,
         onSelected: aktifMi ? (s) => setState(() {
+          if (s && deger == 'N') {
+            // Nöbet Sıralaması Kontrolü - Yerel araç listesi üzerinden kontrol et (daha günceldir)
+            bool nobetSirasiEksik = araclar.every((a) => a['nobetSirasi'] == null || a['nobetSirasi'] == 0);
+            if (nobetSirasiEksik) {
+              final rootContext = context;
+              showDialog(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text("Nöbet Sıralaması Eksik"),
+                  content: const Text("Nöbet Sıralamasının oluşturulmadığını farkettik. Sıralayı oluşturmanız için Filo Yönetimine yönlendiriliyorsunuz."),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(context), child: const Text("Vazgeç")),
+                    ElevatedButton(
+                      onPressed: () {
+                        Navigator.pop(context); // Diyaloğu kapat
+                        // Yeni bir sayfa olarak EsnafPaneli'ni "Filo Yönetimi" açık olacak şekilde aç
+                        Navigator.push(
+                          rootContext, 
+                          MaterialPageRoute(builder: (context) => EsnafPaneli(esnaf: widget.esnaf, openFilo: true))
+                        );
+                      },
+                      child: const Text("Tamam"),
+                    ),
+                  ],
+                ),
+              );
+              return;
+            }
+
+            // Nöbet Saati Kontrolü
+            bool nobetSaatleriEksik = widget.esnaf.nobetBaslangic == null || widget.esnaf.nobetBaslangic == "Seçilmedi" || widget.esnaf.nobetBaslangic!.isEmpty ||
+                                     widget.esnaf.nobetBitis == null || widget.esnaf.nobetBitis == "Seçilmedi" || widget.esnaf.nobetBitis!.isEmpty;
+
+            if (nobetSaatleriEksik) {
+              final rootContext = context;
+              showDialog(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text("Nöbet Saatleri Belirlenmedi"),
+                  content: const Text("Nöbet başlangıç ve bitiş saatlerini belirlemediniz. Mesai saatleri ekranına yönlendiriliyorsunuz."),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(context), child: const Text("Vazgeç")),
+                    ElevatedButton(
+                      onPressed: () {
+                        Navigator.pop(context); // Diyaloğu kapat
+                        // Yeni bir sayfa olarak EsnafPaneli'ni "Mesai Saatleri" açık olacak şekilde aç
+                        Navigator.push(
+                          rootContext, 
+                          MaterialPageRoute(builder: (context) => EsnafPaneli(esnaf: widget.esnaf, openMesai: true))
+                        );
+                      },
+                      child: const Text("Tamam"),
+                    ),
+                  ],
+                ),
+              );
+              return;
+            }
+          }
+
           if (s && deger == '1-1') {
             showDialog(
               context: context,
               builder: (context) => AlertDialog(
-                title: const Text("1-1 Düzeni Hakkında"),
+                title: const Text("Çalışma Düzeni Hakkında"),
                 content: const Text(
                   "Bu mod seçildiğinde:\n\n"
                   "• Seçtiğiniz araçlar o gün 'Çalış' başlar.\n"
-                  "• SEÇMEDİĞİNİZ tüm araçlar 'İstirahat' başlar.\n"
-                  "• Tüm ay bu düzene göre otomatik doldurulur.\n"
+                  "• SEÇMEDİĞİNİZ tüm araçlar 'İst.' başlar.\n"
+                  "• Tüm ay boyunca bir gün çalış bir gün istirahat düzeni otomatik doldurulur.\n"
                   "• Nöbetçi (N) olan günler korunur.\n\n"
                   "Devam etmek istiyor musunuz?",
                 ),

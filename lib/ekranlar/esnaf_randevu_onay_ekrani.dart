@@ -216,8 +216,8 @@ class _EsnafRandevuYonetimEkraniState extends State<EsnafRandevuYonetimEkrani> {
 
                         if (_esnaf?.kategori == 'Taksi' && (_esnaf?.aracOdakliSistem ?? false)) {
                           icon = Icons.local_taxi;
-                          final arac = _esnaf?.araclar?.firstWhere(
-                            (a) => a is Map && a['plaka'] == r.randevuKanali,
+                          final arac = _esnaf?.araclar.cast<Map<String, dynamic>?>().firstWhere(
+                            (a) => a?['plaka'] == r.randevuKanali,
                             orElse: () => null,
                           );
                           if (arac != null) {

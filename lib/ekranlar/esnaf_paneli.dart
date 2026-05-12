@@ -16,8 +16,10 @@ import 'esnaf_randevu_onay_ekrani.dart';
 class EsnafPaneli extends StatefulWidget {
   final EsnafModeli esnaf;
   final String? soforTel;
+  final bool openFilo;
+  final bool openMesai;
 
-  const EsnafPaneli({super.key, required this.esnaf, this.soforTel});
+  const EsnafPaneli({super.key, required this.esnaf, this.soforTel, this.openFilo = false, this.openMesai = false});
 
   @override
   State<EsnafPaneli> createState() => _EsnafPaneliState();
@@ -47,6 +49,8 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
   String _randevuOnayModu = 'Manuel';
   bool _ayniGunRandevuEngelle = false;
   bool _slotAralikliGoster = false;
+  String _nobetBaslangic = "08:00";
+  String _nobetBitis = "20:00";
 
   final Map<String, bool> _calismaGunleri = {
     "Pazartesi": false,
@@ -108,6 +112,8 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
     _randevuOnayModu = widget.esnaf.randevuOnayModu.isEmpty ? 'Manuel' : widget.esnaf.randevuOnayModu;
     _ayniGunRandevuEngelle = widget.esnaf.ayniGunRandevuEngelle;
     _slotAralikliGoster = widget.esnaf.slotAralikliGoster;
+    _nobetBaslangic = widget.esnaf.nobetBaslangic ?? "08:00";
+    _nobetBitis = widget.esnaf.nobetBitis ?? "20:00";
 
     personeller = (widget.esnaf.personeller ?? []).map((p) {
       if (p is Map) return Map<String, dynamic>.from(p);
@@ -140,7 +146,12 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
     }
 
     Future.delayed(Duration.zero, () {
-      if (mounted) setState(() => _degisiklikVar = false);
+      if (mounted) {
+        setState(() => _degisiklikVar = false);
+        if (widget.openFilo) {
+          _eksikNobetSirasiDuzenle();
+        }
+      }
     });
   }
 
@@ -701,6 +712,8 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
         _randevuOnayModu = data['randevuOnayModu'] ?? 'Manuel';
         _ayniGunRandevuEngelle = data['ayniGunRandevuEngelle'] ?? false;
         _slotAralikliGoster = data['slotAralikliGoster'] ?? false;
+        _nobetBaslangic = data['nobetBaslangic'] ?? "08:00";
+        _nobetBitis = data['nobetBitis'] ?? "20:00";
         _personelOdakli = data['randevularPersonelAdinaAlinsin'] ?? false;
         personeller = (data['personeller'] ?? []).map<Map<String, dynamic>>((p) {
           if (p is Map) return Map<String, dynamic>.from(p);
@@ -738,6 +751,8 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
         'randevuOnayModu': _randevuOnayModu,
         'ayniGunRandevuEngelle': _ayniGunRandevuEngelle,
         'slotAralikliGoster': _slotAralikliGoster,
+        'nobetBaslangic': _nobetBaslangic,
+        'nobetBitis': _nobetBitis,
         'calismaSaatleri': {
           'gunler': _calismaGunleri,
           'acilis': acilisSaat,
@@ -1097,6 +1112,11 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                     children: [
                       Text(arac['plaka'] ?? "Plaka Yok", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                       Text("${arac['soforAd'] ?? 'İsimsiz'} (${arac['soforTel'] ?? 'No Yok'})", style: TextStyle(fontSize: 13.5, color: Colors.grey.shade600)),
+                      if (arac['nobetSirasi'] != null)
+                        Text(
+                          "Nöbet Sırası: ${arac['nobetSirasi'] ?? '-'}",
+                          style: const TextStyle(fontSize: 12, color: Colors.blue, fontWeight: FontWeight.w500),
+                        ),
                     ],
                   ),
                 ),
@@ -1134,23 +1154,41 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
     );
   }
 
-  void _aracDuzenle(int index) {
+  void _aracDuzenle(int index, {bool otomatikSiraModu = false}) {
     var arac = araclar[index];
     final pController = TextEditingController(text: arac['plaka']);
     final sAdController = TextEditingController(text: arac['soforAd']);
     final sTelController = TextEditingController(text: arac['soforTel']);
+    final nSiraController = TextEditingController(text: arac['nobetSirasi']?.toString() ?? "");
 
     showDialog(
       context: context,
+      barrierDismissible: !otomatikSiraModu,
       builder: (context) => AlertDialog(
-        title: const Text("Aracı Düzenle"),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(controller: pController, decoration: const InputDecoration(labelText: "Plaka"), textCapitalization: TextCapitalization.characters),
-            TextField(controller: sAdController, decoration: const InputDecoration(labelText: "Şoför Adı")),
-            TextField(controller: sTelController, decoration: const InputDecoration(labelText: "Şoför Telefon"), keyboardType: TextInputType.phone),
-          ],
+        title: Text(otomatikSiraModu ? "Nöbet Sırası Belirle" : "Aracı Düzenle"),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (otomatikSiraModu)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Text("${arac['plaka']} için nöbet sırası giriniz.", 
+                    style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold, fontSize: 13)),
+                ),
+              TextField(controller: pController, decoration: const InputDecoration(labelText: "Plaka"), textCapitalization: TextCapitalization.characters),
+              TextField(controller: sAdController, decoration: const InputDecoration(labelText: "Şoför Adı")),
+              TextField(controller: sTelController, decoration: const InputDecoration(labelText: "Şoför Telefon"), keyboardType: TextInputType.phone),
+              const Divider(),
+              const Text("Nöbet Bilgileri", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+              TextField(
+                controller: nSiraController, 
+                autofocus: otomatikSiraModu,
+                decoration: const InputDecoration(labelText: "Nöbet Sırası (No)", hintText: "Örn: 1, 2, 3..."), 
+                keyboardType: TextInputType.number
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -1158,9 +1196,10 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
               pController.dispose();
               sAdController.dispose();
               sTelController.dispose();
+              nSiraController.dispose();
               Navigator.pop(context);
             },
-            child: const Text("Vazgeç"),
+            child: Text(otomatikSiraModu ? "Atla" : "Vazgeç"),
           ),
           ElevatedButton(
             onPressed: () {
@@ -1168,12 +1207,20 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                 araclar[index]['plaka'] = pController.text.trim().toUpperCase();
                 araclar[index]['soforAd'] = sAdController.text.trim();
                 araclar[index]['soforTel'] = sTelController.text.trim();
+                araclar[index]['nobetSirasi'] = int.tryParse(nSiraController.text.trim());
                 _degisiklikVar = true;
               });
               pController.dispose();
               sAdController.dispose();
               sTelController.dispose();
+              nSiraController.dispose();
               Navigator.pop(context);
+
+              if (otomatikSiraModu) {
+                Future.delayed(const Duration(milliseconds: 300), () {
+                  _eksikNobetSirasiDuzenle();
+                });
+              }
             },
             child: const Text("Güncelle"),
           ),
@@ -1182,22 +1229,35 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
     );
   }
 
+  void _eksikNobetSirasiDuzenle() {
+    int index = araclar.indexWhere((a) => a['nobetSirasi'] == null);
+    if (index != -1 && mounted) {
+      _aracDuzenle(index, otomatikSiraModu: true);
+    }
+  }
+
   void _yeniAracEkle() {
     final pController = TextEditingController();
     final sAdController = TextEditingController();
     final sTelController = TextEditingController();
+    final nSiraController = TextEditingController();
 
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text("Yeni Araç Ekle"),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(controller: pController, decoration: const InputDecoration(labelText: "Plaka"), textCapitalization: TextCapitalization.characters),
-            TextField(controller: sAdController, decoration: const InputDecoration(labelText: "Şoför Adı")),
-            TextField(controller: sTelController, decoration: const InputDecoration(labelText: "Şoför Telefon"), keyboardType: TextInputType.phone),
-          ],
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(controller: pController, decoration: const InputDecoration(labelText: "Plaka"), textCapitalization: TextCapitalization.characters),
+              TextField(controller: sAdController, decoration: const InputDecoration(labelText: "Şoför Adı")),
+              TextField(controller: sTelController, decoration: const InputDecoration(labelText: "Şoför Telefon"), keyboardType: TextInputType.phone),
+              const Divider(),
+              const Text("Nöbet Bilgileri", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+              TextField(controller: nSiraController, decoration: const InputDecoration(labelText: "Nöbet Sırası (No)"), keyboardType: TextInputType.number),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -1205,28 +1265,29 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
               pController.dispose();
               sAdController.dispose();
               sTelController.dispose();
+              nSiraController.dispose();
               Navigator.pop(context);
             },
             child: const Text("Vazgeç"),
           ),
           ElevatedButton(
             onPressed: () {
-              if (pController.text.isNotEmpty) {
-                setState(() {
-                  araclar.add({
-                    'plaka': pController.text.trim().toUpperCase(),
-                    'soforAd': sAdController.text.trim(),
-                    'soforTel': sTelController.text.trim(),
-                    'durum': 'Müsait',
-                    'durakta': false,
-                  });
-                  _degisiklikVar = true;
+              setState(() {
+                araclar.add({
+                  'plaka': pController.text.trim().toUpperCase(),
+                  'soforAd': sAdController.text.trim(),
+                  'soforTel': sTelController.text.trim(),
+                  'nobetSirasi': int.tryParse(nSiraController.text.trim()),
+                  'durum': 'Aktif',
+                  'durakta': false,
                 });
-                pController.dispose();
-                sAdController.dispose();
-                sTelController.dispose();
-                Navigator.pop(context);
-              }
+                _degisiklikVar = true;
+              });
+              pController.dispose();
+              sAdController.dispose();
+              sTelController.dispose();
+              nSiraController.dispose();
+              Navigator.pop(context);
             },
             child: const Text("Ekle"),
           ),
@@ -1977,14 +2038,14 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                     if (widget.esnaf.kategori == 'Taksi') ...[
                       _bolumKart(
                         baslik: "Filo Yönetimi",
-                        initiallyExpanded: false,
+                        initiallyExpanded: widget.openFilo,
                         icerik: _filoWidget()
                       ),
                       const SizedBox(height: 15),
                     ],
                     _bolumKart(
                       baslik: "Mesai Saatleri",
-                      initiallyExpanded: false,
+                      initiallyExpanded: widget.openMesai,
                       icerik: Column(
                         children: [
                           Container(
@@ -2037,6 +2098,34 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                               },
                             ),
                           ),
+                          if (acilisSaat == "00:00" && kapanisSaat == "00:00") ...[
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                                children: [
+                                  _saatSecici(
+                                    "Nöbet Başlangıç", 
+                                    _nobetBaslangic, 
+                                    (v) => setState(() { 
+                                      _nobetBaslangic = v;
+                                      _degisiklikVar = true; 
+                                    })
+                                  ),
+                                  const Icon(Icons.swap_horiz, color: Colors.grey),
+                                  _saatSecici(
+                                    "Nöbet Bitiş", 
+                                    _nobetBitis, 
+                                    (v) => setState(() { 
+                                      _nobetBitis = v;
+                                      _degisiklikVar = true; 
+                                    })
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                          ],
                           if (!(acilisSaat == "00:00" && kapanisSaat == "00:00")) ...[
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceAround,
