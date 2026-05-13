@@ -27,6 +27,10 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
   String? seciliDurum;
   String? operasyonModu; // 'ekle' veya 'sil'
   Set<String> seciliGunler = {};
+  DateTime seciliGun = DateTime.now();
+
+  final TextEditingController _aracAramaController = TextEditingController();
+  String _aracAramaFiltresi = "";
 
   @override
   void initState() {
@@ -36,6 +40,7 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
 
   @override
   void dispose() {
+    _aracAramaController.dispose();
     super.dispose();
   }
 
@@ -45,6 +50,16 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
     // Her durumda bu ayın seçimlerini temizleyelim ki kafa karışmasın
     setState(() {
       seciliGunler.clear();
+      // Secili günü bu aya sabitle
+      if (seciliGun.year != seciliAy.year || seciliGun.month != seciliAy.month) {
+        // Eğer bugün bu aydaysa bugünü seç, değilse ayın 1'ini
+        DateTime simdi = DateTime.now();
+        if (simdi.year == seciliAy.year && simdi.month == seciliAy.month) {
+          seciliGun = simdi;
+        } else {
+          seciliGun = DateTime(seciliAy.year, seciliAy.month, 1);
+        }
+      }
       // Eğer bu ay henüz yüklenmediyse yükleme moduna geç
       if (!yuklenenAylar.contains(ayKey)) {
         yukleniyor = true;
@@ -149,7 +164,7 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
           degisenAylar.clear();
         });
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text("Tüm değişiklikler başarıyla Firebase'e kaydedildi"),
+          content: Text("Ajanda Defteri kayıtları başarıyla Firebase'e kaydedildi"),
           backgroundColor: Colors.green,
         ));
         _verileriGetir(temizle: false);
@@ -170,33 +185,6 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
     } finally {
       if (mounted) setState(() => kaydediliyor = false);
     }
-  }
-
-  void _topluSil() {
-    setState(() {
-      for (var gunKey in seciliGunler) {
-        String ayKey = gunKey.substring(0, 7);
-        degisenAylar.add(ayKey);
-        
-        if (aylikVeri.containsKey(gunKey)) {
-          if (seciliAraclar.isEmpty) {
-            aylikVeri.remove(gunKey);
-          } else {
-            Map<String, dynamic> gununVerisi = Map<String, dynamic>.from(aylikVeri[gunKey]!);
-            for (var plaka in seciliAraclar) {
-              gununVerisi.remove(plaka);
-            }
-            
-            if (gununVerisi.isEmpty) {
-              aylikVeri.remove(gunKey);
-            } else {
-              aylikVeri[gunKey] = gununVerisi;
-            }
-          }
-        }
-      }
-      seciliGunler.clear();
-    });
   }
 
   void _gunDetayGoster(DateTime tarih) {
@@ -251,83 +239,44 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
 
 
   void _topluIslemUygula() {
+    // 1-1 durumunda _uygula1e1() kullanıldığı için buraya normalde gelmemeli ama güvenlik için kontrol
+    if (seciliDurum == '1-1') {
+      _uygula1e1();
+      return;
+    }
+
     setState(() {
-      // Eğer bir gün seçiliyse o günden başla, değilse 1. günden başla
-      int baslangicGun = 1;
-      if (seciliGunler.isNotEmpty) {
-        // "eğer ikinci seçilen ilk seçilenden küçükse küçükten başla büyükse büyük olandan başla"
-        // Bu mantık son seçilen günün (seciliGunler.last) başlangıç noktası olmasını sağlar.
-        baslangicGun = int.parse(seciliGunler.last.split('-').last);
-      }
-
+      int baslangicGun = seciliGun.day;
       int gunSayisi = DateTime(seciliAy.year, seciliAy.month + 1, 0).day;
-      
-      // 1-1 modunda SEÇİLENDEN İLERİ örüntüyle doldur
-      if (seciliDurum == '1-1' && operasyonModu == 'ekle') {
-        final benzersizPlakalar = araclar.map((a) => (a['plaka'] ?? "").toString()).where((p) => p.isNotEmpty).toSet();
+
+      // Diğer modlar (Ekle-C, Ekle-N, Ekle-I veya Sil) için baslangicGun'den sonrasını güncelle
+      for (int i = baslangicGun; i <= gunSayisi; i++) {
+        String tKey = DateFormat('yyyy-MM-dd').format(DateTime(seciliAy.year, seciliAy.month, i));
+        String ayKey = tKey.substring(0, 7);
         
-        // ÖNCE TÜM AYI TEMİZLE (Kayıtlılar/Nöbetler hariç)
-        for (int i = 1; i <= gunSayisi; i++) {
-          String tKey = DateFormat('yyyy-MM-dd').format(DateTime(seciliAy.year, seciliAy.month, i));
-          if (aylikVeri.containsKey(tKey)) {
-            final gunMap = Map<String, dynamic>.from(aylikVeri[tKey]!);
-            for (var p in benzersizPlakalar) {
-              if (gunMap[p] != 'N') gunMap.remove(p);
+        final gunMap = Map<String, dynamic>.from(aylikVeri[tKey] ?? {});
+        bool degisti = false;
+
+        if (operasyonModu == 'ekle' && seciliDurum != null) {
+          for (var p in seciliAraclar) {
+            // Nöbetçi (N) olan günler korunur (Eğer atanan durum N değilse)
+            if (gunMap[p] == 'N' && seciliDurum != 'N') continue;
+            if (gunMap[p] != seciliDurum) {
+              gunMap[p] = seciliDurum!;
+              degisti = true;
             }
-            if (gunMap.isEmpty) {
-              aylikVeri.remove(tKey);
-            } else {
-              aylikVeri[tKey] = gunMap;
+          }
+        } else if (operasyonModu == 'sil') {
+          for (var p in seciliAraclar) {
+            if (gunMap.containsKey(p)) {
+              gunMap.remove(p);
+              degisti = true;
             }
           }
         }
 
-        // ŞİMDİ ÖRÜNTÜYÜ UYGULA
-        for (int i = baslangicGun; i <= gunSayisi; i++) {
-          String tKey = DateFormat('yyyy-MM-dd').format(DateTime(seciliAy.year, seciliAy.month, i));
-          String ayKey = tKey.substring(0, 7);
+        if (degisti) {
           degisenAylar.add(ayKey);
-          
-          final gunMap = Map<String, dynamic>.from(aylikVeri[tKey] ?? {});
-          
-          bool calismaGunu = false;
-          int diff = i - baslangicGun;
-          if (seciliDurum == '1-1') {
-            calismaGunu = (diff % 2 == 0);
-          }
-          
-          for (var p in benzersizPlakalar) {
-            if (gunMap[p] == 'N') continue;
-            
-            // Seçilen araçlar 'Çalış' ile başlar, seçilmeyenler 'İstirahat' ile başlar
-            bool seciliMi = seciliAraclar.contains(p);
-            if (seciliMi) {
-              gunMap[p] = calismaGunu ? 'C' : 'I';
-            } else {
-              gunMap[p] = calismaGunu ? 'I' : 'C';
-            }
-          }
-          aylikVeri[tKey] = gunMap;
-        }
-      } else {
-        // Diğer modlar (Ekle-N, Ekle-Mola veya Sil) için baslangicGun'den sonrasını güncelle
-        for (int i = baslangicGun; i <= gunSayisi; i++) {
-          String tKey = DateFormat('yyyy-MM-dd').format(DateTime(seciliAy.year, seciliAy.month, i));
-          String ayKey = tKey.substring(0, 7);
-          degisenAylar.add(ayKey);
-          
-          final gunMap = Map<String, dynamic>.from(aylikVeri[tKey] ?? {});
-          if (operasyonModu == 'ekle') {
-            for (var p in seciliAraclar) {
-              if (gunMap[p] == 'N' && seciliDurum != 'N') continue;
-              gunMap[p] = seciliDurum!;
-            }
-          } else {
-            for (var p in seciliAraclar) {
-              gunMap.remove(p);
-            }
-          }
-          
           if (gunMap.isEmpty) {
             aylikVeri.remove(tKey);
           } else {
@@ -353,7 +302,7 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
       },
       child: Scaffold(
         appBar: AppBar(
-          title: const Text("Taksi Çizelge"),
+          title: const Text("Nöbet Çizelgesi & Ajanda Defteri"),
           actions: [
             IconButton(
               icon: const Icon(Icons.refresh),
@@ -361,37 +310,58 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
             ),
           ],
         ),
-        body: yukleniyor ? const Center(child: CircularProgressIndicator()) : _aylikAjandaSekmesi(),
+        body: yukleniyor ? const Center(child: CircularProgressIndicator()) : _aylikAjandaDefteriSekmesi(),
       ),
     );
   }
 
-  Widget _aylikAjandaSekmesi() {
+  Widget _aylikAjandaDefteriSekmesi() {
     int gunSayisi = DateTime(seciliAy.year, seciliAy.month + 1, 0).day;
     int baslangicBosluk = DateTime(seciliAy.year, seciliAy.month, 1).weekday - 1;
     return Column(children: [
-      // 1. Ay Seçici ve Bilgi
+      // 1. TARİH SEÇİMİ (TAKVİM)
       Container(
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 16),
         color: Colors.grey.shade100,
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             IconButton(
-              icon: const Icon(Icons.chevron_left),
+              icon: const Icon(Icons.chevron_left, size: 20),
               onPressed: () => setState(() {
                 seciliAy = DateTime(seciliAy.year, seciliAy.month - 1, 1);
                 _verileriGetir(temizle: false);
               }),
             ),
             Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Text(DateFormat('MMMM yyyy', 'tr_TR').format(seciliAy), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                const Text("Değişiklikler yereldir, kaydetmeyi unutmayın", style: TextStyle(fontSize: 13, color: Colors.orange)),
+                Text(DateFormat('MMMM yyyy', 'tr_TR').format(seciliAy), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                if (degisiklikVar)
+                  Container(
+                    margin: const EdgeInsets.only(top: 2),
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade50,
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: Colors.orange.shade200),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.edit_notifications_rounded, size: 12, color: Colors.orange.shade900),
+                        const SizedBox(width: 4),
+                        Text(
+                          "KAYDEDİLMEMİŞ DEĞİŞİKLİKLER",
+                          style: TextStyle(color: Colors.orange.shade900, fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 0.5),
+                        ),
+                      ],
+                    ),
+                  ),
               ],
             ),
             IconButton(
-              icon: const Icon(Icons.chevron_right),
+              icon: const Icon(Icons.chevron_right, size: 20),
               onPressed: () => setState(() {
                 seciliAy = DateTime(seciliAy.year, seciliAy.month + 1, 1);
                 _verileriGetir(temizle: false);
@@ -400,415 +370,862 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
           ],
         ),
       ),
-  // 2. İşlem Seçimi
-  Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-    child: Row(
-      children: [
-        const Text("İşlem Seçin:", style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Container(
-            height: 38,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: Colors.blue.shade200, width: 1),
-            ),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                value: operasyonModu,
-                hint: const Text("Ne yapmak istiyorsunuz?", style: TextStyle(fontSize: 14)),
-                isExpanded: true,
-                icon: const Icon(Icons.keyboard_arrow_down, color: Colors.blue, size: 22),
-                items: const [
-                  DropdownMenuItem(value: 'ekle', child: Text("Araç Eklemek İstiyorum.", style: TextStyle(fontSize: 14))),
-                  DropdownMenuItem(value: 'sil', child: Text("Araç Çıkarmak İstiyorum.", style: TextStyle(fontSize: 14))),
+      
+      // Gün Başlıkları
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        child: Row(
+          children: gunler.map((g) => Expanded(
+            child: Center(child: Text(g, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.grey.shade600))),
+          )).toList(),
+        ),
+      ),
+
+      // Takvim Grid
+      GridView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 7, 
+          childAspectRatio: 1.1,
+        ),
+        itemCount: gunSayisi + baslangicBosluk,
+        itemBuilder: (context, index) {
+          if (index < baslangicBosluk) return const SizedBox.shrink();
+          int gun = index - baslangicBosluk + 1;
+          DateTime tarih = DateTime(seciliAy.year, seciliAy.month, gun);
+          String tarihKey = DateFormat('yyyy-MM-dd').format(tarih);
+          final gunData = aylikVeri[tarihKey] ?? {};
+          bool isSelected = seciliGun.day == gun && seciliGun.month == seciliAy.month && seciliGun.year == seciliAy.year;
+
+          return InkWell(
+            onTap: () {
+              setState(() {
+                seciliGun = tarih;
+              });
+            },
+            onLongPress: () => _gunDetayGoster(tarih),
+            child: Container(
+              margin: const EdgeInsets.all(1),
+              decoration: BoxDecoration(
+                color: isSelected ? Colors.blue.shade50 : Colors.white,
+                border: Border.all(
+                  color: isSelected ? Colors.blue : Colors.grey.shade200, 
+                  width: isSelected ? 1.5 : 0.5
+                ),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Stack(
+                children: [
+                  Center(
+                    child: Text(
+                      gun.toString(), 
+                      style: TextStyle(
+                        color: Colors.black, 
+                        fontSize: 15, 
+                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal
+                      )
+                    ),
+                  ),
+                  if (gunData.isNotEmpty)
+                    Positioned(
+                      bottom: 2,
+                      left: 0,
+                      right: 0,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: _ozetGostergeleriOlustur(gunData),
+                      ),
+                    ),
                 ],
-                onChanged: (val) => setState(() {
-                  operasyonModu = val;
-                  if (val == 'sil') seciliDurum = null;
-                  seciliGunler.clear();
-                }),
               ),
             ),
-          ),
-        ),
-      ],
-    ),
-  ),
-
-  // 3. Araç Seçimi & Durum Seçimi
-  if (operasyonModu != null) ...[
-    const Center(child: Padding(padding: EdgeInsets.only(top: 8, bottom: 4), child: Text("Araç Seçin", style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)))),
-    _aracSecici(),
-
-    // 4. Durum / Patern Seçimi
-    if (operasyonModu == 'ekle') ...[
-      const Center(child: Padding(padding: EdgeInsets.only(top: 8, bottom: 4), child: Text("Ajanda Durumu", style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)))),
-      _durumSecici(),
-    ],
-    
-    Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-      child: Text(
-        operasyonModu == 'sil'
-          ? (seciliGunler.isNotEmpty 
-              ? "Seçilen günden itibaren ay sonuna kadar kayıtları temizlemek için alttaki 'İleri Temizle' butonuna dokunun." 
-              : "Günlere dokunarak tek tek silebilir veya bir gün seçip ileriye doğru toplu temizlik yapabilirsiniz.")
-          : (seciliDurum == '1-1' 
-              ? "Seçili araçlar 'Çalış', diğerleri 'İst.' olacak şekilde tüm aya dönüşümlü 1 gün çalış 1 gün istirahat düzeni uygulanır. İşlemi başlatmak için bir güne dokunun veya 'İleri Uygula' butonunu kullanın."
-              : "Güne dokunarak tekli atama yapabilir veya bir gün seçip 'İleri Uygula' butonuyla toplu işlem yapabilirsiniz."),
-        style: TextStyle(color: Colors.red.shade700, fontSize: 13, fontWeight: FontWeight.w500),
-        textAlign: TextAlign.center,
+          );
+        },
       ),
-    ),
-  ],
-  
-  const Divider(height: 1),
-  // Gün Başlıkları
-  Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-    child: Row(
-      children: gunler.map((g) => Expanded(
-        child: Center(child: Text(g, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.grey.shade600))),
-      )).toList(),
-    ),
-  ),
-      Expanded(child: SingleChildScrollView(child: Column(children: [
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(16),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 7, childAspectRatio: 0.65),
-          itemCount: gunSayisi + baslangicBosluk,
-          itemBuilder: (context, index) {
-            if (index < baslangicBosluk) return const SizedBox.shrink();
-            int gun = index - baslangicBosluk + 1;
-            DateTime tarih = DateTime(seciliAy.year, seciliAy.month, gun);
-            String tarihKey = DateFormat('yyyy-MM-dd').format(tarih);
-            final gunData = aylikVeri[tarihKey] ?? {};
 
-            return InkWell(
-              onTap: () {
-                // İşlem modu seçilmediyse uyar
-                if (seciliAraclar.isNotEmpty && operasyonModu == null) {
-                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text("Lütfen önce bir işlem (Ekle/Çıkar) seçin"),
-                      duration: Duration(milliseconds: 1000),
+      // 2. ARAÇ LİSTESİ (TÜM FİLO - GÜN ODAKLI)
+      Expanded(
+        child: _seciliGunDetayPaneli(DateFormat('yyyy-MM-dd').format(seciliGun)),
+      ),
+
+      // Alt Aksiyonlar
+      _altAksiyonlar(),
+    ]);
+  }
+
+
+
+  Widget _altAksiyonlar() {
+    final gunKey = DateFormat('yyyy-MM-dd').format(seciliGun);
+    final gunData = aylikVeri[gunKey] ?? {};
+
+    // Seçili günde 'N' (Nöbet) olarak işaretlenmiş plakaları bul
+    final nobetliPlakalar = gunData.entries
+        .where((e) => e.value == 'N')
+        .map((e) => e.key)
+        .toList();
+
+    // Mevcut filtreye veya seçime göre ilgili araçları belirleyelim (1-1 butonu için)
+    final hedefPlakalar = seciliAraclar.isNotEmpty 
+        ? seciliAraclar 
+        : araclar.where((a) {
+            if (_aracAramaFiltresi.isEmpty) return true;
+            final plaka = (a['plaka'] ?? "").toString().toLowerCase();
+            final sofor = (a['soforAd'] ?? a['sofor'] ?? "").toString().toLowerCase();
+            return plaka.contains(_aracAramaFiltresi.toLowerCase()) || 
+                   sofor.contains(_aracAramaFiltresi.toLowerCase());
+          }).map((a) => a['plaka']?.toString()).toSet();
+
+    final bool gundeDurumVar = gunData.entries.any((e) => 
+      hedefPlakalar.contains(e.key) && (e.value == 'C' || e.value == 'N' || e.value == 'I')
+    );
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, -2))],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Nöbet Planlama Butonu (Sadece nöbet seçili araç varsa görünür)
+          if (nobetliPlakalar.isNotEmpty) ...[
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () => _nobetSirasiniOnayla(nobetliPlakalar),
+                    icon: const Icon(Icons.auto_awesome, size: 18),
+                    label: const Text(
+                      "Nöbet Planı Oluştur",
+                      style: TextStyle(fontWeight: FontWeight.bold),
                     ),
-                  );
-                  return;
-                }
-
-                // Araç seçiliyken durum seçilmediyse gün seçimine izin verme
-                if (seciliAraclar.isNotEmpty && operasyonModu == 'ekle' && seciliDurum == null) {
-                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text("Lütfen önce bir durum veya patern seçin"),
-                      duration: Duration(milliseconds: 700),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: Colors.orange.shade700,
+                      side: BorderSide(color: Colors.orange.shade700, width: 1.5),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                     ),
-                  );
-                  return;
-                }
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+          ],
 
+          // 1-1 Çalışma Düzeni Butonu
+          if (gundeDurumVar) ...[
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        seciliDurum = '1-1';
+                        operasyonModu = 'ekle';
+                      });
+                      _topluIslemOnayiAl();
+                    },
+                    icon: const Icon(Icons.sync_alt, size: 18),
+                    label: const Text("1 gün çalış 1 gün istirahat", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: Colors.teal.shade600,
+                      side: BorderSide(color: Colors.teal.shade600, width: 1.5),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+          ],
+
+          // Kaydet Butonu
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: (degisiklikVar && !kaydediliyor) ? _ajandaKaydet : null, 
+                  icon: kaydediliyor 
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.cloud_upload, size: 18),
+                  label: const Text("TÜMÜNÜ KAYDET"),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green.shade700,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _nobetSirasiniOnayla(List<String> nobetliPlakalar) {
+    if (nobetliPlakalar.isEmpty) return;
+    final seciliPlaka = nobetliPlakalar.first;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Nöbet Planı Oluştur"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text("${DateFormat('dd MMMM').format(seciliGun)} için nöbetçi seçildi.", style: const TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 12),
+            const Text("Nasıl bir nöbet çizelgesi oluşturulsun?", style: TextStyle(fontSize: 13)),
+            const SizedBox(height: 8),
+            if (nobetliPlakalar.length == 1) ...[
+              _nobetSecenekButonu(
+                icon: Icons.pin_drop,
+                color: Colors.orange,
+                baslik: "$seciliPlaka Aracını Sabitle",
+                altBaslik: "Ay sonuna kadar her gün bu araç nöbetçi olur.",
+                onTap: () {
+                  Navigator.pop(context);
+                  _nobetSirasiniUygula(mode: 'SABITLE', plakalar: nobetliPlakalar);
+                },
+              ),
+              const Divider(),
+              _nobetSecenekButonu(
+                icon: Icons.format_list_numbered,
+                color: Colors.blue,
+                baslik: "Tüm Filoyu Sırayla Ata",
+                altBaslik: "$seciliPlaka'dan başlayarak tüm araçları № sırasına göre dağıtır.",
+                onTap: () {
+                  Navigator.pop(context);
+                  _nobetSirasiniUygula(mode: 'TUMU_SIRALI', plakalar: nobetliPlakalar);
+                },
+              ),
+            ] else ...[
+              _nobetSecenekButonu(
+                icon: Icons.loop,
+                color: Colors.green,
+                baslik: "Seçilileri Kendi Arasında Döndür",
+                altBaslik: "Bugün seçilen ${nobetliPlakalar.length} aracı № sırasına göre ay sonuna kadar sırayla dağıtır.",
+                onTap: () {
+                  Navigator.pop(context);
+                  _nobetSirasiniUygula(mode: 'SECILILERI_DONDUR', plakalar: nobetliPlakalar);
+                },
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text("İptal")),
+        ],
+      ),
+    );
+  }
+
+  Widget _nobetSecenekButonu({
+    required IconData icon,
+    required Color color,
+    required String baslik,
+    required String altBaslik,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(color: color.withValues(alpha: 0.1), shape: BoxShape.circle),
+              child: Icon(icon, color: color, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(baslik, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  Text(altBaslik, style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: Colors.grey.shade400, size: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _nobetSirasiniUygula({required String mode, required List<String> plakalar}) {
+    if (plakalar.isEmpty) return;
+
+    int baslangicGun = seciliGun.day;
+    int gunSayisi = DateTime(seciliAy.year, seciliAy.month + 1, 0).day;
+    String ayKey = DateFormat('yyyy-MM').format(seciliAy);
+
+    setState(() {
+      List<String> havuz = [];
+      
+      if (mode == 'SABITLE') {
+        havuz = [plakalar.first];
+      } else if (mode == 'TUMU_SIRALI') {
+        // Tüm araçları № sırasına göre al
+        List<Map<String, dynamic>> tumu = List.from(araclar);
+        tumu.sort((a, b) {
+          int siraA = a['nobetSirasi'] ?? 999;
+          int siraB = b['nobetSirasi'] ?? 999;
+          return siraA.compareTo(siraB);
+        });
+        
+        List<String> siraliPlakalar = tumu.map((a) => a['plaka'].toString()).toList();
+        
+        // Başlangıç aracının indeksini bul
+        int startIndex = siraliPlakalar.indexOf(plakalar.first);
+        if (startIndex == -1) startIndex = 0;
+        
+        // Havuzu bu indeksten başlayacak şekilde yeniden düzenle
+        havuz = [
+          ...siraliPlakalar.sublist(startIndex),
+          ...siraliPlakalar.sublist(0, startIndex)
+        ];
+      } else if (mode == 'SECILILERI_DONDUR') {
+        List<Map<String, dynamic>> secilenler = araclar
+            .where((a) => plakalar.contains(a['plaka']))
+            .toList();
+        secilenler.sort((a, b) {
+          int siraA = a['nobetSirasi'] ?? 999;
+          int siraB = b['nobetSirasi'] ?? 999;
+          return siraA.compareTo(siraB);
+        });
+        havuz = secilenler.map((a) => a['plaka'].toString()).toList();
+      }
+
+      if (havuz.isEmpty) return;
+
+      for (int i = baslangicGun; i <= gunSayisi; i++) {
+        String tKey = DateFormat('yyyy-MM-dd').format(DateTime(seciliAy.year, seciliAy.month, i));
+        final gunMap = Map<String, dynamic>.from(aylikVeri[tKey] ?? {});
+        
+        // O günkü mevcut nöbetçiyi temizle
+        gunMap.removeWhere((k, v) => v == 'N');
+        
+        int offset = i - baslangicGun;
+        String atanacakPlaka = havuz[offset % havuz.length];
+        gunMap[atanacakPlaka] = 'N';
+        
+        aylikVeri[tKey] = gunMap;
+        degisenAylar.add(ayKey);
+      }
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Nöbet planı başarıyla oluşturuldu. Kaydetmeyi unutmayın.")),
+    );
+  }
+
+
+
+  void _topluIslemOnayiAl() {
+    if (seciliDurum == '1-1') {
+      final gunKey = DateFormat('yyyy-MM-dd').format(seciliGun);
+      final gunData = aylikVeri[gunKey] ?? {};
+
+      // Hedef kitle: seçilenler varsa onlar, yoksa filtredekiler
+      final hedefPlakalar = seciliAraclar.isNotEmpty
+          ? seciliAraclar.toSet() 
+          : araclar.where((a) {
+              if (_aracAramaFiltresi.isEmpty) return true;
+              final plaka = (a['plaka'] ?? "").toString().toLowerCase();
+              final sofor = (a['soforAd'] ?? a['sofor'] ?? "").toString().toLowerCase();
+              return plaka.contains(_aracAramaFiltresi.toLowerCase()) || 
+                     sofor.contains(_aracAramaFiltresi.toLowerCase());
+            }).map((a) => a['plaka']?.toString()).toSet();
+
+      // Bu hedef kitle içinde durumu (C, N, I) olanlar
+      final etkilenenler = hedefPlakalar.where((p) {
+        final d = gunData[p];
+        return d == 'C' || d == 'N' || d == 'I';
+      }).toList();
+
+      String mesaj;
+      if (etkilenenler.length == 1) {
+        mesaj = "${etkilenenler.first} plakalı aracın, seçili günden itibaren ay sonuna kadar 'bir gün çalışma, bir gün istirahat' düzeninde çalıştırılmasını uygun görüyor musunuz?";
+      } else if (etkilenenler.isNotEmpty) {
+        mesaj = "Seçili ${etkilenenler.length} aracın seçili günden itibaren ay sonuna kadar 'bir gün çalışma, bir gün istirahat' düzeninde çalıştırılmasını uygun görüyor musunuz?";
+      } else {
+        mesaj = "Tüm araçların seçili günden itibaren ay sonuna kadar 'bir gün çalışma, bir gün istirahat' düzeninde çalıştırılmasını uygun görüyor musunuz?";
+      }
+
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text("1-1 Düzeni Uygula"),
+          content: Text(mesaj),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text("Vazgeç")),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context);
                 setState(() {
-                  final bool secildi = !seciliGunler.contains(tarihKey);
-
-                  // Gün seçimini yönet
-                  if (secildi) {
-                    if (seciliAraclar.isEmpty) {
-                      seciliGunler.clear(); // Gezinti modunda tekli seçim
-                    }
-                    seciliGunler.add(tarihKey);
-                  } else {
-                    seciliGunler.remove(tarihKey);
-                  }
-
-                  // Atama/Silme İşlemi (Araç ve Mod seçiliyse)
-                  if (seciliAraclar.isNotEmpty && operasyonModu != null) {
-                    if (operasyonModu == 'ekle' && seciliDurum != null) {
-                      if (seciliDurum == '1-1') {
-                        // DÜZEN MODU (1 Gün Çalış 1 Gün İstirahat)
-                        int gunSayisi = DateTime(seciliAy.year, seciliAy.month + 1, 0).day;
-                        String ayKey = tarihKey.substring(0, 7);
-                        degisenAylar.add(ayKey);
-                        final benzersizPlakalar = araclar.map((a) => (a['plaka'] ?? "").toString()).where((p) => p.isNotEmpty).toSet();
-
-                        // ÖNCE TÜM AYI TEMİZLE (Kayıtlılar/Nöbetler hariç)
-                        for (int i = 1; i <= gunSayisi; i++) {
-                          String tKey = DateFormat('yyyy-MM-dd').format(DateTime(seciliAy.year, seciliAy.month, i));
-                          if (aylikVeri.containsKey(tKey)) {
-                            final gunMap = Map<String, dynamic>.from(aylikVeri[tKey]!);
-                            for (var p in benzersizPlakalar) {
-                              if (gunMap[p] != 'N') gunMap.remove(p);
-                            }
-                            if (gunMap.isEmpty) {
-                              aylikVeri.remove(tKey);
-                            } else {
-                              aylikVeri[tKey] = gunMap;
-                            }
-                          }
-                        }
-
-                        // ŞİMDİ ÖRÜNTÜYÜ UYGULA
-                        for (int i = gun; i <= gunSayisi; i++) {
-                          String k = DateFormat('yyyy-MM-dd').format(DateTime(seciliAy.year, seciliAy.month, i));
-                          final gunMap = Map<String, dynamic>.from(aylikVeri[k] ?? {});
-                          
-                          bool calismaGunu = false;
-                          int diff = i - gun;
-                          if (seciliDurum == '1-1') {
-                            calismaGunu = (diff % 2 == 0);
-                          }
-                          
-                          for (var p in benzersizPlakalar) {
-                            if (gunMap[p] == 'N') continue; // Nöbetleri koru
-                            
-                            bool seciliMi = seciliAraclar.contains(p);
-                            if (seciliMi) {
-                              gunMap[p] = calismaGunu ? 'C' : 'I';
-                            } else {
-                              gunMap[p] = calismaGunu ? 'I' : 'C';
-                            }
-                          }
-                          aylikVeri[k] = gunMap;
-                        }
-                        seciliGunler.clear(); 
-                      } else {
-                        // NORMAL ATAMA MODU
-                        final gunMap = Map<String, dynamic>.from(aylikVeri[tarihKey] ?? {});
-                        for (var p in seciliAraclar) {
-                          // Nöbet dışındaki atamalarda Nöbeti koru? 
-                          // Kullanıcı isteğine göre: Nöbetler özeldir.
-                          if (gunMap[p] == 'N' && seciliDurum != 'N') continue;
-                          gunMap[p] = seciliDurum!;
-                        }
-                        aylikVeri[tarihKey] = gunMap;
-                        String ayKey = tarihKey.substring(0, 7);
-                        degisenAylar.add(ayKey);
-                      }
-                    } else if (operasyonModu == 'sil') {
-                      // SİLME MODU
-                      final gunMap = Map<String, dynamic>.from(aylikVeri[tarihKey] ?? {});
-                      for (var p in seciliAraclar) {
-                        gunMap.remove(p);
-                      }
-
-                      if (gunMap.isEmpty) {
-                        aylikVeri.remove(tarihKey);
-                      } else {
-                        aylikVeri[tarihKey] = gunMap;
-                      }
-                      String ayKey = tarihKey.substring(0, 7);
-                      degisenAylar.add(ayKey);
-                    }
-                  }
+                  _uygula1e1();
                 });
               },
-              onLongPress: () => _gunDetayGoster(tarih),
-              child: Container(
-                margin: const EdgeInsets.all(2),
-                decoration: BoxDecoration(
-                  color: seciliGunler.contains(tarihKey) ? Colors.blue.shade50 : Colors.white,
-                  border: Border.all(
-                    color: seciliGunler.contains(tarihKey) ? Colors.blue : Colors.grey.shade300, 
-                    width: seciliGunler.contains(tarihKey) ? 2.0 : 1.0
+              child: const Text("Uygula"),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    final actionText = operasyonModu == 'sil' ? "temizleme" : "atama";
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Toplu İşlem Onayı"),
+        content: Text("Seçili araçlar için ${DateFormat('dd MMMM').format(seciliGun)}'den itibaren ay sonuna kadar toplu $actionText yapılacaktır. Devam etmek istiyor musunuz?"),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text("İptal")),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _topluIslemUygula();
+            },
+            child: const Text("Uygula"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _seciliGunDetayPaneli(String tarihKey) {
+    DateTime tarih = DateFormat('yyyy-MM-dd').parse(tarihKey);
+    final gunData = aylikVeri[tarihKey] ?? {};
+
+    // Filtrelenmiş araç listesi
+    final filtrelenmisAraclar = araclar.where((a) {
+      if (_aracAramaFiltresi.isEmpty) return true;
+      final plaka = (a['plaka'] ?? "").toString().toLowerCase();
+      final sofor = (a['soforAd'] ?? a['sofor'] ?? "").toString().toLowerCase();
+      return plaka.contains(_aracAramaFiltresi.toLowerCase()) || 
+             sofor.contains(_aracAramaFiltresi.toLowerCase());
+    }).toList();
+
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          color: Colors.blue.shade50,
+          child: Column(
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      DateFormat('dd MMMM yyyy, EEEE', 'tr_TR').format(tarih),
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.blue),
+                    ),
                   ),
-                  borderRadius: BorderRadius.circular(4),
+                  TextButton.icon(
+                    onPressed: () {
+                      showDialog(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          title: const Text("Günü Temizle"),
+                          content: Text("${DateFormat('dd MMMM').format(tarih)} tarihindeki tüm kayıtlar silinecek. Emin misiniz?"),
+                          actions: [
+                            TextButton(onPressed: () => Navigator.pop(context), child: const Text("Vazgeç")),
+                            TextButton(
+                              onPressed: () {
+                                setState(() {
+                                  aylikVeri[tarihKey] = {}; // Günü boşalt
+                                  degisenAylar.add(tarihKey.substring(0, 7));
+                                });
+                                Navigator.pop(context);
+                              },
+                              child: const Text("Temizle", style: TextStyle(color: Colors.red)),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.delete_sweep, size: 16, color: Colors.red),
+                    label: const Text("Temizle", style: TextStyle(fontSize: 12, color: Colors.red)),
+                    style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(50, 30), tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                  ),
+                  const SizedBox(width: 8),
+                  TextButton.icon(
+                    onPressed: () {
+                      String ayAdi = DateFormat('MMMM yyyy', 'tr_TR').format(tarih);
+                      showDialog(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          title: const Text("Tüm Ayı Temizle"),
+                          content: Text("$ayAdi dönemine ait tüm kayıtlar silinecek. Emin misiniz?"),
+                          actions: [
+                            TextButton(onPressed: () => Navigator.pop(context), child: const Text("Vazgeç")),
+                            TextButton(
+                              onPressed: () {
+                                setState(() {
+                                  String ayKey = tarihKey.substring(0, 7);
+                                  aylikVeri.removeWhere((key, _) => key.startsWith(ayKey));
+                                  degisenAylar.add(ayKey);
+                                });
+                                Navigator.pop(context);
+                              },
+                              child: const Text("Hepsini Sil", style: TextStyle(color: Colors.red)),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                    icon: Icon(Icons.delete_forever, size: 16, color: Colors.red.shade900),
+                    label: Text("Tüm Ayı Temizle", style: TextStyle(fontSize: 12, color: Colors.red.shade900)),
+                    style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(50, 30), tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                  ),
+                  const SizedBox(width: 8),
+                  Text("${filtrelenmisAraclar.length}/${araclar.length} Araç", style: const TextStyle(fontSize: 12, color: Colors.blueGrey)),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Container(
+                height: 36,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue.shade100),
                 ),
-                child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text(
-                          gun.toString(), 
-                          style: TextStyle(
-                            color: Colors.black, 
-                            fontSize: 17, 
-                            fontWeight: seciliGunler.contains(tarihKey) ? FontWeight.bold : FontWeight.normal
-                          )
-                        ),
-                      ),
-                      if (gunData.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 2.0),
-                          child: Wrap(
-                            spacing: 1,
-                            runSpacing: 1,
-                            alignment: WrapAlignment.center,
-                            children: _ozetGostergeleriOlustur(gunData),
-                          ),
-                        ),
-                    ],
+                child: TextField(
+                  controller: _aracAramaController,
+                  onChanged: (val) => setState(() => _aracAramaFiltresi = val),
+                  style: const TextStyle(fontSize: 13),
+                  decoration: InputDecoration(
+                    hintText: "Plaka veya Şoför Ara...",
+                    prefixIcon: const Icon(Icons.search, size: 18, color: Colors.blue),
+                    suffixIcon: _aracAramaFiltresi.isNotEmpty 
+                      ? IconButton(
+                          icon: const Icon(Icons.clear, size: 18), 
+                          onPressed: () => setState(() {
+                            _aracAramaController.clear();
+                            _aracAramaFiltresi = "";
+                          })
+                        ) 
+                      : null,
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 8),
                   ),
                 ),
               ),
-            );
-          },
+            ],
+          ),
         ),
-      ]))),
-      if (seciliGunler.isNotEmpty && seciliGunler.length == 1)
-        _seciliGunDetayPaneli(seciliGunler.first),
-      Container(padding: const EdgeInsets.all(16), child: Column(children: [
-        Row(children: [
-          Expanded(child: ElevatedButton(
-            onPressed: (degisiklikVar && !kaydediliyor) ? _ajandaKaydet : null, 
-            style: ElevatedButton.styleFrom(
-              backgroundColor: (degisiklikVar && !kaydediliyor) ? Colors.green.shade700 : Colors.grey.shade400, 
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              elevation: (degisiklikVar && !kaydediliyor) ? 4 : 0,
-            ), 
-            child: kaydediliyor 
-              ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-              : const Text("Tüm Değişiklikleri Kaydet")
-          )),
-        ]),
-        const SizedBox(height: 12),
-        Row(children: [
-          Expanded(child: ElevatedButton(
-            onPressed: (kaydediliyor || seciliAraclar.isEmpty || operasyonModu == null || (operasyonModu == 'ekle' && seciliDurum == null)) ? null : () {
-              final isForward = seciliGunler.isNotEmpty;
-              final actionText = operasyonModu == 'sil' ? "temizleme" : "atama";
-              final scopeText = isForward ? "seçilen günden itibaren ay sonuna kadar" : "tüm ay için";
-              
-              showDialog(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: const Text("Toplu İşlem Onayı"),
-                  content: Text("Seçili araçlar için $scopeText toplu $actionText yapılacaktır. Devam etmek istiyor musunuz?"),
-                  actions: [
-                    TextButton(onPressed: () => Navigator.pop(context), child: const Text("İptal")),
-                    ElevatedButton(
-                      onPressed: () {
-                        Navigator.pop(context);
-                        _topluIslemUygula();
-                      },
-                      child: const Text("Uygula"),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            itemCount: filtrelenmisAraclar.length,
+            addAutomaticKeepAlives: false,
+            addRepaintBoundaries: true,
+            cacheExtent: 500,
+            itemBuilder: (context, index) {
+              final arac = filtrelenmisAraclar[index];
+              final plaka = (arac['plaka'] ?? "").toString();
+              final sofor = (arac['soforAd'] ?? arac['sofor'] ?? "").toString();
+              final nSira = arac['nobetSirasi'];
+              final mevcutDurum = gunData[plaka]; // Varsayılan 'C' kaldırıldı, null olabilir.
+
+              return Container(
+                margin: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: Colors.grey.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Text(plaka, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                              InkWell(
+                                onTap: () => _nobetSirasiDegistir(arac),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.orange.shade50,
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(color: Colors.orange.shade200),
+                                  ),
+                                  child: Text(
+                                    nSira != null ? "№ $nSira" : "№ ?",
+                                    style: TextStyle(fontSize: 10, color: Colors.orange.shade900, fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (sofor.isNotEmpty) Text(sofor, style: const TextStyle(fontSize: 11, color: Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis),
+                        ],
+                      ),
+                    ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _durumButonu(tarihKey, plaka, 'C', 'Çalış', Colors.blue, mevcutDurum == 'C'),
+                        const SizedBox(width: 3),
+                        _durumButonu(tarihKey, plaka, 'N', 'Nöbet', Colors.orange, mevcutDurum == 'N'),
+                        const SizedBox(width: 3),
+                        _durumButonu(tarihKey, plaka, 'I', 'İst.', Colors.purple, mevcutDurum == 'I'),
+                        if (mevcutDurum != null && (mevcutDurum == 'C' || mevcutDurum == 'N' || mevcutDurum == 'I')) ...[
+                          const SizedBox(width: 6),
+                          IconButton(
+                            icon: const Icon(Icons.fast_forward, size: 20, color: Colors.blue),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                            onPressed: () => _tekAracTopluIslemOnayi(plaka, mevcutDurum, false),
+                            tooltip: "Seçilenden İleri Uygula",
+                          ),
+                        ],
+                      ],
                     ),
                   ],
                 ),
               );
-            }, 
-            style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-            ),
-            child: Text(
-              seciliGunler.isNotEmpty 
-                ? (operasyonModu == 'sil' ? "Seçilenden İleri Temizle" : "Seçilenden İleri Uygula") 
-                : (operasyonModu == 'sil' ? "Tüm Ayı Temizle" : "Tüm Aya Uygula"), 
-              style: const TextStyle(fontSize: 15)
-            )
-          )),
-          const SizedBox(width: 8),
-          Expanded(child: ElevatedButton(
-            onPressed: (kaydediliyor || seciliGunler.isEmpty) ? null : _topluSil,
-            style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-            ),
-            child: const Text("Seçiliyi Temizle", style: TextStyle(fontSize: 15))
-          )),
-        ]),
-      ]))
-    ]);
+            },
+          ),
+        ),
+      ],
+    );
   }
 
-  Widget _seciliGunDetayPaneli(String tarihKey) {
-    final gunData = aylikVeri[tarihKey] ?? {};
-    DateTime tarih = DateFormat('yyyy-MM-dd').parse(tarihKey);
-
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.blue.shade50,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.blue.shade200),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                "${DateFormat('dd MMMM yyyy', 'tr_TR').format(tarih)} Detayı",
-                style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.blue),
-              ),
-              if (gunData.isNotEmpty)
-                Text("${gunData.length} Araç Kayıtlı", style: const TextStyle(fontSize: 14, color: Colors.blueGrey)),
-            ],
+  void _tekAracTopluIslemOnayi(String plaka, String durum, bool is1e1) {
+    if (is1e1) {
+      // 1-1 kuralı için seciliAraclar listesini geçici olarak bu plaka ile güncelle ve ana onay fonksiyonunu çağır
+      setState(() {
+        seciliAraclar.clear();
+        seciliAraclar.add(plaka);
+        seciliDurum = '1-1';
+      });
+      _topluIslemOnayiAl();
+      return;
+    }
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Toplu Uygula"),
+        content: Text("$plaka aracının '$durum' durumu bu günden itibaren ay sonuna kadar uygulansın mı?"),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Vazgeç")),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              setState(() {
+                seciliAraclar.clear();
+                seciliAraclar.add(plaka);
+                if (is1e1) {
+                  _uygula1e1();
+                } else {
+                  seciliDurum = durum;
+                  operasyonModu = 'ekle';
+                  _topluIslemUygula();
+                }
+              });
+            },
+            child: const Text("Uygula"),
           ),
-          const Divider(),
-          if (gunData.isEmpty)
-            const Text("Bu güne ait kayıt bulunamadı.", style: TextStyle(fontSize: 15, fontStyle: FontStyle.italic, color: Colors.grey))
-          else
-            Builder(
-              builder: (context) {
-                // Veriyi sıralama: Önce Çalışan (C), sonra Nöbetçi (N), sonra İstirahat (I)
-                final siraliGirisler = gunData.entries.toList()..sort((a, b) {
-                  const oncelik = {'C': 0, 'N': 1, 'I': 2};
-                  int fark = (oncelik[a.value] ?? 99).compareTo(oncelik[b.value] ?? 99);
-                  if (fark != 0) return fark;
-                  return a.key.compareTo(b.key); // Aynı durumdakileri plakaya göre alfabetik sırala
-                });
-
-                return Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: siraliGirisler.map((e) {
-                    final arac = araclar.firstWhere((a) => a['plaka'] == e.key, orElse: () => {});
-                    final sofor = arac['soforAd'] ?? arac['sofor'] ?? "";
-                    Color renk = Colors.blue;
-                    if (e.value == 'I') {
-                      renk = Colors.purple;
-                    }
-                    if (e.value == 'N') {
-                      renk = Colors.orange;
-                    }
-
-                    return Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: renk.withValues(alpha: 0.5)),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(e.key, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                              if (sofor.isNotEmpty) Text(sofor, style: const TextStyle(fontSize: 14, color: Colors.grey)),
-                            ],
-                          ),
-                          const SizedBox(width: 10),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                            decoration: BoxDecoration(color: renk, borderRadius: BorderRadius.circular(4)),
-                            child: Text(e.value, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
-                          ),
-                        ],
-                      ),
-                    );
-                  }).toList(),
-                );
-              },
-            ),
         ],
       ),
     );
+  }
+
+  void _nobetSirasiDegistir(Map<String, dynamic> arac) {
+    final controller = TextEditingController(text: arac['nobetSirasi']?.toString() ?? "");
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text("${arac['plaka']} Nöbet Sırası"),
+        content: TextField(
+          controller: controller,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(labelText: "Sıra Numarası", hintText: "Örn: 1"),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Vazgeç")),
+          ElevatedButton(
+            onPressed: () async {
+              int? yeniSira = int.tryParse(controller.text.trim());
+              final messenger = ScaffoldMessenger.of(context);
+              final nav = Navigator.of(context);
+              
+              if (yeniSira != null) {
+                setState(() {
+                  arac['nobetSirasi'] = yeniSira;
+                });
+                
+                try {
+                  await FirebaseFirestore.instance.collection('esnaflar').doc(widget.esnaf.id).update({
+                    'araclar': araclar,
+                  });
+                  messenger.showSnackBar(const SnackBar(content: Text("Nöbet sırası güncellendi"), duration: Duration(seconds: 1)));
+                } catch (e) {
+                  messenger.showSnackBar(SnackBar(content: Text("Hata: $e")));
+                }
+              }
+              nav.pop();
+            },
+            child: const Text("Kaydet"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _durumButonu(String tarihKey, String plaka, String deger, String etiket, Color renk, bool secili) {
+    return GestureDetector(
+      onTap: () {
+        if (deger == 'N') {
+           // Nöbet kontrolleri (Zaten _durumChip içinde var, oraya da bakılabilir ama burada direkt uygulayalım)
+           if (widget.esnaf.nobetBaslangic == null || widget.esnaf.nobetBaslangic!.isEmpty || widget.esnaf.nobetBaslangic == "Seçilmedi") {
+             _hizliYonlendir("Nöbet Saatleri Eksik", "Nöbet saatlerini ayarlamak ister misiniz?", true, false);
+             return;
+           }
+        }
+
+        setState(() {
+          final gunMap = Map<String, dynamic>.from(aylikVeri[tarihKey] ?? {});
+          gunMap[plaka] = deger;
+          aylikVeri[tarihKey] = gunMap;
+          degisenAylar.add(tarihKey.substring(0, 7));
+        });
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        decoration: BoxDecoration(
+          color: secili ? renk : Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: secili ? renk : Colors.grey.shade300),
+        ),
+        child: Text(
+          etiket,
+          style: TextStyle(
+            color: secili ? Colors.white : Colors.grey.shade700,
+            fontSize: 12,
+            fontWeight: secili ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _hizliYonlendir(String baslik, String icerik, bool openMesai, bool openFilo) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(baslik),
+        content: Text(icerik),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Vazgeç")),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              Navigator.push(context, MaterialPageRoute(builder: (context) => EsnafPaneli(esnaf: widget.esnaf, openMesai: openMesai, openFilo: openFilo)));
+            },
+            child: const Text("Tamam"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _uygula1e1() {
+    int baslangicGun = seciliGun.day;
+    int gunSayisi = DateTime(seciliAy.year, seciliAy.month + 1, 0).day;
+    
+    // Nöbet sıralarını topla ve sırala (Tüm araçlar üzerinden)
+    List<int> siralar = araclar
+        .map((a) => a['nobetSirasi'] as int?)
+        .where((s) => s != null)
+        .cast<int>()
+        .toList();
+    
+    if (siralar.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Araçların nöbet sıraları tanımlanmamış!"), backgroundColor: Colors.orange),
+      );
+      return;
+    }
+    
+    siralar.sort();
+    // Medyan değeri bul (Filoyu ikiye bölecek eşik)
+    int ortaIndex = (siralar.length / 2).ceil() - 1;
+    int esikSira = siralar[ortaIndex];
+
+    final benzersizPlakalar = araclar
+        .map((a) => (a['plaka'] ?? "").toString())
+        .where((p) => p.isNotEmpty)
+        .toSet();
+    
+    // İşlem yapılacak araçlar: Ya sadece seçilenler ya da hiçbiri seçilmediyse hepsi.
+    final hedefAraclar = seciliAraclar.isEmpty ? benzersizPlakalar : Set<String>.from(seciliAraclar);
+
+    Map<String, int> plakaToSira = {
+      for (var a in araclar)
+        if (a['plaka'] != null && a['nobetSirasi'] != null)
+          a['plaka'].toString(): a['nobetSirasi'] as int
+    };
+
+    // Seçilen günden ay sonuna kadar örüntüyü uygula
+    for (int i = baslangicGun; i <= gunSayisi; i++) {
+      String tKey = DateFormat('yyyy-MM-dd').format(DateTime(seciliAy.year, seciliAy.month, i));
+      String ayKey = tKey.substring(0, 7);
+      
+      final gunMap = Map<String, dynamic>.from(aylikVeri[tKey] ?? {});
+      // i == baslangicGun -> fark 0 -> true (Grup A Çalışır)
+      bool siraACalissin = ((i - baslangicGun) % 2 == 0);
+      bool degisti = false;
+
+      for (var p in hedefAraclar) {
+        if (gunMap[p] == 'N') continue; // Nöbetçiler korunur
+        
+        int? sira = plakaToSira[p];
+        if (sira == null) continue; // Sırası olmayan araçları atla
+
+        String yeniDurum;
+        if (sira <= esikSira) {
+          // Grup A: Seçili gün Çalış (C), ertesi gün İst (I)
+          yeniDurum = siraACalissin ? 'C' : 'I';
+        } else {
+          // Grup B: Seçili gün İst (I), ertesi gün Çalış (C)
+          yeniDurum = siraACalissin ? 'I' : 'C';
+        }
+
+        if (gunMap[p] != yeniDurum) {
+          gunMap[p] = yeniDurum;
+          degisti = true;
+        }
+      }
+
+      if (degisti) {
+        aylikVeri[tKey] = gunMap;
+        degisenAylar.add(ayKey);
+      }
+    }
+    seciliGunler.clear(); 
   }
 
   List<Widget> _ozetGostergeleriOlustur(Map<String, dynamic> gunData) {
@@ -827,222 +1244,24 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
     });
 
     List<Widget> gostergeler = [];
-    if (calisan > 0) gostergeler.add(_ozetChip("$calisan Ç", Colors.blue));
-    if (istirahat > 0) gostergeler.add(_ozetChip("$istirahat İ", Colors.purple));
-    if (nobetci > 0) gostergeler.add(_ozetChip("$nobetci N", Colors.orange));
+    if (calisan > 0) gostergeler.add(_ozetDot(Colors.blue));
+    if (istirahat > 0) gostergeler.add(_ozetDot(Colors.purple));
+    if (nobetci > 0) gostergeler.add(_ozetDot(Colors.orange));
 
     return gostergeler;
   }
 
-  Widget _ozetChip(String metin, Color renk) {
+  Widget _ozetDot(Color renk) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+      width: 6,
+      height: 6,
+      margin: const EdgeInsets.symmetric(vertical: 1),
       decoration: BoxDecoration(
         color: renk,
-        borderRadius: BorderRadius.circular(3),
-      ),
-      child: Text(
-        metin,
-        style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+        shape: BoxShape.circle,
       ),
     );
   }
 
-  Widget _aracSecici() {
-    final benzersizPlakalar = araclar.map((a) => (a['plaka'] ?? "").toString()).where((p) => p.isNotEmpty).toSet();
-    bool hepsiSecili = benzersizPlakalar.isNotEmpty && seciliAraclar.length >= benzersizPlakalar.length;
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(right: 8.0),
-            child: ActionChip(
-              backgroundColor: hepsiSecili ? Colors.blue.shade100 : Colors.white,
-              side: BorderSide(color: Colors.grey.shade300),
-              label: Text(hepsiSecili ? "Bırak" : "Hepsi", style: const TextStyle(fontSize: 14)),
-              onPressed: () {
-                setState(() {
-                  if (hepsiSecili) {
-                    seciliAraclar.clear();
-                  } else {
-                    seciliAraclar.addAll(benzersizPlakalar);
-                  }
-                });
-              },
-            ),
-          ),
-          ...araclar.map((arac) {
-            String plaka = arac['plaka'] ?? "";
-            if (plaka.isEmpty) return const SizedBox.shrink();
-            return Padding(
-              padding: const EdgeInsets.only(right: 8.0),
-              child: FilterChip(
-                backgroundColor: Colors.white,
-                selectedColor: Colors.blue.shade50,
-                side: BorderSide(color: Colors.grey.shade300),
-                label: Text(plaka, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                selected: seciliAraclar.contains(plaka),
-                onSelected: (selected) => setState(() {
-                  if (selected) {
-                    seciliAraclar.add(plaka);
-                  } else {
-                    seciliAraclar.remove(plaka);
-                  }
-                }),
-              ),
-            );
-          }),
-        ],
-      ),
-    );
-  }
-
-  Widget _durumSecici() {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          _durumChip('C', 'Çalış', Colors.blue),
-          _durumChip('I', 'İst.', Colors.purple),
-          _durumChip('N', 'Nöbet', Colors.orange),
-          _durumChip('1-1', '1 Gün İst. 1 Gün Çal.', Colors.teal),
-        ],
-      ),
-    );
-  }
-
-  Widget _durumChip(String deger, String etiket, Color renk) {
-    bool aktifMi = seciliAraclar.isNotEmpty && operasyonModu == 'ekle';
-    return Padding(
-      padding: const EdgeInsets.only(right: 8.0),
-      child: ChoiceChip(
-        backgroundColor: Colors.white,
-        side: BorderSide(color: Colors.grey.shade300),
-        label: Text(etiket, style: TextStyle(fontSize: 14, color: seciliDurum == deger ? Colors.white : (aktifMi ? renk : Colors.grey))),
-        selected: seciliDurum == deger,
-        selectedColor: renk,
-        onSelected: aktifMi ? (s) => setState(() {
-          if (s && deger == 'N') {
-            // Nöbet Sıralaması Kontrolü - Yerel araç listesi üzerinden kontrol et (daha günceldir)
-            bool nobetSirasiEksik = araclar.every((a) => a['nobetSirasi'] == null || a['nobetSirasi'] == 0);
-            if (nobetSirasiEksik) {
-              final rootContext = context;
-              showDialog(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: const Text("Nöbet Sıralaması Eksik"),
-                  content: const Text("Nöbet Sıralamasının oluşturulmadığını farkettik. Sıralayı oluşturmanız için Filo Yönetimine yönlendiriliyorsunuz."),
-                  actions: [
-                    TextButton(onPressed: () => Navigator.pop(context), child: const Text("Vazgeç")),
-                    ElevatedButton(
-                      onPressed: () {
-                        Navigator.pop(context); // Diyaloğu kapat
-                        // Yeni bir sayfa olarak EsnafPaneli'ni "Filo Yönetimi" açık olacak şekilde aç
-                        Navigator.push(
-                          rootContext, 
-                          MaterialPageRoute(builder: (context) => EsnafPaneli(esnaf: widget.esnaf, openFilo: true))
-                        );
-                      },
-                      child: const Text("Tamam"),
-                    ),
-                  ],
-                ),
-              );
-              return;
-            }
-
-            // Nöbet Saati Kontrolü
-            bool nobetSaatleriEksik = widget.esnaf.nobetBaslangic == null || widget.esnaf.nobetBaslangic == "Seçilmedi" || widget.esnaf.nobetBaslangic!.isEmpty ||
-                                     widget.esnaf.nobetBitis == null || widget.esnaf.nobetBitis == "Seçilmedi" || widget.esnaf.nobetBitis!.isEmpty;
-
-            if (nobetSaatleriEksik) {
-              final rootContext = context;
-              showDialog(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: const Text("Nöbet Saatleri Belirlenmedi"),
-                  content: const Text("Nöbet başlangıç ve bitiş saatlerini belirlemediniz. Mesai saatleri ekranına yönlendiriliyorsunuz."),
-                  actions: [
-                    TextButton(onPressed: () => Navigator.pop(context), child: const Text("Vazgeç")),
-                    ElevatedButton(
-                      onPressed: () {
-                        Navigator.pop(context); // Diyaloğu kapat
-                        // Yeni bir sayfa olarak EsnafPaneli'ni "Mesai Saatleri" açık olacak şekilde aç
-                        Navigator.push(
-                          rootContext, 
-                          MaterialPageRoute(builder: (context) => EsnafPaneli(esnaf: widget.esnaf, openMesai: true))
-                        );
-                      },
-                      child: const Text("Tamam"),
-                    ),
-                  ],
-                ),
-              );
-              return;
-            }
-          }
-
-          if (s && deger == '1-1') {
-            showDialog(
-              context: context,
-              builder: (context) => AlertDialog(
-                title: const Text("Çalışma Düzeni Hakkında"),
-                content: const Text(
-                  "Bu mod seçildiğinde:\n\n"
-                  "• Seçtiğiniz araçlar o gün 'Çalış' başlar.\n"
-                  "• SEÇMEDİĞİNİZ tüm araçlar 'İst.' başlar.\n"
-                  "• Tüm ay boyunca bir gün çalış bir gün istirahat düzeni otomatik doldurulur.\n"
-                  "• Nöbetçi (N) olan günler korunur.\n\n"
-                  "Devam etmek istiyor musunuz?",
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text("Vazgeç"),
-                  ),
-                  ElevatedButton(
-                    onPressed: () {
-                      setState(() => seciliDurum = '1-1');
-                      Navigator.pop(context);
-                    },
-                    child: const Text("Devam Et"),
-                  ),
-                ],
-              ),
-            );
-            return;
-          }
-          seciliDurum = s ? deger : null;
-          if (!s && seciliGunler.isNotEmpty) {
-            for (var gunKey in seciliGunler) {
-              if (aylikVeri.containsKey(gunKey)) {
-                final yeniMap = Map<String, dynamic>.from(aylikVeri[gunKey]!);
-                bool degisti = false;
-                for (var p in seciliAraclar) {
-                  if (yeniMap.containsKey(p)) {
-                    yeniMap.remove(p);
-                    degisti = true;
-                  }
-                }
-                if (degisti) {
-                  if (yeniMap.isEmpty) {
-                    aylikVeri.remove(gunKey);
-                  } else {
-                    aylikVeri[gunKey] = yeniMap;
-                  }
-                  String ayKey = gunKey.substring(0, 7);
-                  degisenAylar.add(ayKey);
-                }
-              }
-            }
-          }
-        }) : null,
-      ),
-    );
-  }
 }

@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:almely_randevu/servisler/firestore_servisi.dart';
 import 'package:almely_randevu/modeller/randevu_modeli.dart';
 import 'package:almely_randevu/modeller/esnaf_modeli.dart';
+import 'package:almely_randevu/ekranlar/taksi_cizelge_ekrani.dart';
 
 class EsnafAjandaEkrani extends StatefulWidget {
   final EsnafModeli esnaf;
@@ -247,11 +248,11 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
             children: [
               Icon(Icons.sync, color: Colors.orange),
               SizedBox(width: 10),
-              Text("Ajandayı Güncelle"),
+              Text("Ajanda Defterini Güncelle"),
             ],
           ),
           content: Text(
-            "Seçtiğiniz aralıkta (${mevcutAjandalar.length} kayıt) zaten ajanda bulunuyor.\n\n"
+            "Seçtiğiniz aralıkta (${mevcutAjandalar.length} kayıt) zaten ajanda defteri kaydı bulunuyor.\n\n"
             "Bu işlem mevcut randevularınızı SILMEZ, sadece çalışma saatlerini ve zaman dilimlerini (slot) günceller.\n\n"
             "Mevcut kayıtları güncelleyebilir veya sadece eksik günleri ekleyerek devam edebilirsiniz."
           ),
@@ -342,8 +343,9 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
       
       if (!mounted) return;
       navigator.pop();
-      messenger.showSnackBar(const SnackBar(content: Text("Ajanda başarıyla oluşturuldu"), backgroundColor: Colors.green));
+      messenger.showSnackBar(const SnackBar(content: Text("Ajanda Defteri kaydı başarıyla oluşturuldu"), backgroundColor: Colors.green));
       _ajandaStreamGuncelle();
+      _aylikOzetTakvimiGoster(esnaf); // Takvimi tekrar göstererek güncellenmiş halini görmesini sağla
     } catch (e) {
       if (!mounted) return;
       navigator.pop();
@@ -355,8 +357,8 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
     showDialog(
       context: context,
       builder: (c) => AlertDialog(
-        title: const Text("Ajanda Sil"),
-        content: Text("${DateFormat('dd/MM/yyyy').format(_seciliTarih)} tarihli ajandayı seçili ${_seciliKanallar.length} araç/kanal için silmek istediğinize emin misiniz?"),
+        title: const Text("Ajanda Defteri Kaydını Sil"),
+        content: Text("${DateFormat('dd/MM/yyyy').format(_seciliTarih)} tarihli ajanda defteri kaydını seçili ${_seciliKanallar.length} araç/kanal için silmek istediğinize emin misiniz?"),
         actions: [
           TextButton(onPressed: () => Navigator.pop(c), child: const Text("Vazgeç")),
           TextButton(
@@ -407,7 +409,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                 Navigator.of(context, rootNavigator: true).pop(); // Yükleme göstergesini kapat
                 
                 scaffoldMessenger.showSnackBar(
-                  const SnackBar(content: Text("Ajandalar silindi"), backgroundColor: Colors.green)
+                  const SnackBar(content: Text("Ajanda Defteri kayıtları silindi"), backgroundColor: Colors.green)
                 );
               } catch (e) {
                 if (!mounted) return;
@@ -429,7 +431,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text("Toplu Ajanda Sil"),
+        title: const Text("Toplu Ajanda Defteri Sil"),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -487,7 +489,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                 Navigator.of(context, rootNavigator: true).pop(); // Yükleme göstergesini kapat
                 
                 scaffoldMessenger.showSnackBar(
-                  const SnackBar(content: Text("Seçilen aralıktaki uygun günler silindi"), backgroundColor: Colors.green)
+                  const SnackBar(content: Text("Seçilen aralıktaki boş ajanda defteri kayıtları silindi"), backgroundColor: Colors.green)
                 );
               } catch (e) {
                 if (!mounted) return;
@@ -583,7 +585,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
         return Scaffold(
           backgroundColor: Colors.grey.shade50,
           appBar: AppBar(
-            title: Text("${guncelEsnaf.isletmeAdi} Ajandası", style: const TextStyle(fontWeight: FontWeight.bold)),
+            title: Text("${guncelEsnaf.isletmeAdi} Ajanda Defteri", style: const TextStyle(fontWeight: FontWeight.bold)),
             backgroundColor: Colors.white,
             foregroundColor: Colors.black,
             elevation: 0,
@@ -629,7 +631,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
           ),
           body: Column(
             children: [
-              _tarihSecici(),
+              _tarihSecici(guncelEsnaf),
               const Divider(height: 1),
               _kanalSecici(guncelEsnaf),
               const Divider(height: 1),
@@ -637,36 +639,51 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                 child: _seciliKanallar.isEmpty 
                   ? _kanalSecilmediMesaji(guncelEsnaf)
                   : StreamBuilder<DocumentSnapshot>(
-                      stream: _ajandaStream,
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-                        
-                        String tarihStr = DateFormat('yyyy-MM-dd').format(_seciliTarih);
-                        
-                        bool herhangiBiriAktif = _seciliKanallar.any((kanal) {
-                          String temizKanal = kanal.trim();
-                          String anahtar = temizKanal.isNotEmpty ? "${tarihStr}_$temizKanal" : tarihStr;
-                          return (guncelEsnaf.aktifGunler ?? []).contains(anahtar);
-                        });
+                      stream: _firestoreServisi.taksiAjandasiSnapStream(guncelEsnaf.id, _seciliTarih),
+                      builder: (context, taksiSnap) {
+                        Map<String, dynamic> gunlukNobetVerisi = {};
+                        if (taksiSnap.hasData && taksiSnap.data!.exists) {
+                          String gunKey = DateFormat('yyyy-MM-dd').format(_seciliTarih);
+                          gunlukNobetVerisi = Map<String, dynamic>.from(taksiSnap.data!.get(gunKey) ?? {});
+                        }
 
-                        if (!herhangiBiriAktif) {
-                          bool kanalAjandasiVarMi = _seciliKanallar.length == 1 && (guncelEsnaf.aktifGunler ?? []).any((gun) => gun.toString().contains(_seciliKanallar.first.trim()));
-                          
-                          if (kanalAjandasiVarMi && guncelEsnaf.kategori == 'Taksi') {
-                            return _istirahatGunuMesaji(guncelEsnaf);
-                          }
-                          return _ajandaKurulumFormu(guncelEsnaf);
-                        }
-                        
-                        Map<String, dynamic> ajandaVerisi;
-                        if (snapshot.hasData && snapshot.data!.exists) {
-                          ajandaVerisi = snapshot.data!.data() as Map<String, dynamic>;
-                        } else {
-                          ajandaVerisi = guncelEsnaf.calismaSaatleri ?? {'acilis': '09:00', 'kapanis': '19:00', 'slotDakika': 30};
-                        }
-                        
-                        return _gunlukSlotGorunumu(guncelEsnaf, ajandaVerisi);
-                      },
+                        return StreamBuilder<DocumentSnapshot>(
+                          stream: _ajandaStream,
+                          builder: (context, snapshot) {
+                            if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+                            
+                            String tarihStr = DateFormat('yyyy-MM-dd').format(_seciliTarih);
+                            
+                            bool herhangiBiriAktif = _seciliKanallar.any((kanal) {
+                              String temizKanal = kanal.trim();
+                              String anahtar = temizKanal.isNotEmpty ? "${tarihStr}_$temizKanal" : tarihStr;
+                              return (guncelEsnaf.aktifGunler ?? []).contains(anahtar);
+                            });
+
+                            if (!herhangiBiriAktif) {
+                              // Çizelge kontrolü: Eğer çizelgede 'I' (İstirahat) ise mesaj göster
+                              if (guncelEsnaf.kategori == 'Taksi' && _seciliKanallar.length == 1) {
+                                String plaka = _seciliKanallar.first;
+                                if (gunlukNobetVerisi[plaka] == 'I') {
+                                  return _istirahatGunuMesaji(guncelEsnaf);
+                                }
+                              }
+                              return _ajandaKurulumFormu(guncelEsnaf);
+                            }
+                            
+                            Map<String, dynamic> ajandaVerisi;
+                            if (snapshot.hasData && snapshot.data!.exists) {
+                              ajandaVerisi = snapshot.data!.data() as Map<String, dynamic>;
+                            } else {
+                              ajandaVerisi = guncelEsnaf.calismaSaatleri ?? {'acilis': '09:00', 'kapanis': '19:00', 'slotDakika': 30};
+                            }
+                            
+                            // Eğer ajanda kuruluysa ama çizelgede 'I' ise, yine de uyarı verilebilir veya gösterilebilir.
+                            // Burada mevcut randevuları görmek için slot görünümüne devam ediyoruz.
+                            return _gunlukSlotGorunumu(guncelEsnaf, ajandaVerisi);
+                          },
+                        );
+                      }
                     ),
               ),
             ],
@@ -738,7 +755,166 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
     );
   }
 
-  Widget _tarihSecici() {
+  void _aylikOzetTakvimiGoster(EsnafModeli esnaf) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        DateTime gosterilenAy = _seciliTarih;
+        return StreamBuilder<EsnafModeli>(
+          stream: _firestoreServisi.esnafGetir(esnaf.id),
+          builder: (context, esnafSnapshot) {
+            final guncelEsnaf = esnafSnapshot.data ?? esnaf;
+            return StatefulBuilder(
+              builder: (context, setDialogState) {
+                // Dolu günleri hesapla (aktifGunler listesinden)
+                Set<int> doluGunler = {};
+                for (var entry in guncelEsnaf.aktifGunler ?? []) {
+                  if (entry.contains('_')) {
+                    var parts = entry.split('_');
+                    String datePart = parts[0];
+                    String kanalPart = parts[1];
+                    
+                    // Seçili kanallardan biri için ajanda oluşturulmuş mu?
+                    if (_seciliKanallar.contains(kanalPart)) {
+                      DateTime? d = DateTime.tryParse(datePart);
+                      if (d != null && d.year == gosterilenAy.year && d.month == gosterilenAy.month) {
+                        doluGunler.add(d.day);
+                      }
+                    }
+                  } else {
+                    DateTime? d = DateTime.tryParse(entry);
+                    if (d != null && d.year == gosterilenAy.year && d.month == gosterilenAy.month) {
+                      doluGunler.add(d.day);
+                    }
+                  }
+                }
+
+                final ilkGun = DateTime(gosterilenAy.year, gosterilenAy.month, 1);
+                final sonGun = DateTime(gosterilenAy.year, gosterilenAy.month + 1, 0);
+                final bosluklar = (ilkGun.weekday - 1);
+
+                return AlertDialog(
+                  titlePadding: EdgeInsets.zero,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  title: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.chevron_left, color: Colors.black54),
+                          onPressed: () => setDialogState(() => gosterilenAy = DateTime(gosterilenAy.year, gosterilenAy.month - 1)),
+                        ),
+                        Text(
+                          DateFormat('MMMM yyyy', 'tr_TR').format(gosterilenAy).toUpperCase(),
+                          style: const TextStyle(color: Colors.black, fontWeight: FontWeight.w900, fontSize: 16, letterSpacing: 1.2),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.chevron_right, color: Colors.black54),
+                          onPressed: () => setDialogState(() => gosterilenAy = DateTime(gosterilenAy.year, gosterilenAy.month + 1)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  content: SizedBox(
+                    width: MediaQuery.of(context).size.width * 0.9,
+                    height: 350,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const SizedBox(height: 10),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceAround,
+                          children: ['Pt', 'Sa', 'Çr', 'Pr', 'Cu', 'Ct', 'Pz']
+                              .map((g) => Expanded(child: Center(child: Text(g, style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey.shade600, fontSize: 12))))).toList(),
+                        ),
+                        const Divider(),
+                        Expanded(
+                          child: GridView.builder(
+                            padding: EdgeInsets.zero,
+                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 7),
+                            itemCount: bosluklar + sonGun.day,
+                            itemBuilder: (context, index) {
+                              if (index < bosluklar) return const SizedBox.shrink();
+                              int gun = index - bosluklar + 1;
+                              bool dolu = doluGunler.contains(gun);
+                              bool secili = gun == _seciliTarih.day && gosterilenAy.month == _seciliTarih.month && gosterilenAy.year == _seciliTarih.year;
+
+                              return InkWell(
+                                onTap: () {
+                                  setState(() {
+                                    _seciliTarih = DateTime(gosterilenAy.year, gosterilenAy.month, gun);
+                                    _ajandaStreamGuncelle();
+                                  });
+                                  Navigator.pop(context);
+                                },
+                                child: Container(
+                                  margin: const EdgeInsets.all(2),
+                                  decoration: BoxDecoration(
+                                    color: secili ? Colors.blue.shade100 : null,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: secili ? Border.all(color: Colors.blue, width: 1.5) : null,
+                                  ),
+                                  child: Center(
+                                    child: Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Text(
+                                          gun.toString(),
+                                          style: TextStyle(
+                                            fontWeight: secili ? FontWeight.bold : FontWeight.normal,
+                                            color: secili ? Colors.blue.shade900 : Colors.black87,
+                                            fontSize: 15,
+                                          ),
+                                        ),
+                                        Container(
+                                          width: 5,
+                                          height: 5,
+                                          margin: const EdgeInsets.only(top: 2),
+                                          decoration: BoxDecoration(
+                                            color: dolu ? Colors.green : Colors.transparent,
+                                            shape: BoxShape.circle,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                        const Padding(
+                          padding: EdgeInsets.only(top: 12, bottom: 8),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              CircleAvatar(radius: 3, backgroundColor: Colors.green),
+                              SizedBox(width: 8),
+                              Text("Çalışma Günü", style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.w500)),
+                            ],
+                          ),
+                        )
+                      ],
+                    ),
+                  ),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(context), child: const Text("Kapat")),
+                  ],
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _tarihSecici(EsnafModeli esnaf) {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 4),
       color: Colors.white,
@@ -757,16 +933,10 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
             style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
             icon: const Icon(Icons.calendar_today, size: 20),
             label: Text(
-              DateFormat('dd MMM yyyy, EEEE', 'tr_TR').format(_seciliTarih), 
+              DateFormat('dd MMM yyyy', 'tr_TR').format(_seciliTarih), 
               style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87, fontSize: 18)
             ),
-            onPressed: () async {
-              final p = await showDatePicker(context: context, initialDate: _seciliTarih, firstDate: DateTime.now().subtract(const Duration(days: 365)), lastDate: DateTime.now().add(const Duration(days: 365)), locale: const Locale('tr', 'TR'));
-              if (p != null) {
-                _seciliTarih = p;
-                _ajandaStreamGuncelle();
-              }
-            },
+            onPressed: () => _aylikOzetTakvimiGoster(esnaf),
           ),
           IconButton(
             visualDensity: VisualDensity.compact,
@@ -958,19 +1128,28 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
             ),
             const SizedBox(height: 10),
             const Text(
-              "Bu araç bugün çalışmıyor (1/1 Dönüşüm Sistemi).\nRandevu eklemek için önce ajanda oluşturmalısınız.",
+              "Bu araç bugün çalışmıyor (1/1 Dönüşüm Sistemi).\nRandevu eklemek için önce ajanda defteri kaydı oluşturmalısınız.",
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.grey),
             ),
             const SizedBox(height: 30),
-            OutlinedButton.icon(
-              onPressed: () {
+            if (esnaf.randevuAlinmasin == true)
+              const Padding(
+                padding: EdgeInsets.only(top: 10),
+                child: Text(
+                  "(Randevu alımı şu an kapalıdır)",
+                  style: TextStyle(color: Colors.red, fontSize: 12, fontWeight: FontWeight.bold),
+                ),
+              )
+            else
+              OutlinedButton.icon(
+                onPressed: () {
                 // Manuel olarak ajanda oluşturma formunu göster
                 showDialog(
                   context: context,
                   builder: (ctx) => AlertDialog(
                     title: const Text("İstisna Durum"),
-                    content: const Text("Bu araç bugün normalde istirahatte. Yine de ajanda oluşturup randevu almak istiyor musunuz?"),
+                    content: const Text("Bu araç bugün normalde istirahatte. Yine de ajanda defteri kaydı oluşturup randevu almak istiyor musunuz?"),
                     actions: [
                       TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Vazgeç")),
                       ElevatedButton(
@@ -983,14 +1162,14 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                              // En temizi _ajandaKurulumFormu'nu bir bottomSheet veya Dialog olarak açmak
                           });
                         },
-                        child: const Text("Evet, Ajanda Oluştur"),
+                        child: const Text("Evet, Defteri Oluştur"),
                       ),
                     ],
                   ),
                 );
               },
               icon: const Icon(Icons.add_circle_outline),
-              label: const Text("Yine de Ajanda Oluştur"),
+              label: const Text("Yine de Defteri Oluştur"),
             ),
           ],
         ),
@@ -1005,9 +1184,31 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
       padding: const EdgeInsets.all(16),
       child: Column(
         children: [
+          if (esnaf.randevuAlinmasin == true)
+            Container(
+              margin: const EdgeInsets.only(bottom: 20),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.red.shade200),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.warning_amber_rounded, color: Colors.red),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      "DİKKAT: İşletmenizde randevu alımı şu an kapalıdır. Yeni ajanda oluşturmanız müşterilerin randevu almasını sağlamayacaktır.",
+                      style: TextStyle(color: Colors.red, fontSize: 13, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           const Icon(Icons.event_busy, size: 60, color: Colors.grey),
-          const SizedBox(height: 10),
-          const Text("Bu tarih için ajanda henüz oluşturulmamış", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
+          const SizedBox(height: 20),
+          const Text("Bu tarih için ajanda defteri kaydı henüz oluşturulmamış", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
           const SizedBox(height: 20),
           Card(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
@@ -1019,7 +1220,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text("Ajanda Periyodu", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
+                          const Text("Ajanda Defteri Periyodu", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
                       if (_seciliKanallar.any((k) => k != 'Durak')) 
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -1029,97 +1230,95 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                     ],
                   ),
                   if (esnaf.kategori == 'Taksi') ...[
-                    Padding(
-                      padding: const EdgeInsets.only(top: 10),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              const Expanded(
-                                child: Text("Seçili araçlar için çalışılacak ilk günü seç", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                    const SizedBox(height: 20),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Expanded(
+                              child: Text("Seçili araçlar için çalışılacak ilk günü seç", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                            ),
+                            OutlinedButton.icon(
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 12),
+                                visualDensity: VisualDensity.compact,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                               ),
-                              OutlinedButton.icon(
-                                style: OutlinedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                                  visualDensity: VisualDensity.compact,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                                ),
-                                onPressed: () async {
-                                  final d = await showDatePicker(
-                                    context: context, 
-                                    initialDate: _birGunCalisIlkGun ?? _baslangicTarihi ?? DateTime.now(), 
-                                    firstDate: DateTime.now().subtract(const Duration(days: 7)), 
-                                    lastDate: DateTime.now().add(const Duration(days: 365))
-                                  );
-                                  if (d != null) setState(() => _birGunCalisIlkGun = d);
-                                },
-                                icon: const Icon(Icons.calendar_month, size: 20),
-                                label: Text(
-                                  _birGunCalisIlkGun == null 
-                                    ? "İlk Gün Seç" 
-                                    : DateFormat('dd/MM/yyyy').format(_birGunCalisIlkGun!),
-                                  style: const TextStyle(fontSize: 13),
+                              onPressed: () async {
+                                final d = await showDatePicker(
+                                  context: context, 
+                                  initialDate: _birGunCalisIlkGun ?? _baslangicTarihi ?? DateTime.now(), 
+                                  firstDate: DateTime.now().subtract(const Duration(days: 7)), 
+                                  lastDate: DateTime.now().add(const Duration(days: 365))
+                                );
+                                if (d != null) setState(() => _birGunCalisIlkGun = d);
+                              },
+                              icon: const Icon(Icons.calendar_month, size: 20),
+                              label: Text(
+                                _birGunCalisIlkGun == null 
+                                  ? "İlk Gün Seç" 
+                                  : DateFormat('dd/MM/yyyy').format(_birGunCalisIlkGun!),
+                                style: const TextStyle(fontSize: 13),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 20),
+                        const Text("Ne kadarlık plan oluşturmak istiyorsunuz?", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Expanded(
+                              flex: 2,
+                              child: SizedBox(
+                                height: 40,
+                                child: TextField(
+                                  controller: _periyotController,
+                                  keyboardType: TextInputType.number,
+                                  style: const TextStyle(fontSize: 15),
+                                  decoration: InputDecoration(
+                                    hintText: "Sayı",
+                                    isDense: true,
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                  ),
+                                  onChanged: (v) {
+                                    final val = int.tryParse(v);
+                                    if (val != null && val > 0) {
+                                      setState(() => _periyotDeger = val);
+                                    }
+                                  },
                                 ),
                               ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          const Text("Ne kadarlık plan oluşturmak istiyorsunuz?", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Expanded(
-                                flex: 2,
-                                child: SizedBox(
-                                  height: 40,
-                                  child: TextField(
-                                    controller: _periyotController,
-                                    keyboardType: TextInputType.number,
-                                    style: const TextStyle(fontSize: 15),
-                                    decoration: InputDecoration(
-                                      hintText: "Sayı",
-                                      isDense: true,
-                                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                                    ),
-                                    onChanged: (v) {
-                                      final val = int.tryParse(v);
-                                      if (val != null && val > 0) {
-                                        setState(() => _periyotDeger = val);
-                                      }
-                                    },
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              flex: 3,
+                              child: Container(
+                                height: 40,
+                                padding: const EdgeInsets.symmetric(horizontal: 10),
+                                decoration: BoxDecoration(
+                                  border: Border.all(color: Colors.grey.shade400),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: DropdownButtonHideUnderline(
+                                  child: DropdownButton<String>(
+                                    value: _periyotBirim,
+                                    isExpanded: true,
+                                    style: const TextStyle(fontSize: 15, color: Colors.black),
+                                    items: ["Gün", "Ay", "Yıl"].map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+                                    onChanged: (v) => setState(() => _periyotBirim = v!),
                                   ),
                                 ),
                               ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                flex: 3,
-                                child: Container(
-                                  height: 40,
-                                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                                  decoration: BoxDecoration(
-                                    border: Border.all(color: Colors.grey.shade400),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: DropdownButtonHideUnderline(
-                                    child: DropdownButton<String>(
-                                      value: _periyotBirim,
-                                      isExpanded: true,
-                                      style: const TextStyle(fontSize: 15, color: Colors.black),
-                                      items: ["Gün", "Ay", "Yıl"].map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
-                                      onChanged: (v) => setState(() => _periyotBirim = v!),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ] else ...[
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 20),
                     Row(
                       children: [
                         Expanded(
@@ -1148,7 +1347,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                   if (esnaf.kategori == 'Taksi') ...[
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
-                      title: const Text("1 Gün Çalış 1 Gün İstirahat (1/1)", style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.indigo)),
+                      title: const Text("1 Gün Çalış 1 Gün İstirahat (1/1)", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.indigo)),
                       subtitle: const Text("Araçlar için dönüşümlü çalışma sistemi", style: TextStyle(fontSize: 13)),
                       value: _birGunCalisBirGunYat,
                       onChanged: (v) => setState(() => _birGunCalisBirGunYat = v),
@@ -1156,24 +1355,24 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                     const Divider(),
                   ],
                   if (is724) ...[
+                    const SizedBox(height: 20),
                     Container(
-                      margin: const EdgeInsets.symmetric(vertical: 10),
                       padding: const EdgeInsets.all(15),
                       decoration: BoxDecoration(
-                        color: Colors.blue.shade50,
+                        color: Colors.white,
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.blue.shade200)
+                        border: Border.all(color: Colors.blue.shade100, width: 1)
                       ),
                       child: Row(
                         children: [
-                          const Icon(Icons.info_outline, color: Colors.blue),
-                          const SizedBox(width: 10),
+                          Icon(Icons.info_outline, color: Colors.blue.shade700),
+                          const SizedBox(width: 15),
                           Expanded(
                             child: Text(
                               _birGunCalisBirGunYat 
                                 ? "İşletmeniz 7/24 modundadır. 1/1 sistemi seçili olduğu için mesai saatleri otomatik 00:00-00:00 olarak ayarlanacaktır."
                                 : "İşletmeniz 7/24 çalışma modundadır. Gün ve saat seçimi yapmanıza gerek yoktur. Tüm günler otomatik olarak 00:00-00:00 arası oluşturulacaktır.",
-                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Colors.blue.shade900),
                             ),
                           ),
                         ],
@@ -1182,8 +1381,9 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                   ],
                   if (!is724 || (_birGunCalisBirGunYat && !is724)) ...[
                     if (!_birGunCalisBirGunYat) ...[
+                      const SizedBox(height: 20),
                       const Text("Çalışma Günleri", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
-                      const SizedBox(height: 5),
+                      const SizedBox(height: 10),
                       Wrap(
                         spacing: 8,
                         children: _calismaGunleri.keys.map((gun) => FilterChip(
@@ -1192,10 +1392,11 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                           onSelected: (v) => setState(() => _calismaGunleri[gun] = v),
                         )).toList(),
                       ),
-                      const SizedBox(height: 20),
                     ],
                     if (!is724) ...[
+                      const SizedBox(height: 20),
                       const Text("Mesai Saatleri", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
+                      const SizedBox(height: 10),
                       Row(
                         children: [
                           Expanded(
@@ -1216,7 +1417,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 20),
                       const Text("Öğle Arası", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
@@ -1224,29 +1425,32 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                         value: _ogleArasiVar,
                         onChanged: (v) => setState(() => _ogleArasiVar = v),
                       ),
-                      if (_ogleArasiVar) Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: () async {
-                                final t = await showTimePicker(context: context, initialTime: TimeOfDay(hour: int.parse(_ogleBaslangic.split(":")[0]), minute: int.parse(_ogleBaslangic.split(":")[1])));
-                                if (t != null) setState(() => _ogleBaslangic = "${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}");
-                              },
-                              child: Text("Başlangıç: $_ogleBaslangic"),
+                      if (_ogleArasiVar) ...[
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: () async {
+                                  final t = await showTimePicker(context: context, initialTime: TimeOfDay(hour: int.parse(_ogleBaslangic.split(":")[0]), minute: int.parse(_ogleBaslangic.split(":")[1])));
+                                  if (t != null) setState(() => _ogleBaslangic = "${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}");
+                                },
+                                child: Text("Başlangıç: $_ogleBaslangic"),
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: () async {
-                                final t = await showTimePicker(context: context, initialTime: TimeOfDay(hour: int.parse(_ogleBitis.split(":")[0]), minute: int.parse(_ogleBitis.split(":")[1])));
-                                if (t != null) setState(() => _ogleBitis = "${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}");
-                              },
-                              child: Text("Bitiş: $_ogleBitis"),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: () async {
+                                  final t = await showTimePicker(context: context, initialTime: TimeOfDay(hour: int.parse(_ogleBitis.split(":")[0]), minute: int.parse(_ogleBitis.split(":")[1])));
+                                  if (t != null) setState(() => _ogleBitis = "${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}");
+                                },
+                                child: Text("Bitiş: $_ogleBitis"),
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
+                          ],
+                        ),
+                      ],
                     ],
                   ],
                   const SizedBox(height: 20),
@@ -1304,16 +1508,25 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                       );
                     }
                   ),
-                  const SizedBox(height: 25),
+                  const SizedBox(height: 20),
                   ElevatedButton(
                     onPressed: () => _ajandaOlustur(esnaf),
                     style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 50), backgroundColor: Colors.blue, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
-                    child: const Text("Ajandayı Oluştur", style: TextStyle(fontWeight: FontWeight.bold)),
+                    child: const Text("Ajanda Defterini Oluştur", style: TextStyle(fontWeight: FontWeight.bold)),
                   )
                 ],
               ),
             ),
           ),
+          if (esnaf.kategori == 'Taksi')
+            Padding(
+              padding: const EdgeInsets.only(top: 10, bottom: 20),
+              child: TextButton.icon(
+                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (c) => TaksiCizelgeEkrani(esnaf: esnaf))),
+                icon: const Icon(Icons.table_chart),
+                label: const Text("Nöbet Çizelgesine Git"),
+              ),
+            ),
         ],
       ),
     );

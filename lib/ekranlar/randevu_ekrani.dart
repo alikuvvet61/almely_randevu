@@ -547,9 +547,21 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
       if (!mounted) return;
 
       String tarihFormat = DateFormat('dd.MM.yyyy').format(tarih);
+      
+      String saatGosterim = saat;
+      if (esnaf.slotAralikliGoster) {
+        final calisma = ajanda ?? esnaf.calismaSaatleri;
+        int slotAraligi = calisma?['slotDakika'] ?? calisma?['slotAraligi'] ?? 30;
+        int baslangicDakika = _saatiDakikayaCevir(saat);
+        int bitisDakika = baslangicDakika + slotAraligi;
+        saatGosterim = "$saat - ${_dakikaFormatli(bitisDakika % 1440)}";
+      }
+
+      String yaklasikIbaresi = esnaf.kategori == 'Halı Saha' ? '' : 'yaklaşık ';
+
       String mesaj = durm == 'Onaylandı'
-          ? "Randevunuz $tarihFormat tarihinde saat $saat olarak onaylanmıştır. Randevu süreniz yaklaşık $toplamSure dk sürecektir. ${esnaf.isletmeAdi} olarak teşekkür ederiz."
-          : "Randevunuz $tarihFormat tarihinde saat $saat için alınmıştır. Randevu süreniz yaklaşık $toplamSure dk sürecektir. ${esnaf.isletmeAdi} olarak teşekkür ederiz. Onay bekleniyor.";
+          ? "Randevunuz $tarihFormat tarihinde saat $saatGosterim olarak onaylanmıştır. Randevu süreniz ${yaklasikIbaresi}$toplamSure dk sürecektir. ${esnaf.isletmeAdi} olarak teşekkür ederiz."
+          : "Randevunuz $tarihFormat tarihinde saat $saatGosterim için alınmıştır. Randevu süreniz ${yaklasikIbaresi}$toplamSure dk sürecektir. ${esnaf.isletmeAdi} olarak teşekkür ederiz. Onay bekleniyor.";
 
       showDialog(
         context: context,

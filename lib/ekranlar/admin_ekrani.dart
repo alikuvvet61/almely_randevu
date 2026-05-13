@@ -521,8 +521,8 @@ class _AdminEkraniState extends State<AdminEkrani> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text("Tüm Ajandaları Sıfırla"),
-        content: const Text("Tüm esnafların oluşturulmuş ajandaları silinecektir. Bu işlem geri alınamaz. Emin misiniz?"),
+        title: const Text("Tüm Ajanda Defterlerini Sıfırla"),
+        content: const Text("Tüm esnafların oluşturulmuş ajanda defteri kayıtları silinecektir. Bu işlem geri alınamaz. Emin misiniz?"),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text("Vazgeç")),
           TextButton(
@@ -530,7 +530,7 @@ class _AdminEkraniState extends State<AdminEkrani> {
               await _firestoreServisi.tumAjandalariTemizle();
               if (!context.mounted) return;
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Tüm ajandalar sıfırlandı.")));
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Tüm ajanda defteri kayıtları sıfırlandı.")));
             },
             child: const Text("Evet, Sıfırla", style: TextStyle(color: Colors.red)),
           ),
@@ -560,7 +560,7 @@ class _AdminEkraniState extends State<AdminEkrani> {
                   const SizedBox(width: 8),
                   _adminButonUst(Icons.block, 'Randevu İptal\nNedenleri', Colors.orange, () => _iptalNedenleriYonetimi()),
                   const SizedBox(width: 8),
-                  _adminButonUst(Icons.calendar_month, 'Ajandaları\nSıfırla', Colors.red, () => _ajandalariSifirla()),
+                  _adminButonUst(Icons.calendar_month, 'Defterleri\nSıfırla', Colors.red, () => _ajandalariSifirla()),
                   const SizedBox(width: 8),
                   _adminButonUst(Icons.people, 'Üyeler', Colors.purple, () {}),
                 ],

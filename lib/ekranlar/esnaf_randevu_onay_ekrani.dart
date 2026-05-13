@@ -106,6 +106,13 @@ class _EsnafRandevuYonetimEkraniState extends State<EsnafRandevuYonetimEkrani> {
           );
         }
 
+        // Randevu listesini tarihe göre sıralayalım (en yakın tarihli en üstte)
+        liste.sort((a, b) {
+          int cmp = a.tarih.compareTo(b.tarih);
+          if (cmp != 0) return cmp;
+          return a.saat.compareTo(b.saat);
+        });
+
         return ListView.builder(
           padding: const EdgeInsets.all(12),
           itemCount: liste.length,
@@ -123,10 +130,22 @@ class _EsnafRandevuYonetimEkraniState extends State<EsnafRandevuYonetimEkrani> {
     if (r.durum == 'Onaylandı') durumRenk = Colors.green;
     if (r.durum == 'Reddedildi' || r.durum == 'İptal Edildi') durumRenk = Colors.red;
 
+    // Randevu tarih ve saatinin geçmiş olup olmadığını kontrol et
+    final simdi = DateTime.now();
+    final saatParcalar = r.saat.split(':');
+    final randevuTamZaman = DateTime(
+      r.tarih.year,
+      r.tarih.month,
+      r.tarih.day,
+      int.parse(saatParcalar[0]),
+      int.parse(saatParcalar[1]),
+    );
+    final randevuGecmis = randevuTamZaman.isBefore(simdi);
+
     bool sureDoldu = false;
     int kalanDakika = 10;
     if (r.durum == 'Onay bekliyor' && r.olusturulmaTarihi != null) {
-      int gecen = DateTime.now().difference(r.olusturulmaTarihi!).inMinutes;
+      int gecen = simdi.difference(r.olusturulmaTarihi!).inMinutes;
       sureDoldu = gecen >= 10;
       kalanDakika = 10 - gecen;
     }
@@ -134,7 +153,7 @@ class _EsnafRandevuYonetimEkraniState extends State<EsnafRandevuYonetimEkrani> {
     return Container(
       margin: const EdgeInsets.only(bottom: 2),
       decoration: BoxDecoration(
-        color: sureDoldu ? Colors.red.withValues(alpha: 0.02) : Colors.white,
+        color: randevuGecmis ? Colors.grey.withValues(alpha: 0.05) : (sureDoldu ? Colors.red.withValues(alpha: 0.02) : Colors.white),
         borderRadius: BorderRadius.circular(4),
         border: Border.all(
           color: (sureDoldu && r.durum == 'Onay bekliyor') 
@@ -182,9 +201,13 @@ class _EsnafRandevuYonetimEkraniState extends State<EsnafRandevuYonetimEkrani> {
           subtitle: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                "${DateFormat('dd MMM yyyy, EEEE', 'tr_TR').format(r.tarih)} - ${r.saat}",
-                style: TextStyle(color: Colors.grey.shade700, fontSize: 15),
+              Row(
+                children: [
+                  Text(
+                    "${DateFormat('dd MMM yyyy, EEEE', 'tr_TR').format(r.tarih)} - ${r.saat}",
+                    style: TextStyle(color: Colors.grey.shade700, fontSize: 15),
+                  ),
+                ],
               ),
               if (r.durum == 'Onay bekliyor')
                 Padding(
@@ -407,6 +430,7 @@ class _EsnafRandevuYonetimEkraniState extends State<EsnafRandevuYonetimEkrani> {
                 builder: (context, snapshot) {
                   if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
                   final nedenler = snapshot.data!;
+
                   return ListView.builder(
                     shrinkWrap: true,
                     itemCount: nedenler.length,
@@ -459,6 +483,7 @@ class _EsnafRandevuYonetimEkraniState extends State<EsnafRandevuYonetimEkrani> {
                 builder: (context, snapshot) {
                   if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
                   final nedenler = snapshot.data!;
+
                   return ListView.builder(
                     shrinkWrap: true,
                     itemCount: nedenler.length,

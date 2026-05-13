@@ -51,7 +51,7 @@ class _DurakTakipEkraniState extends State<DurakTakipEkrani> {
       }
     });
 
-    // Bugünün ajanda verisini dinle
+    // Bugünün ajanda defteri verisini dinle
     String ayKey = DateFormat('yyyy-MM').format(DateTime.now());
     String gunKey = DateFormat('yyyy-MM-dd').format(DateTime.now());
 
@@ -73,7 +73,7 @@ class _DurakTakipEkraniState extends State<DurakTakipEkrani> {
     String plaka = arac['plaka'] ?? "";
     // Manuel durum kontrolü
     if (arac['durum'] == 'İstirahatte') return true;
-    // Çizelge (Ajanda) kontrolü
+    // Çizelge (Ajanda Defteri) kontrolü
     if (gunlukAjanda.containsKey(plaka) && gunlukAjanda[plaka] == 'I') return true;
     
     // Haftalık şablon kontrolü
@@ -181,6 +181,7 @@ class _DurakTakipEkraniState extends State<DurakTakipEkrani> {
                     String durum = arac['durum'] ?? 'Müsait';
                     bool kendiAraci = _isSofor && arac['soforTel'] == widget.soforTel;
                     String ajandaEtiketi = _getDurumEtiketi(arac);
+                    bool isNobetci = ajandaEtiketi == "NÖBETÇİ";
 
                     // Çizelge (Ajanda) kontrolü: Eğer çizelgede istirahat ise UI durumunu buna zorla
                     bool cizelgeIstirahat = ajandaEtiketi == "İSTİRAHAT";
@@ -215,29 +216,53 @@ class _DurakTakipEkraniState extends State<DurakTakipEkrani> {
                       shadowColor: Colors.black.withValues(alpha: 0.1),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(15),
-                        side: BorderSide(color: Colors.grey.withValues(alpha: 0.1)),
+                        side: BorderSide(
+                          color: isNobetci 
+                              ? Colors.orange.withValues(alpha: 0.5) 
+                              : Colors.grey.withValues(alpha: 0.1),
+                          width: isNobetci ? 1.5 : 1,
+                        ),
                       ),
                       color: kendiAraci ? Colors.blue.withValues(alpha: 0.05) : Colors.white,
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                         child: Row(
                           children: [
-                            Container(
-                              width: 50,
-                              height: 50,
-                              decoration: BoxDecoration(
-                                // İkon kutusu istirahatte ise gri, değilse durum rengi (veya sıra rengi)
-                                color: durakta ? Colors.blue.withValues(alpha: 0.1) : (durum == 'İstirahatte' ? Colors.grey : durumRengi).withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Center(
-                                child: durakta
-                                    ? Text(
-                                        siraNo.toString(),
-                                        style: TextStyle(color: Colors.blue.shade800, fontSize: 22, fontWeight: FontWeight.bold),
-                                      )
-                                    : Icon(durumIkonu, color: durum == 'İstirahatte' ? Colors.grey : durumRengi, size: 28),
-                              ),
+                            Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                Container(
+                                  width: 50,
+                                  height: 50,
+                                  decoration: BoxDecoration(
+                                    // İkon kutusu istirahatte ise gri, değilse durum rengi (veya sıra rengi)
+                                    color: durakta ? Colors.blue.withValues(alpha: 0.1) : (durum == 'İstirahatte' ? Colors.grey : durumRengi).withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Center(
+                                    child: durakta
+                                        ? Text(
+                                            siraNo.toString(),
+                                            style: TextStyle(color: Colors.blue.shade800, fontSize: 22, fontWeight: FontWeight.bold),
+                                          )
+                                        : Icon(durumIkonu, color: durum == 'İstirahatte' ? Colors.grey : durumRengi, size: 28),
+                                  ),
+                                ),
+                                if (isNobetci)
+                                  Positioned(
+                                    top: -6,
+                                    right: -6,
+                                    child: Container(
+                                      padding: const EdgeInsets.all(3),
+                                      decoration: const BoxDecoration(
+                                        color: Colors.orange,
+                                        shape: BoxShape.circle,
+                                        boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 2))],
+                                      ),
+                                      child: const Icon(Icons.star_rounded, color: Colors.white, size: 14),
+                                    ),
+                                  ),
+                              ],
                             ),
                             const SizedBox(width: 16),
                             Expanded(
@@ -250,6 +275,11 @@ class _DurakTakipEkraniState extends State<DurakTakipEkrani> {
                                         arac['plaka'] ?? "Plaka Yok",
                                         style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
                                       ),
+                                      if (isNobetci)
+                                        const Padding(
+                                          padding: EdgeInsets.only(left: 4),
+                                          child: Icon(Icons.shield_rounded, color: Colors.orange, size: 18),
+                                        ),
                                       if (kendiAraci)
                                         Container(
                                           margin: const EdgeInsets.only(left: 8),
@@ -275,7 +305,7 @@ class _DurakTakipEkraniState extends State<DurakTakipEkrani> {
                                       if (durakta) _durumRozeti(siraNo == 1 ? "SIRADAKİ" : "$siraNo. SIRA", Colors.blue),
                                       // Çizelge etiketi gösterimi (İstirahat durumu zaten rozette kırmızı gösterildiği için çakışma olmasın diye süzüyoruz)
                                       if (ajandaEtiketi.isNotEmpty && !(durum == 'İstirahatte' && ajandaEtiketi == 'İSTİRAHAT'))
-                                        _durumRozeti(ajandaEtiketi, ajandaEtiketi == "NÖBETÇİ" ? Colors.indigo : Colors.red),
+                                        _durumRozeti(ajandaEtiketi, ajandaEtiketi == "NÖBETÇİ" ? Colors.orange.shade800 : Colors.red),
                                     ],
                                   ),
                                 ],

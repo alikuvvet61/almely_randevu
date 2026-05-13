@@ -34,6 +34,8 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
   final ScrollController _filoController = ScrollController();
   final TextEditingController _yorumController = TextEditingController();
   StreamSubscription? _esnafSub;
+  StreamSubscription? _ajandaSub;
+  Map<String, dynamic> _gunlukAjanda = {};
   double _secilenPuan = 0.0;
   bool _yorumGonderiliyor = false;
   bool _taksiYukleniyor = false;
@@ -54,14 +56,59 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
     ));
     _yorumlarStream = _firestoreServisi.yorumlariGetir(widget.esnaf.id);
     _esnafDinle();
+    _ajandaDinle();
   }
 
   @override
   void dispose() {
     _esnafSub?.cancel();
+    _ajandaSub?.cancel();
     _filoController.dispose();
     _yorumController.dispose();
     super.dispose();
+  }
+
+  void _ajandaDinle() {
+    if (widget.esnaf.kategori != 'Taksi') return;
+    String ayKey = DateFormat('yyyy-MM').format(DateTime.now());
+    String gunKey = DateFormat('yyyy-MM-dd').format(DateTime.now());
+
+    _ajandaSub = FirebaseFirestore.instance
+        .collection('esnaflar')
+        .doc(widget.esnaf.id)
+        .collection('taksi_ajanda')
+        .doc(ayKey)
+        .snapshots()
+        .listen((snapshot) {
+      if (snapshot.exists && mounted) {
+        setState(() {
+          _gunlukAjanda = Map<String, dynamic>.from(snapshot.data()?[gunKey] ?? {});
+        });
+      }
+    });
+  }
+
+  bool _istirahatKontrol(Map<String, dynamic> arac) {
+    String plaka = arac['plaka'] ?? "";
+    if (arac['durum'] == 'İstirahatte') return true;
+    if (_gunlukAjanda.containsKey(plaka) && _gunlukAjanda[plaka] == 'I') return true;
+    
+    String gunAdi = DateFormat('EEEE', 'tr_TR').format(DateTime.now());
+    bool calisiyor = (arac['calismaGunleri'] ?? {})[gunAdi] ?? true;
+    if (!calisiyor) return true;
+
+    return false;
+  }
+
+  bool _nobetciKontrol(Map<String, dynamic> arac) {
+    String plaka = arac['plaka'] ?? "";
+    // 1. Ajanda (Çizelge) Kontrolü
+    if (_gunlukAjanda.containsKey(plaka) && _gunlukAjanda[plaka] == 'N') return true;
+    
+    // 2. Haftalık Şablon Kontrolü
+    String gunAdi = DateFormat('EEEE', 'tr_TR').format(DateTime.now());
+    bool nobetci = ((arac['nobetBilgileri'] ?? {})[gunAdi] ?? {})['nobetci'] ?? false;
+    return nobetci;
   }
 
   void _esnafDinle() {
@@ -129,7 +176,7 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
     bool acik = _suAnAcikMi();
     if (!acik) return _rozet("Şu An Kapalı", Colors.red);
     if (isTaksi) {
-      int duraktakiAracSayisi = _guncelEsnaf.araclar?.where((a) => a['durakta'] == true && a['durum'] != 'İstirahatte').length ?? 0;
+      int duraktakiAracSayisi = _guncelEsnaf.araclar.where((a) => a['durakta'] == true && a['durum'] != 'İstirahatte').length;
       if (duraktakiAracSayisi > 0) {
         return _rozet("Müsait", Colors.green);
       } else {
@@ -263,7 +310,7 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
                       ],
                     ),
                   ),
-                  if ((_guncelEsnaf.araclar != null && _guncelEsnaf.araclar!.isNotEmpty) && (_guncelEsnaf.kategori == 'Taksi' || _guncelEsnaf.aracOdakliSistem)) ...[
+                  if (_guncelEsnaf.araclar.isNotEmpty && (_guncelEsnaf.kategori == 'Taksi' || _guncelEsnaf.aracOdakliSistem)) ...[
                     const SizedBox(height: 25),
                     Text(_guncelEsnaf.aracOdakliSistem ? "Bugün Çalışan Araçlarımız" : "Personel Listesi", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 10),
@@ -271,36 +318,52 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
                       alignment: Alignment.center,
                       children: [
                         SizedBox(
-                          height: 100,
+                          height: 115,
                           child: Builder(builder: (context) {
-                            final duraktakiAraclar = _guncelEsnaf.araclar!
-                                .where((a) {
-                                  bool istirahatli = a['durum'] == 'İstirahatte';
-                                  if (_guncelEsnaf.istirahatliAraclariGizle && istirahatli) return false;
-                                  return a['durakta'] == true;
-                                })
-                                .toList();
-                            final digerAraclar = _guncelEsnaf.araclar!
-                                .where((a) {
-                                  bool istirahatli = a['durum'] == 'İstirahatte';
-                                  if (_guncelEsnaf.istirahatliAraclariGizle && istirahatli) return false;
-                                  return a['durakta'] != true;
-                                })
-                                .toList();
+                            List<Map<String, dynamic>> tumAraclar = List<Map<String, dynamic>>.from(_guncelEsnaf.araclar);
+                            
+                            // 1. İstirahat Kontrolü ve Filtreleme
+                            if (_guncelEsnaf.istirahatliAraclariGizle) {
+                              tumAraclar = tumAraclar.where((a) => !_istirahatKontrol(a)).toList();
+                            }
+
+                            // 2. Duraktaki araçları (sıralı liste için) belirle
+                            final duraktakiAraclar = tumAraclar.where((a) {
+                              return a['durakta'] == true && !_istirahatKontrol(a);
+                            }).toList();
+
                             duraktakiAraclar.sort((a, b) {
-                              // 1. Öncelik: Nöbet Sırası
                               int n1 = a['nobetSirasi'] ?? 999999;
                               int n2 = b['nobetSirasi'] ?? 999999;
                               if (n1 != n2) return n1.compareTo(n2);
-                              
-                              // 2. Öncelik: Sıra zamanı
                               int t1 = a['siraZamani'] ?? 0;
                               int t2 = b['siraZamani'] ?? 0;
                               if (t1 != t2) return t1.compareTo(t2);
-
                               return (a['plaka'] ?? "").compareTo(b['plaka'] ?? "");
                             });
-                            final tumAraclar = [...duraktakiAraclar, ...digerAraclar];
+
+                            // 3. Genel Sıralama Mantığı
+                            tumAraclar.sort((a, b) {
+                              // İstirahat durumu (Gizli değilse en alta)
+                              bool aIst = _istirahatKontrol(a);
+                              bool bIst = _istirahatKontrol(b);
+                              if (aIst != bIst) return aIst ? 1 : -1;
+
+                              // Durakta olma durumu
+                              bool aDurakta = a['durakta'] == true;
+                              bool bDurakta = b['durakta'] == true;
+                              if (aDurakta != bDurakta) return aDurakta ? -1 : 1;
+
+                              // Eğer ikisi de duraktaysa nöbet sırası
+                              if (aDurakta && bDurakta) {
+                                int n1 = a['nobetSirasi'] ?? 999999;
+                                int n2 = b['nobetSirasi'] ?? 999999;
+                                if (n1 != n2) return n1.compareTo(n2);
+                              }
+                              
+                              return (a['plaka'] ?? "").compareTo(b['plaka'] ?? "");
+                            });
+
                             return ListView.builder(
                               controller: _filoController,
                               scrollDirection: Axis.horizontal,
@@ -309,50 +372,77 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
                               itemCount: tumAraclar.length,
                               itemBuilder: (context, index) {
                                 final arac = tumAraclar[index];
-                                final bool durakta = arac['durakta'] == true;
+                                final bool istirahatli = _istirahatKontrol(arac);
+                                final bool nobetci = !istirahatli && _nobetciKontrol(arac);
+                                final bool durakta = !istirahatli && arac['durakta'] == true;
+                                
                                 int siraNo = -1;
-                                if (durakta) siraNo = duraktakiAraclar.indexWhere((a) => a['plaka'] == arac['plaka']) + 1;
+                                if (durakta) {
+                                  siraNo = duraktakiAraclar.indexWhere((a) => a['plaka'] == arac['plaka']) + 1;
+                                }
+
                                 return Container(
                                   width: 155,
                                   margin: const EdgeInsets.only(right: 12),
                                   padding: const EdgeInsets.all(10),
                                   decoration: BoxDecoration(
                                     color: Colors.indigo.shade900,
-                                    borderRadius: BorderRadius.circular(20),
-                                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 8, offset: const Offset(0, 4))],
+                                    borderRadius: BorderRadius.circular(15),
+                                    boxShadow: [
+                                      BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 8, offset: const Offset(0, 4))
+                                    ],
+                                    border: nobetci ? Border.all(color: Colors.orange.withOpacity(0.5), width: 1) : null,
                                   ),
                                   child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                         children: [
-                                          Expanded(child: Text(arac['plaka'] ?? "-", style: const TextStyle(color: Colors.yellow, fontWeight: FontWeight.bold, fontSize: 14), overflow: TextOverflow.ellipsis)),
-                                          if (durakta) Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: Colors.green, borderRadius: BorderRadius.circular(8)), child: Text(siraNo.toString(), style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold))),
+                                          Expanded(
+                                            child: Text(
+                                              arac['plaka'] ?? "-",
+                                              style: const TextStyle(color: Colors.yellow, fontWeight: FontWeight.bold, fontSize: 16),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                          if (nobetci)
+                                            const Icon(Icons.shield_rounded, color: Colors.orange, size: 14),
+                                          const SizedBox(width: 4),
+                                          if (siraNo > 0)
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                              decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(4)),
+                                              child: Text(siraNo.toString(), style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                                            ),
                                         ],
                                       ),
                                       const SizedBox(height: 4),
-                                      Text(arac['soforAd'] ?? arac['sofor'] ?? (_guncelEsnaf.aracOdakliSistem ? "Şoför belirtilmemiş" : "Personel belirtilmemiş"), style: const TextStyle(color: Colors.white70, fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis),
+                                      Text(
+                                        arac['soforAd'] ?? "Belirtilmemiş",
+                                        style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 12),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
                                       const Spacer(),
-                                      if (durakta)
-                                        Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            const Icon(Icons.circle, size: 6, color: Colors.greenAccent),
-                                            const SizedBox(width: 4),
-                                            Flexible(child: Text(siraNo == 1 ? (_guncelEsnaf.aracOdakliSistem ? "Sıradaki Araç" : "Sıradaki Personel") : "$siraNo. Sırada", style: const TextStyle(color: Colors.greenAccent, fontSize: 9, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis)),
-                                          ],
-                                        )
-                                      else
-                                        Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Icon(Icons.circle, size: 6, color: (arac['durum'] == 'Meşgul' ? Colors.redAccent : (arac['durum'] == 'Mola' ? Colors.purpleAccent : Colors.white54))),
-                                            const SizedBox(width: 4),
-                                            Text(arac['durum'] ?? "Müsait Değil", style: const TextStyle(color: Colors.white54, fontSize: 9)),
-                                          ],
-                                        ),
+                                      Row(
+                                        children: [
+                                          Icon(
+                                            Icons.circle,
+                                            size: 10,
+                                            color: istirahatli ? Colors.red : ((durakta || nobetci) ? Colors.orange : Colors.green),
+                                          ),
+                                          const SizedBox(width: 5),
+                                          Flexible(
+                                            child: Text(
+                                              istirahatli 
+                                                ? "İstirahatte" 
+                                                : ((durakta || nobetci) ? "Nöbetçi" : (arac['durum'] ?? "Müsait")),
+                                              style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 11),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ],
                                   ),
                                 );
@@ -393,7 +483,7 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
                       ],
                     ),
                   ],
-                  if (_guncelEsnaf.kategori != 'Taksi' && _guncelEsnaf.kanallar != null && _guncelEsnaf.kanallar!.isNotEmpty) ...[
+                  if (!_guncelEsnaf.randevuAlinmasin && _guncelEsnaf.kategori != 'Taksi' && _guncelEsnaf.kanallar != null && _guncelEsnaf.kanallar!.isNotEmpty) ...[
                     const SizedBox(height: 25),
                     const Text("Kullanılabilir Randevu Alanları", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 10),
@@ -415,7 +505,7 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
                     ),
                   ],
                   const SizedBox(height: 20),
-                  const Text("İletişim ve Hızlı Randevu", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  Text(_guncelEsnaf.randevuAlinmasin ? "İletişim Bilgileri" : "İletişim ve Hızlı Randevu", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 10),
                   ListTile(
                     contentPadding: EdgeInsets.zero,
@@ -452,7 +542,7 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
                         ),
                       ),
                     ),
-                  if (_guncelEsnaf.telefonRandevu != null && _guncelEsnaf.telefonRandevu!.isNotEmpty)
+                  if (!_guncelEsnaf.randevuAlinmasin && _guncelEsnaf.telefonRandevu != null && _guncelEsnaf.telefonRandevu!.isNotEmpty)
                     ListTile(
                       contentPadding: EdgeInsets.zero,
                       leading: const Icon(Icons.phone_callback, color: Colors.orange),
@@ -517,27 +607,28 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
                   style: ElevatedButton.styleFrom(backgroundColor: Colors.yellow.shade700, minimumSize: const Size(double.infinity, 55), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                 ),
               ),
-            AnaButon(
-              metin: "Hemen Randevu Al",
-              onPressed: () {
-                bool ajandaVarMi = false;
-                final bugunStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
-                if (_guncelEsnaf.aktifGunler != null && _guncelEsnaf.aktifGunler!.isNotEmpty) {
-                  for (var gunStr in _guncelEsnaf.aktifGunler!) {
-                    String tarihKismi = gunStr.toString().split('_')[0];
-                    if (tarihKismi.compareTo(bugunStr) >= 0) {
-                      ajandaVarMi = true;
-                      break;
+            if (!_guncelEsnaf.randevuAlinmasin)
+              AnaButon(
+                metin: "Hemen Randevu Al",
+                onPressed: () {
+                  bool ajandaVarMi = false;
+                  final bugunStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
+                  if (_guncelEsnaf.aktifGunler != null && _guncelEsnaf.aktifGunler!.isNotEmpty) {
+                    for (var gunStr in _guncelEsnaf.aktifGunler!) {
+                      String tarihKismi = gunStr.toString().split('_')[0];
+                      if (tarihKismi.compareTo(bugunStr) >= 0) {
+                        ajandaVarMi = true;
+                        break;
+                      }
                     }
                   }
-                }
-                if (ajandaVarMi) {
-                  Navigator.push(context, MaterialPageRoute(builder: (c) => RandevuEkrani(esnaf: _guncelEsnaf, kullaniciTel: widget.kullaniciTel)));
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Bu işletmenin henüz yayında olan bir ajandası bulunmuyor."), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating));
-                }
-              },
-            ),
+                  if (ajandaVarMi) {
+                    Navigator.push(context, MaterialPageRoute(builder: (c) => RandevuEkrani(esnaf: _guncelEsnaf, kullaniciTel: widget.kullaniciTel)));
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Bu işletmenin henüz yayında olan bir ajanda defteri bulunmuyor."), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating));
+                  }
+                },
+              ),
             const SizedBox(height: 10),
           ],
         ),
@@ -748,28 +839,26 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
       musteriKonumu = GeoPoint(double.parse(konumBilgisi['enlem']!), double.parse(konumBilgisi['boylam']!));
     }
     List<Map<String, dynamic>> duraktakiAraclar = [];
-    if (_guncelEsnaf.araclar != null) {
-      duraktakiAraclar = _guncelEsnaf.araclar!
-          .where((a) => a['durakta'] == true && a['durum'] != 'İstirahatte')
-          .map((a) => Map<String, dynamic>.from(a as Map))
-          .toList();
-      duraktakiAraclar.sort((a, b) {
-        // 1. Nöbet Sırasına göre
-        int n1 = a['nobetSirasi'] ?? 999999;
-        int n2 = b['nobetSirasi'] ?? 999999;
-        if (n1 != n2) return n1.compareTo(n2);
+    duraktakiAraclar = _guncelEsnaf.araclar
+        .where((a) => a['durakta'] == true && a['durum'] != 'İstirahatte')
+        .map((a) => Map<String, dynamic>.from(a as Map))
+        .toList();
+    duraktakiAraclar.sort((a, b) {
+      // 1. Nöbet Sırasına göre
+      int n1 = a['nobetSirasi'] ?? 999999;
+      int n2 = b['nobetSirasi'] ?? 999999;
+      if (n1 != n2) return n1.compareTo(n2);
 
-        // 2. siraZamani'na göre (en eski giren 1. olur)
-        int t1 = a['siraZamani'] ?? 0;
-        int t2 = b['siraZamani'] ?? 0;
-        if (t1 != t2) return t1.compareTo(t2);
-        
-        // 3. Zamanlar eşitse plakaya göre (tutarlılık için)
-        String p1 = a['plaka'] ?? "";
-        String p2 = b['plaka'] ?? "";
-        return p1.compareTo(p2);
-      });
-    }
+      // 2. siraZamani'na göre (en eski giren 1. olur)
+      int t1 = a['siraZamani'] ?? 0;
+      int t2 = b['siraZamani'] ?? 0;
+      if (t1 != t2) return t1.compareTo(t2);
+      
+      // 3. Zamanlar eşitse plakaya göre (tutarlılık için)
+      String p1 = a['plaka'] ?? "";
+      String p2 = b['plaka'] ?? "";
+      return p1.compareTo(p2);
+    });
     double mesafeMetre = Geolocator.distanceBetween(musteriKonumu.latitude, musteriKonumu.longitude, _guncelEsnaf.konum.latitude, _guncelEsnaf.konum.longitude);
     double tahminiDakika = (mesafeMetre * 1.3) / 500;
     int beklemeSuresi = tahminiDakika.round();

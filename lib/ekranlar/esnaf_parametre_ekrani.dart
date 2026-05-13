@@ -65,6 +65,22 @@ class _EsnafParametreEkraniState extends State<EsnafParametreEkrani> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          _parametreKart(
+            baslik: "Randevu Alımını Durdur",
+            altBaslik: "İşaretli olursa müşteriler 'Hemen Randevu Al' butonunu göremez ve randevu alınamaz.",
+            icon: Icons.block_flipped,
+            icerik: SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text("Randevu Alınmasın", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              value: _esnaf!.randevuAlinmasin,
+              onChanged: (v) async {
+                setState(() {
+                  _esnaf = _esnaf!.copyWith(randevuAlinmasin: v);
+                });
+                await _guncelle({'randevuAlinmasin': v});
+              },
+            ),
+          ),
           if (_esnaf!.kategori != 'Taksi') ...[
             _parametreKart(
               baslik: "Randevu Onay Modu",

@@ -14,6 +14,28 @@ class FirestoreServisi {
   CollectionReference get _kategorilerRef => _db.collection('kategoriler');
   CollectionReference get _hizmetTanimRef => _db.collection('hizmet_tanimlari');
   CollectionReference get _yorumlarRef => _db.collection('yorumlar');
+  CollectionReference get _kullanicilarRef => _db.collection('kullanicilar');
+
+  // --- KULLANICI İŞLEMLERİ ---
+  Stream<List<String>> favorileriGetir(String tel) {
+    return _kullanicilarRef.doc(tel).snapshots().map((doc) {
+      if (!doc.exists) return [];
+      final data = doc.data() as Map<String, dynamic>;
+      return List<String>.from(data['favoriKategoriler'] ?? []);
+    });
+  }
+
+  Future<void> favoriGuncelle(String tel, String kategoriId, bool favoriMi) async {
+    if (favoriMi) {
+      await _kullanicilarRef.doc(tel).set({
+        'favoriKategoriler': FieldValue.arrayUnion([kategoriId])
+      }, SetOptions(merge: true));
+    } else {
+      await _kullanicilarRef.doc(tel).update({
+        'favoriKategoriler': FieldValue.arrayRemove([kategoriId])
+      });
+    }
+  }
 
   // --- ESNAF İŞLEMLERİ ---
   Stream<List<EsnafModeli>> esnaflariGetir() {
@@ -213,24 +235,32 @@ class FirestoreServisi {
     String? kanal,
   }) async {
     int gunSayisi = bitis.difference(baslangic).inDays;
-    final batch = _db.batch();
-    List<String> silinecekIds = [];
-
-    for (int i = 0; i <= gunSayisi; i++) {
-      DateTime gun = baslangic.add(Duration(days: i));
-      String tarihStr = DateFormat('yyyy-MM-dd').format(gun);
-      String k = (kanal != null && kanal.trim().isNotEmpty) ? kanal.trim() : "";
-      String docId = k.isNotEmpty ? "${tarihStr}_$k" : tarihStr;
+    String k = (kanal != null && kanal.trim().isNotEmpty) ? kanal.trim() : "";
+    
+    // Firestore batch limiti 500'dür.
+    const int chunkLimit = 400;
+    
+    for (int i = 0; i <= gunSayisi; i += chunkLimit) {
+      final batch = _db.batch();
+      List<String> silinecekIds = [];
       
-      silinecekIds.add(docId);
-      batch.delete(_esnaflarRef.doc(esnafId).collection('ajanda').doc(docId));
+      int max = (i + chunkLimit > gunSayisi + 1) ? gunSayisi + 1 : i + chunkLimit;
+      
+      for (int j = i; j < max; j++) {
+        DateTime gun = baslangic.add(Duration(days: j));
+        String tarihStr = DateFormat('yyyy-MM-dd').format(gun);
+        String docId = k.isNotEmpty ? "${tarihStr}_$k" : tarihStr;
+        
+        silinecekIds.add(docId);
+        batch.delete(_esnaflarRef.doc(esnafId).collection('ajanda').doc(docId));
+      }
+
+      batch.update(_esnaflarRef.doc(esnafId), {
+        'aktifGunler': FieldValue.arrayRemove(silinecekIds)
+      });
+
+      await batch.commit();
     }
-
-    batch.update(_esnaflarRef.doc(esnafId), {
-      'aktifGunler': FieldValue.arrayRemove(silinecekIds)
-    });
-
-    await batch.commit();
   }
 
   Future<void> slotKapatAc(String esnafId, DateTime tarih, String? kanal, String saat, bool kapat, {String? neden}) async {

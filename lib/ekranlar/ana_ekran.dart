@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'dart:async';
 import '../servisler/firestore_servisi.dart';
 import '../modeller/esnaf_modeli.dart';
 import 'esnaf_detay_ekrani.dart';
@@ -16,6 +17,29 @@ class AnaEkran extends StatefulWidget {
 class _AnaEkranState extends State<AnaEkran> {
   final FirestoreServisi firestoreServisi = FirestoreServisi();
   Position? _currentPosition;
+  List<String> _favoriKategoriler = [];
+  StreamSubscription? _favoriSub;
+
+  @override
+  void initState() {
+    super.initState();
+    _determinePosition();
+    _favoriAboneligiBaslat();
+  }
+
+  @override
+  void dispose() {
+    _favoriSub?.cancel();
+    super.dispose();
+  }
+
+  void _favoriAboneligiBaslat() {
+    if (widget.kullaniciTel != null) {
+      _favoriSub = firestoreServisi.favorileriGetir(widget.kullaniciTel!).listen((favlar) {
+        if (mounted) setState(() => _favoriKategoriler = favlar);
+      });
+    }
+  }
 
   IconData _getKategoriIkon(String ad) {
     switch (ad.trim()) {
@@ -72,12 +96,6 @@ class _AnaEkranState extends State<AnaEkran> {
       case 'Özel Ders': return Colors.deepOrange;
       default: return Colors.blueAccent;
     }
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _determinePosition();
   }
 
   Future<void> _determinePosition() async {
@@ -389,7 +407,7 @@ class _AnaEkranState extends State<AnaEkran> {
           StreamBuilder<List<Map<String, dynamic>>>(
             stream: firestoreServisi.kategorileriGetir(),
             builder: (context, snapshot) {
-              final kats = snapshot.data ?? [];
+              List<Map<String, dynamic>> kats = snapshot.data ?? [];
               
               // Veri henüz yoksa ve bağlantı bekleniyorsa loading göster
               if (snapshot.connectionState == ConnectionState.waiting && kats.isEmpty) {
@@ -407,6 +425,17 @@ class _AnaEkranState extends State<AnaEkran> {
                 );
               }
 
+              // Favorilere göre sırala
+              if (widget.kullaniciTel != null) {
+                kats.sort((a, b) {
+                  bool aFav = _favoriKategoriler.contains(a['id']);
+                  bool bFav = _favoriKategoriler.contains(b['id']);
+                  if (aFav && !bFav) return -1;
+                  if (!aFav && bFav) return 1;
+                  return 0;
+                });
+              }
+
               return SliverPadding(
                 padding: const EdgeInsets.all(15),
                 sliver: SliverGrid(
@@ -419,9 +448,11 @@ class _AnaEkranState extends State<AnaEkran> {
                   delegate: SliverChildBuilderDelegate(
                     (context, i) {
                       final kat = kats[i];
+                      final id = kat['id'] as String;
                       final ad = kat['ad'] as String;
                       final ikonKod = kat['ikon'] as int?;
                       final renkKod = kat['renk'] as int?;
+                      final bool isFav = _favoriKategoriler.contains(id);
                       
                       return InkWell(
                         onTap: () => _esnafListesiAc(context, ad),
@@ -430,20 +461,44 @@ class _AnaEkranState extends State<AnaEkran> {
                           elevation: 4,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
                           color: _getKategoriRenk(ad, renkKod),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
+                          child: Stack(
                             children: [
-                              _buildKategoriIcon(ad, ikonKod),
-                              const SizedBox(height: 10),
-                              Text(
-                                ad,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16,
+                              Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    _buildKategoriIcon(ad, ikonKod),
+                                    const SizedBox(height: 10),
+                                    Text(
+                                      ad,
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
+                              if (widget.kullaniciTel != null)
+                                Positioned(
+                                  top: 5,
+                                  right: 5,
+                                  child: GestureDetector(
+                                    onTap: () {
+                                      firestoreServisi.favoriGuncelle(widget.kullaniciTel!, id, !isFav);
+                                    },
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(8.0),
+                                      child: Icon(
+                                        isFav ? Icons.favorite : Icons.favorite_border,
+                                        color: isFav ? Colors.red : Colors.white70,
+                                        size: 24,
+                                      ),
+                                    ),
+                                  ),
+                                ),
                             ],
                           ),
                         ),
