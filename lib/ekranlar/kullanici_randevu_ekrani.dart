@@ -25,9 +25,8 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
   void initState() {
     super.initState();
     // Sadece 1 tane merkezi timer çalıştırıyoruz.
-    // Bu sayede her kart için ayrı timer oluşmaz, işlemci yorulmaz ve hata çıkmaz.
     _merkeziTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (mounted) {
+      if (mounted && _merkeziTimer != null && _merkeziTimer!.isActive) {
         _suAnkiZaman.value = DateTime.now();
       }
     });
@@ -36,6 +35,7 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
   @override
   void dispose() {
     _merkeziTimer?.cancel();
+    _merkeziTimer = null;
     _suAnkiZaman.dispose();
     super.dispose();
   }

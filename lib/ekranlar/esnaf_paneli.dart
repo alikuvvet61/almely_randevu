@@ -7,6 +7,7 @@ import 'package:almely_randevu/modeller/esnaf_modeli.dart';
 import 'package:almely_randevu/modeller/randevu_modeli.dart';
 import 'package:almely_randevu/servisler/bildirim_servisi.dart';
 import 'package:almely_randevu/servisler/konum_servisi.dart';
+import 'package:intl/intl.dart';
 import 'durak_takip_ekrani.dart';
 import 'taksi_cizelge_ekrani.dart';
 import 'esnaf_ajanda_ekrani.dart';
@@ -161,6 +162,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
     _talepAboneligi?.cancel();
     _esnafAboneligi?.cancel();
     _konumTimer?.cancel();
+    _konumTimer = null;
     _adController.dispose();
     _telController.dispose();
     _whatsappController.dispose();
@@ -228,9 +230,12 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
 
   void _otomatikKonumPaylasiminiBaslat() {
     _konumTimer = Timer.periodic(const Duration(minutes: 1), (timer) async {
+      if (!mounted || _konumTimer == null || !_konumTimer!.isActive) return;
       try {
         Position position = await Geolocator.getCurrentPosition();
-        await _konumGuncelle(position.latitude, position.longitude);
+        if (mounted) {
+          await _konumGuncelle(position.latitude, position.longitude);
+        }
       } catch (e) {
         debugPrint("Konum alınamadı: $e");
       }
@@ -589,46 +594,108 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
 
       WriteBatch batch = FirebaseFirestore.instance.batch();
       int operationCount = 0;
-      final aktifGunler = _guncelEsnaf.aktifGunler ?? [];
+      final List globalKanallar = kanallar; // State içindeki güncel liste
+      final List globalPersoneller = widget.esnaf.kategori == 'Taksi'
+          ? araclar.map((a) => {"isim": a['plaka'], "kanal": a['soforAd'] ?? ""}).toList()
+          : personeller;
+      final String bugun = DateFormat('yyyy-MM-dd').format(DateTime.now());
       
-      for (var gunId in aktifGunler) {
-        final docRef = FirebaseFirestore.instance
-            .collection('esnaflar')
-            .doc(widget.esnaf.id)
-            .collection('ajanda')
-            .doc(gunId);
-            
-        batch.update(docRef, {
-          'slotDakika': idealSlot,
-          'slotAraligi': idealSlot,
-          'guncellemeTarihi': FieldValue.serverTimestamp(),
-        });
+      // Benzersiz tarihleri ayıkla (yyyy-MM-dd) ve sadece BUGÜN + GELECEK olanları al
+      Set<String> tarihler = (_guncelEsnaf.aktifGunler ?? [])
+          .map((e) => e.toString().split('_')[0])
+          .where((t) => t.compareTo(bugun) >= 0) // Geçmişe dokunma
+          .toSet();
+      tarihler.add(bugun);
+
+      List<String> yeniAktifGunler = [];
+
+      for (var tarihId in tarihler) {
+        // Çok kanallı yapı desteği (Suffix mantığını StreamBuilder ile eşitle)
+        List<String> docIds = [];
+        final normalizedKanallar = globalKanallar.map((k) => k.toString().trim()).where((k) => k.isNotEmpty).toList();
+
+        if (normalizedKanallar.isNotEmpty && widget.esnaf.kategori != 'Taksi') {
+          docIds = normalizedKanallar.map((k) => "${tarihId}_$k").toList();
+        } else if (widget.esnaf.kategori == 'Taksi' && araclar.isNotEmpty) {
+          docIds = araclar
+              .where((a) => a['plaka'] != null && a['plaka'].toString().trim().isNotEmpty)
+              .map((a) => "${tarihId}_${a['plaka'].toString().trim()}")
+              .toList();
+        } 
         
-        operationCount++;
-        
-        if (operationCount >= 499) {
-          await batch.commit();
-          batch = FirebaseFirestore.instance.batch();
-          operationCount = 0;
+        if (docIds.isEmpty) {
+          docIds = ["${tarihId}_Uygulama"];
+        }
+
+        for (var docId in docIds) {
+          yeniAktifGunler.add(docId);
+          final docRef = FirebaseFirestore.instance
+              .collection('esnaflar')
+              .doc(widget.esnaf.id)
+              .collection('ajanda')
+              .doc(docId);
+              
+          batch.set(docRef, {
+            'tarih': tarihId,
+            'slotDakika': idealSlot,
+            'slotAraligi': idealSlot,
+            'acilis': acilisSaat,
+            'kapanis': kapanisSaat,
+            'kanallar': normalizedKanallar,
+            'personeller': globalPersoneller,
+            'guncellemeTarihi': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+          
+          operationCount++;
+          if (operationCount >= 480) {
+            await batch.commit();
+            batch = FirebaseFirestore.instance.batch();
+            operationCount = 0;
+          }
         }
       }
+
+      // Geçmişteki aktif günleri koru, güncellenenleri ekle (Tekilleştirerek)
+      List<String> gecmisAktifGunler = (_guncelEsnaf.aktifGunler ?? [])
+          .where((e) => e.toString().split('_')[0].compareTo(bugun) < 0)
+          .map((e) => e.toString().trim())
+          .toList();
+
+      // Aktif günleri birleştir ve tekilleştir
+      final tumAktifGunler = <String>{...gecmisAktifGunler, ...yeniAktifGunler}.toList();
 
       batch.update(FirebaseFirestore.instance.collection('esnaflar').doc(widget.esnaf.id), {
         'calismaSaatleri.slotDakika': idealSlot,
         'calismaSaatleri.slotAraligi': idealSlot,
+        'calismaSaatleri.acilis': acilisSaat,
+        'calismaSaatleri.kapanis': kapanisSaat,
+        'kanallar': globalKanallar.map((k) => k.toString().trim()).toList(),
+        'aktifGunler': tumAktifGunler,
+        'hizmetler': hizmetler,
+        'personeller': widget.esnaf.kategori == 'Taksi'
+            ? araclar.map((a) => {"isim": a['plaka'], "kanal": a['soforAd'] ?? ""}).toList()
+            : personeller,
+        'araclar': araclar.map((a) {
+          final yeniArac = Map<String, dynamic>.from(a);
+          yeniArac.remove('sofor');
+          return yeniArac;
+        }).toList(),
       });
 
-      await batch.commit();
+      await batch.commit(); // EKSİK OLAN COMMIT GERİ EKLENDİ
+
+      await _verileriTazele();
       
-      if (!mounted) return false;
-      // Yakalanmış navigator kullanımı
-      if (navigator.canPop()) navigator.pop(); 
-      
+      if (mounted) {
+        setState(() {});
+        // Yükleme diyaloğunu kapat
+        if (navigator.canPop()) navigator.pop();
+      }
+
       scaffoldMessenger.showSnackBar(
         SnackBar(content: Text("Tüm ajanda defteri yapıları $idealSlot dk olarak onarıldı."), backgroundColor: Colors.green),
       );
-      
-      await _verileriTazele();
+
       return true;
     } catch (e) {
       if (!mounted) return false;
@@ -815,88 +882,103 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
     }
   }
 
-  Widget _uyariBanneri() {
+  Widget _uyariBanneri(Map<String, dynamic>? ajandaData, bool exists) {
     int ideal = _idealSlotHesapla();
-    bool uyumsuz = false;
+    bool slotUyumsuz = false;
     
     for (var h in hizmetler) {
       int s = int.tryParse(h['sure'].toString()) ?? 0;
-      if (s > 0 && s % slotAraligi != 0) {
-        uyumsuz = true;
+      if (s > 0 && (slotAraligi == 0 || s % slotAraligi != 0)) {
+        slotUyumsuz = true;
         break;
       }
     }
 
-    if (uyumsuz) {
+    if (slotAraligi != ideal) slotUyumsuz = true;
+
+    // Ajanda dökümanı bazlı kontroller
+    int? ajandaSlot = (ajandaData?['slotDakika'] ?? ajandaData?['slotAraligi'])?.toInt();
+    int etkinAjandaSlot = ajandaSlot ?? slotAraligi;
+    bool ajandaHizmetUyumsuz = exists && (etkinAjandaSlot != ideal);
+    bool ajandaGlobalUyumsuz = exists && (etkinAjandaSlot != slotAraligi);
+
+    // Saat Uyumsuzluğu Kontrolü
+    String esnafAcilis = acilisSaat;
+    String esnafKapanis = kapanisSaat;
+    
+    bool saatUyumsuz = false;
+    bool dunyaYeni = !exists;
+
+    if (exists && ajandaData != null) {
+      String ajandaAcilis = ajandaData['acilis'] ?? esnafAcilis;
+      String ajandaKapanis = ajandaData['kapanis'] ?? esnafKapanis;
+      
+      if (ajandaAcilis != esnafAcilis || ajandaKapanis != esnafKapanis) {
+        saatUyumsuz = true;
+      }
+    }
+
+    // Döküman yoksa VEYA saat uyumsuzsa VEYA slot/hizmet uyumsuzsa göster
+    if (dunyaYeni || saatUyumsuz || ajandaHizmetUyumsuz || ajandaGlobalUyumsuz || slotUyumsuz) {
       return Padding(
         padding: const EdgeInsets.only(bottom: 15),
         child: Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Colors.red.shade50, 
+            color: dunyaYeni ? Colors.blue.shade50 : Colors.red.shade50, 
             borderRadius: BorderRadius.circular(20), 
-            border: Border.all(color: Colors.red.shade200)
+            border: Border.all(color: dunyaYeni ? Colors.blue.shade200 : Colors.red.shade200)
           ),
           child: Column(
             children: [
               Row(
                 children: [
-                  const Icon(Icons.warning_amber_rounded, color: Colors.red, size: 28),
+                  Icon(Icons.warning_amber_rounded, color: dunyaYeni ? Colors.blue : Colors.red, size: 28),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text("Zaman Dilimi Uyumsuzluğu!", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red, fontSize: 15)),
-                        Text("Hizmet süreleriniz mevcut $slotAraligi dk'lık ajanda yapısına uymuyor.", style: const TextStyle(fontSize: 13, color: Colors.black87)),
+                        Text(
+                          dunyaYeni ? "Ajanda Hazır Değil!" : "Ayarlar Uyumsuz!", 
+                          style: TextStyle(fontWeight: FontWeight.bold, color: dunyaYeni ? Colors.blue : Colors.red, fontSize: 15)
+                        ),
+                        Text(
+                          dunyaYeni 
+                            ? "Müşterilerinizin randevu alabilmesi için ajanda defterinizin oluşturulması gerekmektedir."
+                            : (ajandaHizmetUyumsuz
+                                ? "Hizmet süreleriniz mevcut $etkinAjandaSlot dk'lık ajanda yapısına uymuyor. Yeni seçilen süreye göre ajandanız $ideal dk aralıklarında güncellenecektir."
+                                : "İşletme ayarlarınızda (çalışma saatleri vb.) değişiklik tespit edildi. Mevcut ajanda yapısı güncellenecektir."),
+                          style: const TextStyle(fontSize: 13, color: Colors.black87)
+                        ),
                       ],
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _topluAjandaOnarim,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red, 
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              if (!dunyaYeni) ...[
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () async {
+                      final basarili = await _topluAjandaOnarim();
+                      if (basarili) {
+                        await _verileriTazele();
+                        if (mounted) setState(() {});
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red, 
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    child: const Text("AJANDAYI ŞİMDİ ONAR VE DÜZELT",
+                                style: TextStyle(fontWeight: FontWeight.bold)),
                   ),
-                  child: const Text("AJANDAYI ŞİMDİ ONAR VE DÜZELT", style: TextStyle(fontWeight: FontWeight.bold)),
                 ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    if (slotAraligi != ideal) {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 15),
-        child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: Colors.orange.shade50, borderRadius: BorderRadius.circular(15), border: Border.all(color: Colors.orange.shade200)),
-          child: Row(
-            children: [
-              const Icon(Icons.auto_fix_high, color: Colors.orange),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text("Ajanda Optimizasyonu", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange)),
-                    Text("Mevcut hizmetlerinize göre ajanda dilimlerini $ideal dk yaparak daha düzenli bir görünüm sağlayabilirsiniz.", style: const TextStyle(fontSize: 12, color: Colors.black87)),
-                  ],
-                ),
-              ),
-              TextButton(
-                onPressed: _topluAjandaOnarim,
-                child: const Text("OPTİMİZE ET", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange)),
-              ),
+              ],
             ],
           ),
         ),
@@ -1365,7 +1447,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text("Vazgeç")),
-          TextButton(onPressed: () {
+          TextButton(onPressed: () async {
             final String eskiTamIsim = kanallar[idx]; 
             final String yeniIsim = controller.text.trim();
             final String eskiTemizIsim = eskiTamIsim.trim();
@@ -1402,8 +1484,11 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                   }
                   _degisiklikVar = true;
                 });
+                
+                // Hemen kaydet (Böylece banner tetiklenebilir hale gelir)
+                await _kaydet(sessiz: true);
               }
-              Navigator.pop(context);
+              if (context.mounted) Navigator.pop(context);
             }
           }, child: const Text("Güncelle")),
         ],
@@ -1455,13 +1540,15 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(context), child: const Text("Vazgeç")),
-            TextButton(onPressed: () {
+            TextButton(onPressed: () async {
               if (isim.trim().isNotEmpty) {
                 setState(() {
                   personeller[idx] = {"isim": isim.trim(), "kanal": kanal};
                   _degisiklikVar = true;
                 });
-                Navigator.pop(context);
+                // Hemen kaydet (Böylece banner tetiklenebilir hale gelir)
+                await _kaydet(sessiz: true);
+                if (context.mounted) Navigator.pop(context);
               }
             }, child: const Text("Güncelle")),
           ],
@@ -1715,7 +1802,8 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                           _hizmetSureControllerList.add(TextEditingController(text: sure.toString()));
                           _degisiklikVar = true;
                         });
-                        Navigator.pop(context);
+                        if (!mounted) return;
+              Navigator.pop(context);
                       }
                     }, child: const Text("Ekle")),
                   ],
@@ -1874,7 +1962,6 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
         appBar: AppBar(
           title: Text(_adController.text, style: const TextStyle(fontWeight: FontWeight.bold)),
           actions: [
-            IconButton(icon: const Icon(Icons.settings_outlined), onPressed: _esnafDuzenleFormu),
             IconButton(icon: const Icon(Icons.refresh), onPressed: _verileriTazele),
           ],
         ),
@@ -1888,23 +1975,54 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
             final hepsi = snapshot.data ?? [];
             final bekleyenler = hepsi.where((r) => r.durum == 'Onay bekliyor' || r.durum == 'Beklemede').toList();
 
-            // SLOT UYUMSUZLUK KONTROLÜ
-            bool slotUyumsuz = false;
-            for (var h in hizmetler) {
-              int hSure = int.tryParse(h['sure'].toString()) ?? 0;
-              if (hSure > 0 && hSure % slotAraligi != 0) {
-                slotUyumsuz = true;
-                break;
-              }
-            }
-
             return SingleChildScrollView(
               padding: const EdgeInsets.all(16),
               child: Column(
                 children: [
-                  if (slotUyumsuz)
-                  // UYARI BANNERLARI
-                  _uyariBanneri(),
+                  // Ajanda Uyarı Bannerı
+                  StreamBuilder<QuerySnapshot>(
+                    stream: FirebaseFirestore.instance
+                        .collection('esnaflar')
+                        .doc(widget.esnaf.id)
+                        .collection('ajanda')
+                        .where('tarih', isGreaterThanOrEqualTo: DateFormat('yyyy-MM-dd').format(DateTime.now()))
+                        .limit(1)
+                        .snapshots(),
+                    builder: (context, ajandaSnap) {
+                      final bool exists = ajandaSnap.hasData && ajandaSnap.data!.docs.isNotEmpty;
+                      
+                      // Eğer hiç gelecek ajanda yoksa, hazır olmadığını bildir
+                      if (!exists) {
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 15),
+                          child: Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.shade50,
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(color: Colors.blue.shade200)
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(Icons.calendar_month, color: Colors.blue, size: 28),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    "Ajanda Defteriniz Henüz Hazır Değil! Randevu alımını başlatmak için ajanda oluşturun.",
+                                    style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue.shade900)
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }
+
+                      // Eğer ajanda varsa, normal uyarı banner'ını (sadece mismatch/uyumsuzluk için) göster
+                      final data = exists ? ajandaSnap.data!.docs.first.data() as Map<String, dynamic>? : null;
+                      return _uyariBanneri(data, exists);
+                    },
+                  ),
 
                   if (bekleyenler.isNotEmpty && !_guncelEsnaf.randevuAlinmasin)
                     Padding(
@@ -2061,9 +2179,9 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceAround,
                               children: [
-                                _saatSecici("Açılış", acilisSaat, (v) => setState(() { acilisSaat = v; _degisiklikVar = true; })),
+                                _saatSecici("Açılış", acilisSaat, (v) => setState(() { acilisSaat = v; _degisiklikVar = true; _idealSlotHesapla(); }),),
                                 const Icon(Icons.arrow_forward, color: Colors.grey, size: 20),
-                                _saatSecici("Kapanış", kapanisSaat, (v) => setState(() { kapanisSaat = v; _degisiklikVar = true; })),
+                                _saatSecici("Kapanış", kapanisSaat, (v) => setState(() { kapanisSaat = v; _degisiklikVar = true; _idealSlotHesapla(); }),),
                               ],
                             ),
                             const Divider(height: 32),
