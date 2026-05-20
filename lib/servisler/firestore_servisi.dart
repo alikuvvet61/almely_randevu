@@ -15,6 +15,74 @@ class FirestoreServisi {
   CollectionReference get _hizmetTanimRef => _db.collection('hizmet_tanimlari');
   CollectionReference get _yorumlarRef => _db.collection('yorumlar');
   CollectionReference get _kullanicilarRef => _db.collection('kullanicilar');
+  CollectionReference get _ayarlarRef => _db.collection('ayarlar');
+
+  // --- AYARLAR VE TANIMLAMALAR ---
+  Stream<List<String>> aracTurleriniGetir() {
+    return _ayarlarRef.doc('arac_tanimlari').snapshots().map((doc) {
+      if (!doc.exists) return ["Binek", "SUV", "Minibüs", "Panelvan", "Kamyonet"];
+      final data = doc.data() as Map<String, dynamic>;
+      return List<String>.from(data['turler'] ?? ["Binek", "SUV", "Minibüs", "Panelvan", "Kamyonet"]);
+    });
+  }
+
+  Future<void> aracTuruEkle(String tur) async {
+    await _ayarlarRef.doc('arac_tanimlari').set({
+      'turler': FieldValue.arrayUnion([tur])
+    }, SetOptions(merge: true));
+  }
+
+  Future<void> aracTuruSil(String tur) async {
+    await _ayarlarRef.doc('arac_tanimlari').update({
+      'turler': FieldValue.arrayRemove([tur])
+    });
+  }
+
+  Future<void> aracTuruGuncelle(String eskiTur, String yeniTur) async {
+    var doc = await _ayarlarRef.doc('arac_tanimlari').get();
+    if (doc.exists) {
+      final data = doc.data() as Map<String, dynamic>;
+      List<String> turler = List<String>.from(data['turler'] ?? []);
+      int index = turler.indexOf(eskiTur);
+      if (index != -1) {
+        turler[index] = yeniTur;
+        await _ayarlarRef.doc('arac_tanimlari').update({'turler': turler});
+      }
+    }
+  }
+
+  Stream<List<String>> aracSiniflariniGetir() {
+    return _ayarlarRef.doc('arac_tanimlari').snapshots().map((doc) {
+      if (!doc.exists) return ["Ekonomik", "Orta", "Üst Sınıf", "Lüks", "VIP"];
+      final data = doc.data() as Map<String, dynamic>;
+      return List<String>.from(data['siniflar'] ?? ["Ekonomik", "Orta", "Üst Sınıf", "Lüks", "VIP"]);
+    });
+  }
+
+  Future<void> aracSinifiEkle(String sinif) async {
+    await _ayarlarRef.doc('arac_tanimlari').set({
+      'siniflar': FieldValue.arrayUnion([sinif])
+    }, SetOptions(merge: true));
+  }
+
+  Future<void> aracSinifiSil(String sinif) async {
+    await _ayarlarRef.doc('arac_tanimlari').update({
+      'siniflar': FieldValue.arrayRemove([sinif])
+    });
+  }
+
+  Future<void> aracSinifiGuncelle(String eskiSinif, String yeniSinif) async {
+    var doc = await _ayarlarRef.doc('arac_tanimlari').get();
+    if (doc.exists) {
+      final data = doc.data() as Map<String, dynamic>;
+      List<String> siniflar = List<String>.from(data['siniflar'] ?? []);
+      int index = siniflar.indexOf(eskiSinif);
+      if (index != -1) {
+        siniflar[index] = yeniSinif;
+        await _ayarlarRef.doc('arac_tanimlari').update({'siniflar': siniflar});
+      }
+    }
+  }
 
   // --- KULLANICI İŞLEMLERİ ---
   Stream<List<String>> favorileriGetir(String tel) {

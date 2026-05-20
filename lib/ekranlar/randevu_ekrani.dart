@@ -560,8 +560,8 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
       String yaklasikIbaresi = esnaf.kategori == 'Halı Saha' ? '' : 'yaklaşık ';
 
       String mesaj = durm == 'Onaylandı'
-          ? "Randevunuz $tarihFormat tarihinde saat $saatGosterim olarak onaylanmıştır. Randevu süreniz ${yaklasikIbaresi}$toplamSure dk sürecektir. ${esnaf.isletmeAdi} olarak teşekkür ederiz."
-          : "Randevunuz $tarihFormat tarihinde saat $saatGosterim için alınmıştır. Randevu süreniz ${yaklasikIbaresi}$toplamSure dk sürecektir. ${esnaf.isletmeAdi} olarak teşekkür ederiz. Onay bekleniyor.";
+          ? "Randevunuz $tarihFormat tarihinde saat $saatGosterim olarak onaylanmıştır. Randevu süreniz $yaklasikIbaresi$toplamSure dk sürecektir. ${esnaf.isletmeAdi} olarak teşekkür ederiz."
+          : "Randevunuz $tarihFormat tarihinde saat $saatGosterim için alınmıştır. Randevu süreniz $yaklasikIbaresi$toplamSure dk sürecektir. ${esnaf.isletmeAdi} olarak teşekkür ederiz. Onay bekleniyor.";
 
       showDialog(
         context: context,

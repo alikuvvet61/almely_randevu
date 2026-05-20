@@ -1,5 +1,6 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 import '../modeller/esnaf_modeli.dart';
 import '../servisler/firestore_servisi.dart';
 import '../servisler/konum_servisi.dart';
@@ -24,10 +25,12 @@ class _AdminEkraniState extends State<AdminEkrani> {
   final _lonController = TextEditingController();
   final _kategoriAdController = TextEditingController();
   final _iptalNedeniController = TextEditingController();
+  final _aracTuruController = TextEditingController();
+  final _aracSinifiController = TextEditingController();
 
-  String _secilenKategori = ''; 
+  String _secilenKategori = '';
   String _gpsDurum = "Konumu Getir";
-  
+
   String? _duzenlenenKategoriId;
   String? _duzenlenenKategoriAd;
 
@@ -42,7 +45,224 @@ class _AdminEkraniState extends State<AdminEkrani> {
     _lonController.dispose();
     _kategoriAdController.dispose();
     _iptalNedeniController.dispose();
+    _aracTuruController.dispose();
+    _aracSinifiController.dispose();
     super.dispose();
+  }
+
+  void _aracTuruYonetimi() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => DefaultTabController(
+        length: 2,
+        child: StatefulBuilder(
+          builder: (context, setModalState) => Container(
+            constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.85),
+            decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
+            child: Column(
+              children: [
+                Container(margin: const EdgeInsets.only(top: 10), width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10))),
+                const TabBar(
+                  labelColor: Colors.blueGrey,
+                  unselectedLabelColor: Colors.grey,
+                  indicatorColor: Colors.blueGrey,
+                  tabs: [
+                    Tab(text: "Araç Türleri"),
+                    Tab(text: "Araç Sınıfları"),
+                  ],
+                ),
+                Expanded(
+                  child: TabBarView(
+                    children: [
+                      _aracTuruListeBolumu(),
+                      _aracSinifiListeBolumu(),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _aracTuruListeBolumu() {
+    return Padding(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        children: [
+          TextField(
+            controller: _aracTuruController,
+            decoration: InputDecoration(
+              labelText: "Yeni Araç Türü Ekle (SUV, Sedan vb.)",
+              border: const OutlineInputBorder(),
+              suffixIcon: IconButton(
+                icon: const Icon(Icons.add_circle, color: Colors.blueGrey),
+                onPressed: () async {
+                  if (_aracTuruController.text.isNotEmpty) {
+                    await _firestoreServisi.aracTuruEkle(_aracTuruController.text.trim());
+                    _aracTuruController.clear();
+                  }
+                },
+              ),
+            ),
+          ),
+          const Divider(height: 30),
+          Expanded(
+            child: StreamBuilder<List<String>>(
+              stream: _firestoreServisi.aracTurleriniGetir(),
+              builder: (context, snapshot) {
+                if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+                final turler = snapshot.data!;
+                return ListView.builder(
+                  itemCount: turler.length,
+                  itemBuilder: (context, index) {
+                    final tur = turler[index];
+                    return ListTile(
+                      title: Text(tur),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.edit, color: Colors.orange),
+                            onPressed: () => _aracTuruDuzenleDialog(tur),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete, color: Colors.red),
+                            onPressed: () async {
+                              await _firestoreServisi.aracTuruSil(tur);
+                            },
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _aracSinifiListeBolumu() {
+    return Padding(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        children: [
+          TextField(
+            controller: _aracSinifiController,
+            decoration: InputDecoration(
+              labelText: "Yeni Araç Sınıfı Ekle (Ekonomik, Lüks vb.)",
+              border: const OutlineInputBorder(),
+              suffixIcon: IconButton(
+                icon: const Icon(Icons.add_circle, color: Colors.blueGrey),
+                onPressed: () async {
+                  if (_aracSinifiController.text.isNotEmpty) {
+                    await _firestoreServisi.aracSinifiEkle(_aracSinifiController.text.trim());
+                    _aracSinifiController.clear();
+                  }
+                },
+              ),
+            ),
+          ),
+          const Divider(height: 30),
+          Expanded(
+            child: StreamBuilder<List<String>>(
+              stream: _firestoreServisi.aracSiniflariniGetir(),
+              builder: (context, snapshot) {
+                if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+                final siniflar = snapshot.data!;
+                return ListView.builder(
+                  itemCount: siniflar.length,
+                  itemBuilder: (context, index) {
+                    final sinif = siniflar[index];
+                    return ListTile(
+                      title: Text(sinif),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.edit, color: Colors.orange),
+                            onPressed: () => _aracSinifiDuzenleDialog(sinif),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete, color: Colors.red),
+                            onPressed: () async {
+                              await _firestoreServisi.aracSinifiSil(sinif);
+                            },
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _aracTuruDuzenleDialog(String eskiTur) {
+    final controller = TextEditingController(text: eskiTur);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Araç Türünü Düzenle"),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(border: OutlineInputBorder()),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Vazgeç")),
+          ElevatedButton(
+            onPressed: () async {
+              if (controller.text.isNotEmpty) {
+                await _firestoreServisi.aracTuruGuncelle(eskiTur, controller.text.trim());
+                if (!ctx.mounted) return;
+                Navigator.pop(ctx);
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey, foregroundColor: Colors.white),
+            child: const Text("Güncelle"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _aracSinifiDuzenleDialog(String eskiSinif) {
+    final controller = TextEditingController(text: eskiSinif);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Sınıf Adını Düzenle"),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(border: OutlineInputBorder()),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Vazgeç")),
+          ElevatedButton(
+            onPressed: () async {
+              if (controller.text.isNotEmpty) {
+                await _firestoreServisi.aracSinifiGuncelle(eskiSinif, controller.text.trim());
+                if (!ctx.mounted) return;
+                Navigator.pop(ctx);
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey, foregroundColor: Colors.white),
+            child: const Text("Güncelle"),
+          ),
+        ],
+      ),
+    );
   }
 
   void _iptalNedenleriYonetimi() {
@@ -92,7 +312,7 @@ class _AdminEkraniState extends State<AdminEkrani> {
           TextField(
             controller: _iptalNedeniController,
             decoration: InputDecoration(
-              labelText: tip == "kullanici" ? "Müşteri İptal Nedeni Ekle" : "Esnaf İptal Nedeni Ekle", 
+              labelText: tip == "kullanici" ? "Müşteri İptal Nedeni Ekle" : "Esnaf İptal Nedeni Ekle",
               border: const OutlineInputBorder(),
               suffixIcon: IconButton(
                 icon: const Icon(Icons.add_circle, color: Colors.orange),
@@ -193,7 +413,7 @@ class _AdminEkraniState extends State<AdminEkrani> {
                   padding: EdgeInsets.fromLTRB(20, 10, 20, MediaQuery.of(context).viewInsets.bottom + 20),
                   child: Column(
                     children: [
-                      Text(_duzenlenenKategoriId == null ? "Kategori Yönetimi" : "Kategoriyi Düzenle", 
+                      Text(_duzenlenenKategoriId == null ? "Kategori Yönetimi" : "Kategoriyi Düzenle",
                           style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.green)),
                       const SizedBox(height: 20),
                       TextField(
@@ -228,9 +448,9 @@ class _AdminEkraniState extends State<AdminEkrani> {
                                   } else {
                                     // Güncellenirken isim değiştiyse alt belgeleri de güncelleyecek
                                     await _firestoreServisi.kategoriGuncelle(
-                                      _duzenlenenKategoriId!, 
-                                      _kategoriAdController.text,
-                                      eskiAd: _duzenlenenKategoriAd
+                                        _duzenlenenKategoriId!,
+                                        _kategoriAdController.text,
+                                        eskiAd: _duzenlenenKategoriAd
                                     );
                                   }
                                   if (!context.mounted) return;
@@ -263,9 +483,9 @@ class _AdminEkraniState extends State<AdminEkrani> {
                               final kat = kats[index];
                               return ListTile(
                                 leading: _buildKategoriIkonWidget(
-                                  kat['ad'], 
-                                  ikonKod: kat['ikon'] as int?,
-                                  color: _kategoriRengiGetir(kat['ad'], renkKod: kat['renk'] as int?)
+                                    kat['ad'],
+                                    ikonKod: kat['ikon'] as int?,
+                                    color: _kategoriRengiGetir(kat['ad'], renkKod: kat['renk'] as int?)
                                 ),
                                 title: Text(kat['ad']),
                                 trailing: Row(
@@ -347,7 +567,7 @@ class _AdminEkraniState extends State<AdminEkrani> {
           _ilController.text = sonuc['il'] ?? "";
           _ilceController.text = sonuc['ilce'] ?? "";
           _adresController.text = sonuc['tamAdres'] ?? "";
-          _gpsDurum = "Konum Tamam ✅";
+          _gpsDurum = "Konum Tamam ?";
         });
       }
     } else {
@@ -399,32 +619,32 @@ class _AdminEkraniState extends State<AdminEkrani> {
                       const SizedBox(height: 15),
 
                       StreamBuilder<List<Map<String, dynamic>>>(
-                        stream: _firestoreServisi.kategorileriGetir(),
-                        builder: (context, snapshot) {
-                          if (!snapshot.hasData) return const SizedBox();
-                          final kats = snapshot.data!;
-                          if (kats.isEmpty) return const Text("Lütfen önce kategori tanımlayın.");
+                          stream: _firestoreServisi.kategorileriGetir(),
+                          builder: (context, snapshot) {
+                            if (!snapshot.hasData) return const SizedBox();
+                            final kats = snapshot.data!;
+                            if (kats.isEmpty) return const Text("Lütfen önce kategori tanımlayın.");
 
-                          if (_secilenKategori.isEmpty || !kats.any((k) => k['ad'] == _secilenKategori)) {
-                            _secilenKategori = kats[0]['ad'];
-                          }
+                            if (_secilenKategori.isEmpty || !kats.any((k) => k['ad'] == _secilenKategori)) {
+                              _secilenKategori = kats[0]['ad'];
+                            }
 
-                          return InputDecorator(
-                            decoration: const InputDecoration(labelText: "Kategori", border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 10)),
-                            child: DropdownButtonHideUnderline(
-                              child: DropdownButtonFormField<String>(
-                                initialValue: kats.any((k) => k['ad'] == _secilenKategori) ? _secilenKategori : kats[0]['ad'],
-                                isExpanded: true,
-                                items: kats.map((e) => DropdownMenuItem(value: e['ad'] as String, child: Text(e['ad'] as String))).toList(),
-                                onChanged: (v) {
-                                  if (v != null) {
-                                    setModalState(() => _secilenKategori = v);
-                                  }
-                                },
+                            return InputDecorator(
+                              decoration: const InputDecoration(labelText: "Kategori", border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 10)),
+                              child: DropdownButtonHideUnderline(
+                                child: DropdownButtonFormField<String>(
+                                  initialValue: kats.any((k) => k['ad'] == _secilenKategori) ? _secilenKategori : kats[0]['ad'],
+                                  isExpanded: true,
+                                  items: kats.map((e) => DropdownMenuItem(value: e['ad'] as String, child: Text(e['ad'] as String))).toList(),
+                                  onChanged: (v) {
+                                    if (v != null) {
+                                      setModalState(() => _secilenKategori = v);
+                                    }
+                                  },
+                                ),
                               ),
-                            ),
-                          );
-                        }
+                            );
+                          }
                       ),
                       const SizedBox(height: 10),
                       TextField(controller: _adController, decoration: const InputDecoration(labelText: "İşletme Adı", isDense: true, border: OutlineInputBorder())),
@@ -453,7 +673,7 @@ class _AdminEkraniState extends State<AdminEkrani> {
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.blue.shade50,
                           minimumSize: const Size(double.infinity, 45),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          shape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
                         ),
                       ),
 
@@ -502,7 +722,7 @@ class _AdminEkraniState extends State<AdminEkrani> {
                           minimumSize: const Size(double.infinity, 50),
                           backgroundColor: Colors.blue,
                           foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          shape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
                         ),
                         child: Text(esnaf == null ? "Esnafı Kaydet" : "Değişiklikleri Kaydet"),
                       ),
@@ -560,6 +780,8 @@ class _AdminEkraniState extends State<AdminEkrani> {
                   const SizedBox(width: 8),
                   _adminButonUst(Icons.block, 'Randevu İptal\nNedenleri', Colors.orange, () => _iptalNedenleriYonetimi()),
                   const SizedBox(width: 8),
+                  _adminButonUst(Icons.directions_car, 'Araç Tür/Sınıf\nTanımı', Colors.blueGrey, () => _aracTuruYonetimi()),
+                  const SizedBox(width: 8),
                   _adminButonUst(Icons.calendar_month, 'Defterleri\nSıfırla', Colors.red, () => _ajandalariSifirla()),
                   const SizedBox(width: 8),
                   _adminButonUst(Icons.people, 'Üyeler', Colors.purple, () {}),
@@ -582,54 +804,54 @@ class _AdminEkraniState extends State<AdminEkrani> {
                 if (tumEsnaflar.isEmpty) return const Center(child: Text("Henüz esnaf kaydı yok."));
 
                 return StreamBuilder<List<Map<String, dynamic>>>(
-                  stream: _firestoreServisi.kategorileriGetir(),
-                  builder: (context, katSnapshot) {
-                    if (!katSnapshot.hasData) return const Center(child: CircularProgressIndicator());
-                    final kats = katSnapshot.data!;
-                    
-                    if (kats.isEmpty) {
-                      return const Center(child: Text("Lütfen önce kategori ekleyin."));
-                    }
+                    stream: _firestoreServisi.kategorileriGetir(),
+                    builder: (context, katSnapshot) {
+                      if (!katSnapshot.hasData) return const Center(child: CircularProgressIndicator());
+                      final kats = katSnapshot.data!;
 
-                    return CustomScrollView(
-                      slivers: [
-                        SliverList(
-                          delegate: SliverChildBuilderDelegate(
-                            (context, index) {
-                              final katVerisi = kats[index];
-                              final katAd = katVerisi['ad'];
-                              final kategoriEsnaflari = tumEsnaflar.where((e) => e.kategori == katAd).toList();
-                              
-                              return ExpansionTile(
-                                leading: _buildKategoriIkonWidget(
-                                  katAd, 
-                                  ikonKod: katVerisi['ikon'] as int?,
-                                  color: _kategoriRengiGetir(katAd, renkKod: katVerisi['renk'] as int?)
-                                ),
-                                title: Text("$katAd (${kategoriEsnaflari.length})", style: const TextStyle(fontWeight: FontWeight.bold)),
-                                children: kategoriEsnaflari.isEmpty 
-                                  ? [const Padding(padding: EdgeInsets.all(10), child: Text("Bu kategoride kayıtlı esnaf yok.", style: TextStyle(fontSize: 12, color: Colors.grey)))]
-                                  : kategoriEsnaflari.map((esnaf) => Card(
-                                  margin: const EdgeInsets.symmetric(horizontal: 15, vertical: 5),
-                                  elevation: 0.5,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: BorderSide(color: Colors.grey.shade200)),
-                                  child: ListTile(
-                                    title: Text(esnaf.isletmeAdi, style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
-                                    subtitle: Text("Tel: ${esnaf.telefon}\nAdres: ${esnaf.adres}"),
-                                    trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                                      IconButton(icon: const Icon(Icons.edit, color: Colors.orange, size: 20), onPressed: () => _esnafFormu(esnaf: esnaf)),
-                                      IconButton(icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20), onPressed: () => _confirmDelete(esnaf)),
-                                    ]),
+                      if (kats.isEmpty) {
+                        return const Center(child: Text("Lütfen önce kategori ekleyin."));
+                      }
+
+                      return CustomScrollView(
+                        slivers: [
+                          SliverList(
+                            delegate: SliverChildBuilderDelegate(
+                                  (context, index) {
+                                final katVerisi = kats[index];
+                                final katAd = katVerisi['ad'];
+                                final kategoriEsnaflari = tumEsnaflar.where((e) => e.kategori == katAd).toList();
+
+                                return ExpansionTile(
+                                  leading: _buildKategoriIkonWidget(
+                                      katAd,
+                                      ikonKod: katVerisi['ikon'] as int?,
+                                      color: _kategoriRengiGetir(katAd, renkKod: katVerisi['renk'] as int?)
                                   ),
-                                )).toList(),
-                              );
-                            },
-                            childCount: kats.length,
+                                  title: Text("$katAd (${kategoriEsnaflari.length})", style: const TextStyle(fontWeight: FontWeight.bold)),
+                                  children: kategoriEsnaflari.isEmpty
+                                      ? [const Padding(padding: EdgeInsets.all(10), child: Text("Bu kategoride kayıtlı esnaf yok.", style: TextStyle(fontSize: 12, color: Colors.grey)))]
+                                      : kategoriEsnaflari.map((esnaf) => Card(
+                                    margin: const EdgeInsets.symmetric(horizontal: 15, vertical: 5),
+                                    elevation: 0.5,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: BorderSide(color: Colors.grey.shade200)),
+                                    child: ListTile(
+                                      title: Text(esnaf.isletmeAdi, style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
+                                      subtitle: Text("Tel: ${esnaf.telefon}\nAdres: ${esnaf.adres}"),
+                                      trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                                        IconButton(icon: const Icon(Icons.edit, color: Colors.orange, size: 20), onPressed: () => _esnafFormu(esnaf: esnaf)),
+                                        IconButton(icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20), onPressed: () => _confirmDelete(esnaf)),
+                                      ]),
+                                    ),
+                                  )).toList(),
+                                );
+                              },
+                              childCount: kats.length,
+                            ),
                           ),
-                        ),
-                      ],
-                    );
-                  }
+                        ],
+                      );
+                    }
                 );
               },
             ),
@@ -720,7 +942,7 @@ class _AdminEkraniState extends State<AdminEkrani> {
     style: ElevatedButton.styleFrom(
       backgroundColor: r,
       padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(10))),
       minimumSize: const Size(80, 60),
     ),
     child: Column(

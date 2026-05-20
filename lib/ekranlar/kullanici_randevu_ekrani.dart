@@ -1,15 +1,12 @@
 import 'dart:async';
-import 'dart:ui';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../servisler/firestore_servisi.dart';
-import '../servisler/bildirim_servisi.dart';
 import '../modeller/randevu_modeli.dart';
 
 class KullaniciRandevuEkrani extends StatefulWidget {
   final String telefon;
-  KullaniciRandevuEkrani({super.key, required this.telefon});
+  const KullaniciRandevuEkrani({super.key, required this.telefon});
 
   @override
   State<KullaniciRandevuEkrani> createState() => _KullaniciRandevuEkraniState();

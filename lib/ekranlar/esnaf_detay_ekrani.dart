@@ -389,9 +389,9 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
                                     color: Colors.indigo.shade900,
                                     borderRadius: BorderRadius.circular(15),
                                     boxShadow: [
-                                      BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 8, offset: const Offset(0, 4))
+                                      BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 8, offset: const Offset(0, 4))
                                     ],
-                                    border: nobetci ? Border.all(color: Colors.orange.withOpacity(0.5), width: 1) : null,
+                                    border: nobetci ? Border.all(color: Colors.orange.withValues(alpha: 0.5), width: 1) : null,
                                   ),
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -419,7 +419,7 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
                                       const SizedBox(height: 4),
                                       Text(
                                         arac['soforAd'] ?? "Belirtilmemiş",
-                                        style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 12),
+                                        style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 12),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                       ),
@@ -437,7 +437,7 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
                                               istirahatli 
                                                 ? "İstirahatte" 
                                                 : ((durakta || nobetci) ? "Nöbetçi" : (arac['durum'] ?? "Müsait")),
-                                              style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 11),
+                                              style: TextStyle(color: Colors.white.withValues(alpha: 0.9), fontSize: 11),
                                               overflow: TextOverflow.ellipsis,
                                             ),
                                           ),

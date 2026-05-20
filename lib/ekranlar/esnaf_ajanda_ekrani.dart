@@ -805,8 +805,6 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                 
                 // Bugünü belirle
                 final DateTime simdi = DateTime.now();
-                final String bugunStr = DateFormat('yyyy-MM-dd').format(simdi);
-                final String seciliTarihStr = DateFormat('yyyy-MM-dd').format(_seciliTarih);
                 final bool gecmisGun = _seciliTarih.isBefore(DateTime(simdi.year, simdi.month, simdi.day));
 
                 // Uyumsuzluk Kontrolü (Sadece bugün ve gelecek için)
@@ -1100,6 +1098,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                 if (!snapshot.hasData) return const CircularProgressIndicator();
                 final nedenler = snapshot.data!;
                 return DropdownButtonFormField<String>(
+                  initialValue: null,
                   items: nedenler.map((n) => DropdownMenuItem(value: n, child: Text(n))).toList(),
                   onChanged: (v) => seciliNeden = v,
                   decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
@@ -2576,6 +2575,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                 if (!snapshot.hasData) return const CircularProgressIndicator();
                 final nedenler = snapshot.data!;
                 return DropdownButtonFormField<String>(
+                  initialValue: null,
                   items: nedenler.map((n) => DropdownMenuItem(value: n, child: Text(n))).toList(),
                   onChanged: (v) => seciliNeden = v,
                   decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
