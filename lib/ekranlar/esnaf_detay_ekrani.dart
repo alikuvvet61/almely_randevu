@@ -205,6 +205,66 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
     );
   }
 
+  void _resimGoster(BuildContext context, String url, String baslik) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(10),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            GestureDetector(
+              onTap: () => Navigator.pop(ctx),
+              child: InteractiveViewer(
+                minScale: 0.5,
+                maxScale: 4.0,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: Image.network(
+                    url,
+                    fit: BoxFit.contain,
+                    loadingBuilder: (context, child, loadingProgress) {
+                      if (loadingProgress == null) return child;
+                      return const Center(child: CircularProgressIndicator());
+                    },
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              top: 10,
+              right: 10,
+              child: CircleAvatar(
+                backgroundColor: Colors.black54,
+                child: IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white),
+                  onPressed: () => Navigator.pop(ctx),
+                ),
+              ),
+            ),
+            Positioned(
+              bottom: 20,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(30),
+                ),
+                child: Text(
+                  baslik,
+                  style: const TextStyle(
+                      color: Colors.white, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -318,7 +378,7 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
                       alignment: Alignment.center,
                       children: [
                         SizedBox(
-                          height: 115,
+                          height: 135,
                           child: Builder(builder: (context) {
                             List<Map<String, dynamic>> tumAraclar = List<Map<String, dynamic>>.from(_guncelEsnaf.araclar);
                             
@@ -333,12 +393,21 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
                             }).toList();
 
                             duraktakiAraclar.sort((a, b) {
+                              // 1. Nöbetçi olma durumu
+                              bool aNob = _nobetciKontrol(a);
+                              bool bNob = _nobetciKontrol(b);
+                              if (aNob != bNob) return aNob ? -1 : 1;
+
+                              // 2. Nöbet Sırasına göre (Nöbetçiler arası veya genel)
                               int n1 = a['nobetSirasi'] ?? 999999;
                               int n2 = b['nobetSirasi'] ?? 999999;
                               if (n1 != n2) return n1.compareTo(n2);
+
+                              // 3. siraZamani'na göre (en eski giren 1. olur)
                               int t1 = a['siraZamani'] ?? 0;
                               int t2 = b['siraZamani'] ?? 0;
                               if (t1 != t2) return t1.compareTo(t2);
+
                               return (a['plaka'] ?? "").compareTo(b['plaka'] ?? "");
                             });
 
@@ -349,16 +418,27 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
                               bool bIst = _istirahatKontrol(b);
                               if (aIst != bIst) return aIst ? 1 : -1;
 
-                              // Durakta olma durumu
+                              // Nöbetçi olma durumu (Nöbetçiler en üstte)
+                              bool aNob = _nobetciKontrol(a);
+                              bool bNob = _nobetciKontrol(b);
+                              if (aNob != bNob) return aNob ? -1 : 1;
+
+                              // Durakta olma durumu (Sıradakiler)
                               bool aDurakta = a['durakta'] == true;
                               bool bDurakta = b['durakta'] == true;
                               if (aDurakta != bDurakta) return aDurakta ? -1 : 1;
 
-                              // Eğer ikisi de duraktaysa nöbet sırası
-                              if (aDurakta && bDurakta) {
+                              // Sıralama kriterleri (Nöbet sırası veya Sira zamanı)
+                              if (aNob && bNob) {
                                 int n1 = a['nobetSirasi'] ?? 999999;
                                 int n2 = b['nobetSirasi'] ?? 999999;
                                 if (n1 != n2) return n1.compareTo(n2);
+                              }
+
+                              if (aDurakta && bDurakta) {
+                                int t1 = a['siraZamani'] ?? 0;
+                                int t2 = b['siraZamani'] ?? 0;
+                                if (t1 != t2) return t1.compareTo(t2);
                               }
                               
                               return (a['plaka'] ?? "").compareTo(b['plaka'] ?? "");
@@ -394,54 +474,127 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
                                     border: nobetci ? Border.all(color: Colors.orange.withValues(alpha: 0.5), width: 1) : null,
                                   ),
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
                                         children: [
-                                          Expanded(
+                                          Flexible(
                                             child: Text(
                                               arac['plaka'] ?? "-",
-                                              style: const TextStyle(color: Colors.yellow, fontWeight: FontWeight.bold, fontSize: 16),
+                                              style: const TextStyle(
+                                                  color: Colors.yellow,
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 15),
                                               overflow: TextOverflow.ellipsis,
                                             ),
                                           ),
                                           if (nobetci)
-                                            const Icon(Icons.shield_rounded, color: Colors.orange, size: 14),
-                                          const SizedBox(width: 4),
-                                          if (siraNo > 0)
                                             Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                              decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(4)),
-                                              child: Text(siraNo.toString(), style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      horizontal: 5,
+                                                      vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: Colors.orange
+                                                    .withValues(alpha: 0.15),
+                                                borderRadius:
+                                                    BorderRadius.circular(4),
+                                                border: Border.all(
+                                                    color: Colors.orange
+                                                        .withValues(alpha: 0.5),
+                                                    width: 0.5),
+                                              ),
+                                              child: const Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Icon(Icons.shield_rounded,
+                                                      color: Colors.orange,
+                                                      size: 10),
+                                                  SizedBox(width: 3),
+                                                  Text(
+                                                    "NÖBETÇİ",
+                                                    style: TextStyle(
+                                                        color: Colors.orange,
+                                                        fontSize: 7.5,
+                                                        fontWeight:
+                                                            FontWeight.bold),
+                                                  ),
+                                                ],
+                                              ),
                                             ),
                                         ],
                                       ),
-                                      const SizedBox(height: 4),
+                                      const SizedBox(height: 6),
                                       Text(
                                         arac['soforAd'] ?? "Belirtilmemiş",
-                                        style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 12),
+                                        style: TextStyle(
+                                            color: Colors.white
+                                                .withValues(alpha: 0.8),
+                                            fontSize: 12),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                       ),
+                                      const SizedBox(height: 8),
+                                      if (siraNo > 0)
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 8, vertical: 3),
+                                          decoration: BoxDecoration(
+                                              color: siraNo == 1
+                                                  ? Colors.green.shade700
+                                                  : Colors.white12,
+                                              borderRadius:
+                                                  BorderRadius.circular(6)),
+                                          child: Text(
+                                              siraNo == 1
+                                                  ? "SIRADAKİ ARAÇ"
+                                                  : "$siraNo. Sırada",
+                                              style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 9,
+                                                  fontWeight:
+                                                      FontWeight.bold)),
+                                        ),
                                       const Spacer(),
-                                      Row(
-                                        children: [
-                                          Icon(
-                                            Icons.circle,
-                                            size: 10,
-                                            color: istirahatli ? Colors.red : ((durakta || nobetci) ? Colors.orange : Colors.green),
-                                          ),
-                                          const SizedBox(width: 5),
-                                          Flexible(
-                                            child: Text(
-                                              istirahatli 
-                                                ? "İstirahatte" 
-                                                : ((durakta || nobetci) ? "Nöbetçi" : (arac['durum'] ?? "Müsait")),
-                                              style: TextStyle(color: Colors.white.withValues(alpha: 0.9), fontSize: 11),
-                                              overflow: TextOverflow.ellipsis,
+                                      Padding(
+                                        padding:
+                                            const EdgeInsets.only(bottom: 2),
+                                        child: Row(
+                                          children: [
+                                            Icon(
+                                              Icons.circle,
+                                              size: 10,
+                                              color: istirahatli
+                                                  ? Colors.red
+                                                  : (durakta
+                                                      ? Colors.blue
+                                                      : (nobetci
+                                                          ? Colors.orange
+                                                          : Colors.green)),
                                             ),
-                                          ),
-                                        ],
+                                            const SizedBox(width: 5),
+                                            Flexible(
+                                              child: Text(
+                                                istirahatli
+                                                    ? "İstirahatte"
+                                                    : (durakta
+                                                        ? "Durakta"
+                                                        : (nobetci
+                                                            ? "Nöbetçi"
+                                                            : (arac['durum'] ??
+                                                                "Müsait"))),
+                                                style: TextStyle(
+                                                    color: Colors.white
+                                                        .withValues(alpha: 0.9),
+                                                    fontSize: 11),
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
                                       ),
                                     ],
                                   ),
@@ -485,24 +638,87 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
                   ],
                   if (!_guncelEsnaf.randevuAlinmasin && _guncelEsnaf.kategori != 'Taksi' && _guncelEsnaf.kanallar != null && _guncelEsnaf.kanallar!.isNotEmpty) ...[
                     const SizedBox(height: 25),
-                    const Text("Kullanılabilir Randevu Alanları", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    Text(_guncelEsnaf.kategori == 'Araç Kiralama' ? "Araç Filomuz" : "Kullanılabilir Randevu Alanları", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 10),
-                    Wrap(
-                      spacing: 10,
-                      runSpacing: 10,
-                      children: _guncelEsnaf.kanallar!.map((kanal) => Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.blue.shade200)),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.check_circle, size: 16, color: Colors.blue),
-                            const SizedBox(width: 8),
-                            Text(kanal.toString(), style: const TextStyle(fontWeight: FontWeight.w600)),
-                          ],
-                        ),
-                      )).toList(),
-                    ),
+                    if (_guncelEsnaf.kategori == 'Araç Kiralama')
+                      Column(
+                        children: _guncelEsnaf.kanallar!.map((k) {
+                          String ad = "";
+                          String resim = "";
+                          String plaka = "";
+
+                          if (k is Map) {
+                            ad = k['ad']?.toString() ?? k['plaka']?.toString() ?? k['marka']?.toString() ?? "İsimsiz Araç";
+                            resim = k['resim']?.toString() ?? "";
+                            plaka = k['plaka']?.toString() ?? "";
+                          } else {
+                            String s = k.toString();
+                            if (s.contains('{')) {
+                              ad = s.split(',').firstWhere((e) => e.contains('ad:'), orElse: () => s).replaceAll('{', '').replaceAll('ad:', '').trim();
+                              plaka = s.contains('plaka:') ? s.split('plaka:')[1].split(',')[0].replaceAll('}', '').trim() : "";
+                            } else {
+                              ad = s;
+                            }
+                          }
+
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(15),
+                              border: Border.all(color: Colors.grey.shade200),
+                              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10)],
+                            ),
+                            child: Row(
+                              children: [
+                                GestureDetector(
+                                  onTap: resim.isNotEmpty ? () => _resimGoster(context, resim, ad) : null,
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(10),
+                                    child: resim.isNotEmpty
+                                        ? Image.network(resim, width: 100, height: 70, fit: BoxFit.cover)
+                                        : Container(width: 100, height: 70, color: Colors.grey.shade100, child: const Icon(Icons.directions_car, color: Colors.grey)),
+                                  ),
+                                ),
+                                const SizedBox(width: 15),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(ad, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                                      const SizedBox(height: 4),
+                                      if (plaka.isNotEmpty)
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                          decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(4)),
+                                          child: Text(plaka, style: TextStyle(color: Colors.blue.shade800, fontSize: 12, fontWeight: FontWeight.bold)),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      )
+                    else
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        children: _guncelEsnaf.kanallar!.map((kanal) => Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.blue.shade200)),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.check_circle, size: 16, color: Colors.blue),
+                              const SizedBox(width: 8),
+                              Text(kanal.toString(), style: const TextStyle(fontWeight: FontWeight.w600)),
+                            ],
+                          ),
+                        )).toList(),
+                      ),
                   ],
                   const SizedBox(height: 20),
                   Text(_guncelEsnaf.randevuAlinmasin ? "İletişim Bilgileri" : "İletişim ve Hızlı Randevu", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
@@ -724,15 +940,19 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
         'yorum': _yorumController.text.trim(),
         'tarih': FieldValue.serverTimestamp(),
       });
+      
+      if (!mounted) return;
+
       _yorumController.clear();
       setState(() {
         _secilenPuan = 0.0;
         _yorumGonderiliyor = false;
       });
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Yorumunuz başarıyla gönderildi!"), backgroundColor: Colors.green));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Yorumunuz başarıyla gönderildi!"), backgroundColor: Colors.green));
     } catch (e) {
+      if (!mounted) return;
       setState(() => _yorumGonderiliyor = false);
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Hata: $e"), backgroundColor: Colors.red));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Hata: $e"), backgroundColor: Colors.red));
     }
   }
 
@@ -844,17 +1064,22 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
         .map((a) => Map<String, dynamic>.from(a as Map))
         .toList();
     duraktakiAraclar.sort((a, b) {
-      // 1. Nöbet Sırasına göre
+      // 1. Nöbetçi olma durumu (Nöbetçi olan şoför her zaman önce gelir)
+      bool aNob = _nobetciKontrol(a);
+      bool bNob = _nobetciKontrol(b);
+      if (aNob != bNob) return aNob ? -1 : 1;
+
+      // 2. Nöbet Sırasına göre (Nöbetçiler arası veya genel)
       int n1 = a['nobetSirasi'] ?? 999999;
       int n2 = b['nobetSirasi'] ?? 999999;
       if (n1 != n2) return n1.compareTo(n2);
 
-      // 2. siraZamani'na göre (en eski giren 1. olur)
+      // 3. siraZamani'na göre (en eski giren 1. olur)
       int t1 = a['siraZamani'] ?? 0;
       int t2 = b['siraZamani'] ?? 0;
       if (t1 != t2) return t1.compareTo(t2);
       
-      // 3. Zamanlar eşitse plakaya göre (tutarlılık için)
+      // 4. Zamanlar eşitse plakaya göre (tutarlılık için)
       String p1 = a['plaka'] ?? "";
       String p2 = b['plaka'] ?? "";
       return p1.compareTo(p2);
@@ -988,9 +1213,9 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
         'mesafe': mesafe,
       });
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Taksi talebiniz başarıyla iletildi."), backgroundColor: Colors.green, behavior: SnackBarBehavior.floating));
-      }
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Taksi talebiniz başarıyla iletildi."), backgroundColor: Colors.green, behavior: SnackBarBehavior.floating));
 
       if (arac?['soforTel'] != null) {
         BildirimServisi.bildirimGonder(
@@ -1000,9 +1225,8 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
         );
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Talep gönderilirken hata oluştu: $e"), backgroundColor: Colors.red));
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Talep gönderilirken hata oluştu: $e"), backgroundColor: Colors.red));
     }
   }
 }
