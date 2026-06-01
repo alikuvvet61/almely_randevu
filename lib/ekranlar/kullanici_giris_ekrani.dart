@@ -24,7 +24,8 @@ class _KullaniciGirisSayfasiState extends State<KullaniciGirisSayfasi> {
 
     setState(() => _loading = true);
     
-    // Bildirimleri dinlemeye başla ve ana ekrana geç
+    // Bildirim ayarlarını yap
+    BildirimServisi.tokenKaydet(tel);
     BildirimServisi.bildirimDinle(tel);
     
     Future.delayed(const Duration(milliseconds: 500), () {

@@ -20,6 +20,7 @@ import 'durak_takip_ekrani.dart';
 import 'esnaf_ajanda_ekrani.dart';
 import 'esnaf_parametre_ekrani.dart';
 import 'esnaf_randevu_onay_ekrani.dart';
+import 'randevu_ekrani.dart';
 import 'taksi_cizelge_ekrani.dart';
 
 class EsnafPaneli extends StatefulWidget {
@@ -118,8 +119,32 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
 
     hizmetler = List<Map<String, dynamic>>.from(widget.esnaf.hizmetler ?? []);
     if (widget.esnaf.kategori == 'Araç Kiralama') {
-      kiralikAraclar = (widget.esnaf.kanallar ?? []).map((k) {
+      kiralikAraclar = (widget.esnaf.kanallar ?? []).map<Map<String, dynamic>>((k) {
         if (k is Map) return Map<String, dynamic>.from(k);
+        
+        // --- BAŞLANGIÇTA KURTARMA MANTIĞI ---
+        String raw = k.toString();
+        if (raw.startsWith('{') && raw.endsWith('}')) {
+          try {
+            Map<String, dynamic> recovered = {};
+            RegExp regExp = RegExp(r'([a-zA-Z0-9]+):\s?([^,}]+)');
+            for (var match in regExp.allMatches(raw)) {
+              String key = match.group(1)!;
+              String value = match.group(2)!.trim();
+              if (value == 'null' || value.isEmpty) continue;
+              if (['koltuk', 'bagaj', 'yas', 'ehliyet'].contains(key)) {
+                recovered[key] = int.tryParse(value);
+              } else if (['teminat', 'puan'].contains(key)) {
+                recovered[key] = double.tryParse(value);
+              } else if (key == 'klima') {
+                recovered[key] = value == 'true';
+              } else {
+                recovered[key] = value;
+              }
+            }
+            if (recovered.containsKey('ad')) return recovered;
+          } catch (e) { debugPrint("Açılış kurtarma hatası: $e"); }
+        }
         return {"ad": k.toString()};
       }).toList();
       kanallar = kiralikAraclar.map((a) => a["ad"].toString()).toList();
@@ -214,6 +239,29 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
             if (widget.esnaf.kategori == 'Araç Kiralama') {
               kiralikAraclar = (data['kanallar'] ?? []).map<Map<String, dynamic>>((k) {
                 if (k is Map) return Map<String, dynamic>.from(k);
+                
+                // KURTARMA MANTIĞI: String'e dönüşmüş veriyi Map'e çevir
+                String raw = k.toString();
+                if (raw.startsWith('{') && raw.endsWith('}')) {
+                  try {
+                    Map<String, dynamic> recovered = {};
+                    RegExp regExp = RegExp(r'([a-zA-Z0-9]+):\s?([^,}]+)');
+                    for (var match in regExp.allMatches(raw)) {
+                      String key = match.group(1)!;
+                      String value = match.group(2)!.trim();
+                      if (['koltuk', 'bagaj', 'yas', 'ehliyet'].contains(key)) {
+                        recovered[key] = int.tryParse(value);
+                      } else if (['teminat', 'puan'].contains(key)) {
+                        recovered[key] = double.tryParse(value);
+                      } else if (key == 'klima') {
+                        recovered[key] = value == 'true';
+                      } else {
+                        recovered[key] = value;
+                      }
+                    }
+                    if (recovered.containsKey('ad')) return recovered;
+                  } catch (e) { debugPrint("Kurtarma hatası: $e"); }
+                }
                 return {"ad": k.toString()};
               }).toList();
               kanallar = kiralikAraclar.map((a) => a["ad"].toString()).toList();
@@ -637,10 +685,14 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
       for (var tarihId in tarihler) {
         // Çok kanallı yapı desteği (Suffix mantığını StreamBuilder ile eşitle)
         List<String> docIds = [];
-        final normalizedKanallar = globalKanallar.map((k) => k.toString().trim()).where((k) => k.isNotEmpty).toList();
+        
+        final List<String> cleanKanalNames = globalKanallar.map<String>((k) {
+          if (k is Map) return (k['ad'] ?? k['plaka'] ?? k['aracTuru'] ?? '').toString().trim();
+          return k.toString().trim();
+        }).where((k) => k.isNotEmpty).toList();
 
-        if (normalizedKanallar.isNotEmpty && widget.esnaf.kategori != 'Taksi') {
-          docIds = normalizedKanallar.map((k) => "${tarihId}_$k").toList();
+        if (cleanKanalNames.isNotEmpty && widget.esnaf.kategori != 'Taksi') {
+          docIds = cleanKanalNames.map((k) => "${tarihId}_$k").toList();
         } else if (widget.esnaf.kategori == 'Taksi' && araclar.isNotEmpty) {
           docIds = araclar
               .where((a) => a['plaka'] != null && a['plaka'].toString().trim().isNotEmpty)
@@ -666,7 +718,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
             'slotAraligi': idealSlot,
             'acilis': acilisSaat,
             'kapanis': kapanisSaat,
-            'kanallar': normalizedKanallar,
+            'kanallar': cleanKanalNames,
             'personeller': globalPersoneller,
             'guncellemeTarihi': FieldValue.serverTimestamp(),
           }, SetOptions(merge: true));
@@ -694,7 +746,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
         'calismaSaatleri.slotAraligi': idealSlot,
         'calismaSaatleri.acilis': acilisSaat,
         'calismaSaatleri.kapanis': kapanisSaat,
-        'kanallar': globalKanallar.map((k) => k.toString().trim()).toList(),
+        'kanallar': widget.esnaf.kategori == 'Araç Kiralama' ? kiralikAraclar : globalKanallar.map((k) => k.toString().trim()).toList(),
         'aktifGunler': tumAktifGunler,
         'hizmetler': hizmetler,
         'personeller': widget.esnaf.kategori == 'Taksi'
@@ -1095,6 +1147,24 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
           renk: Colors.deepPurple,
           onTap: _esnafDuzenleFormu,
         ),
+        if (widget.esnaf.kategori == 'Araç Kiralama')
+          _yonetimKarti(
+            icon: Icons.add_task_rounded,
+            baslik: "Randevu Ver",
+            altBaslik: "Hızlı Kiralama",
+            renk: Colors.green.shade800,
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (c) => RandevuEkrani(
+                    esnaf: _guncelEsnaf,
+                    kullaniciTel: null,
+                  ),
+                ),
+              );
+            },
+          ),
       ],
     );
   }
@@ -1452,7 +1522,18 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
             var a = entry.value;
             return ListTile(
               leading: a["resim"] != null
-                ? ClipRRect(borderRadius: BorderRadius.circular(4), child: Image.network(a["resim"], width: 40, height: 40, fit: BoxFit.cover))
+                ? ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: Image.network(
+                      a["resim"],
+                      width: 40,
+                      height: 40,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) {
+                        return const Icon(Icons.image_not_supported, size: 40, color: Colors.grey);
+                      },
+                    ),
+                  )
                 : const Icon(Icons.directions_car, color: Colors.blue),
               title: Text(a["ad"] ?? "İsimsiz Araç"),
               subtitle: Text("${a["yakit"] ?? 'Yakıt Belirtilmedi'} • ${a["vites"] ?? 'Vites Belirtilmedi'}"),
@@ -1554,265 +1635,196 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
     final isYeni = idx == null;
     final data = isYeni ? <String, dynamic>{} : kiralikAraclar[idx];
 
-    final markaController = TextEditingController(text: data["marka"]);
-    final modelController = TextEditingController(text: data["model"]);
-    final plakaController = TextEditingController(text: data["plaka"]);
-    final koltukController = TextEditingController(text: data["koltuk"]?.toString());
-    final bagajController = TextEditingController(text: data["bagaj"]?.toString());
-    final yasController = TextEditingController(text: data["yas"]?.toString());
-    final ehliyetController = TextEditingController(text: data["ehliyet"]?.toString());
-    final teminatController = TextEditingController(text: data["teminat"]?.toString());
+    final mC = TextEditingController(text: data["marka"]);
+    final modC = TextEditingController(text: data["model"]);
+    final pC = TextEditingController(text: data["plaka"]);
+    final kC = TextEditingController(text: data["koltuk"]?.toString());
+    final bC = TextEditingController(text: data["bagaj"]?.toString());
+    final yC = TextEditingController(text: data["yas"]?.toString());
+    final eC = TextEditingController(text: data["ehliyet"]?.toString());
+    final tC = TextEditingController(text: data["teminat"]?.toString());
 
-    String? seciliYakit = data["yakit"];
-    String? seciliVites = data["vites"];
-    String? seciliAracTuru = data["aracTuru"];
-    String? seciliSinif = data["sinif"];
-    String? seciliTip = data["tip"];
-    String? resimUrl = data["resim"];
+    String? sYakit = data["yakit"];
+    String? sVites = data["vites"];
+    String? sATuru = data["aracTuru"];
+    String? sSinif = data["sinif"];
+    String? sTip = data["tip"];
+    String? rUrl = data["resim"];
     bool klima = data["klima"] ?? true;
     bool yukleniyor = false;
 
-    showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: Text(isYeni ? "Yeni Araç Ekle" : "Araç Bilgileri"),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                GestureDetector(
-                  onTap: () async {
-                    final picker = ImagePicker();
-                    final source = await showModalBottomSheet<ImageSource>(
-                      context: context,
-                      builder: (ctx) => SafeArea(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            ListTile(
-                              leading: const Icon(Icons.camera_alt),
-                              title: const Text('Kamera'),
-                              onTap: () => Navigator.pop(ctx, ImageSource.camera),
-                            ),
-                            ListTile(
-                              leading: const Icon(Icons.photo_library),
-                              title: const Text('Galeri'),
-                              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
-                            ),
-                          ],
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        builder: (context) => StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: Text(isYeni ? "Yeni Araç Ekle" : "Araç Bilgileri"),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  GestureDetector(
+                    onTap: () async {
+                      final picker = ImagePicker();
+                      final source = await showModalBottomSheet<ImageSource>(
+                        context: context,
+                        builder: (ctx) => SafeArea(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              ListTile(leading: const Icon(Icons.camera_alt), title: const Text('Kamera'), onTap: () => Navigator.pop(ctx, ImageSource.camera)),
+                              ListTile(leading: const Icon(Icons.photo_library), title: const Text('Galeri'), onTap: () => Navigator.pop(ctx, ImageSource.gallery)),
+                            ],
+                          ),
                         ),
-                      ),
-                    );
-
-                    if (source == null || !context.mounted) return;
-
-                    try {
-                      final image = await picker.pickImage(source: source, imageQuality: 50);
-                      if (image == null || !context.mounted) return;
-
-                      setDialogState(() => yukleniyor = true);
-
-                      final storageRef = FirebaseStorage.instance.ref().child("arac_resimleri/${DateTime.now().millisecondsSinceEpoch}.jpg");
-
-                      if (kIsWeb) {
-                        final bytes = await image.readAsBytes();
-                        await storageRef.putData(bytes, SettableMetadata(contentType: 'image/jpeg'));
-                      } else {
-                        await storageRef.putFile(File(image.path));
+                      );
+                      if (source == null || !context.mounted) return;
+                      try {
+                        final image = await picker.pickImage(source: source, imageQuality: 50);
+                        if (image == null || !context.mounted) return;
+                        setDialogState(() => yukleniyor = true);
+                        final storageRef = FirebaseStorage.instance.ref().child("arac_resimleri/${DateTime.now().millisecondsSinceEpoch}.jpg");
+                        if (kIsWeb) {
+                          await storageRef.putData(await image.readAsBytes(), SettableMetadata(contentType: 'image/jpeg'));
+                        } else {
+                          await storageRef.putFile(File(image.path));
+                        }
+                        final url = await storageRef.getDownloadURL();
+                        if (context.mounted) setDialogState(() { rUrl = url; yukleniyor = false; });
+                      } catch (e) {
+                        if (context.mounted) setDialogState(() => yukleniyor = false);
                       }
-
-                      final url = await storageRef.getDownloadURL();
-                      debugPrint("Firebase'den Gelen URL: $url");
-                      if (!context.mounted) return;
-
-                      setDialogState(() {
-                        resimUrl = url;
-                        yukleniyor = false;
-                      });
-                    } catch (e, stackTrace) {
-                      debugPrint("YÜKLEME HATASI DETAYI: $e");
-                      debugPrint("STACK TRACE: $stackTrace");
-                      setDialogState(() => yukleniyor = false);
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Yükleme Hatası: $e"), backgroundColor: Colors.red));
-                      }
-                    }
-                  },
-                  child: Container(
-                    height: 140,
-                    width: double.infinity,
-                    decoration: BoxDecoration(
-                      color: Colors.grey[100],
-                      borderRadius: BorderRadius.circular(15),
-                      border: Border.all(color: Colors.grey.shade300),
-                    ),
-                    child: yukleniyor
-                        ? const Center(child: CircularProgressIndicator())
-                        : resimUrl != null && resimUrl!.isNotEmpty
-                            ? Stack(
-                                children: [
-                                  Container(
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(15),
-                                      image: DecorationImage(
-                                        image: NetworkImage("$resimUrl?t=${DateTime.now().millisecondsSinceEpoch}"),
-                                        fit: BoxFit.cover,
-                                      ),
-                                    ),
-                                  ),
-                                  Positioned(
-                                    right: 5,
-                                    top: 5,
-                                    child: IconButton(
-                                      icon: const Icon(Icons.delete, color: Colors.red),
-                                      onPressed: () async {
-                                        try {
-                                          await FirebaseStorage.instance.refFromURL(resimUrl!).delete();
-                                          setDialogState(() {
-                                            resimUrl = null;
-                                          });
-                                        } catch (e) {
-                                          debugPrint("Silme hatası: $e");
-                                        }
-                                      },
-                                    ),
-                                  ),
-                                ],
-                              )
-                            : const Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(Icons.add_a_photo_outlined, size: 40, color: Colors.blueGrey),
-                                  SizedBox(height: 8),
-                                  Text("Araç Resmi Ekle", style: TextStyle(color: Colors.blueGrey)),
-                                ],
+                    },
+                    child: Stack(
+                      children: [
+                        Container(
+                          height: 120, width: double.infinity,
+                          decoration: BoxDecoration(color: Colors.grey[100], borderRadius: BorderRadius.circular(15), border: Border.all(color: Colors.grey.shade300)),
+                          child: yukleniyor ? const Center(child: CircularProgressIndicator()) : rUrl != null 
+                            ? ClipRRect(borderRadius: BorderRadius.circular(15), child: Image.network(rUrl!, fit: BoxFit.cover))
+                            : const Icon(Icons.add_a_photo_outlined, size: 40, color: Colors.blueGrey),
+                        ),
+                        if (rUrl != null && !yukleniyor)
+                          Positioned(
+                            top: 5, right: 5,
+                            child: GestureDetector(
+                              onTap: () => setDialogState(() => rUrl = null),
+                              child: Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+                                child: const Icon(Icons.close, color: Colors.white, size: 18),
                               ),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(height: 15),
-                Row(
-                  children: [
-                    Expanded(child: TextField(controller: markaController, decoration: const InputDecoration(labelText: "Marka", hintText: "Fiat"))),
-                    const SizedBox(width: 10),
-                    Expanded(child: TextField(controller: modelController, decoration: const InputDecoration(labelText: "Model", hintText: "Egea"))),
-                  ],
-                ),
-                TextField(controller: plakaController, decoration: const InputDecoration(labelText: "Plaka", hintText: "34 ABC 123")),
-                const SizedBox(height: 10),
-                StreamBuilder<List<String>>(
-                  stream: FirestoreServisi().aracTurleriniGetir(),
-                  builder: (context, snapshot) {
-                    final turler = snapshot.data ?? [];
-                    return DropdownButtonFormField<String>(
-                      initialValue: turler.contains(seciliAracTuru) ? seciliAracTuru : null,
-                      decoration: const InputDecoration(labelText: "Araç Türü (Yönetici)"),
-                      items: turler.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
-                      onChanged: (v) => setDialogState(() => seciliAracTuru = v),
-                    );
-                  }
-                ),
-                StreamBuilder<List<String>>(
-                  stream: FirestoreServisi().aracSiniflariniGetir(),
-                  builder: (context, snapshot) {
-                    final siniflar = snapshot.data ?? [];
-                    return DropdownButtonFormField<String>(
-                      initialValue: siniflar.contains(seciliSinif) ? seciliSinif : null,
-                      decoration: const InputDecoration(labelText: "Araç Sınıfı"),
-                      items: siniflar.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
-                      onChanged: (v) => setDialogState(() => seciliSinif = v),
-                    );
-                  }
-                ),
-                DropdownButtonFormField<String>(
-                  initialValue: seciliYakit,
-                  decoration: const InputDecoration(labelText: "Yakıt Tipi"),
-                  items: ["Dizel", "Benzin", "Hibrit", "Elektrik"].map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
-                  onChanged: (v) => setDialogState(() => seciliYakit = v),
-                ),
-                DropdownButtonFormField<String>(
-                  initialValue: seciliVites,
-                  decoration: const InputDecoration(labelText: "Vites Tipi"),
-                  items: ["Otomatik", "Manuel"].map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
-                  onChanged: (v) => setDialogState(() => seciliVites = v),
-                ),
-                StreamBuilder<List<String>>(
-                  stream: FirestoreServisi().aracTurleriniGetir(),
-                  builder: (context, snapshot) {
-                    final turler = snapshot.data ?? [];
-                    return DropdownButtonFormField<String>(
-                      initialValue: turler.contains(seciliTip) ? seciliTip : null,
-                      decoration: const InputDecoration(labelText: "Araç Tipi"),
-                      items: turler.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
-                      onChanged: (v) => setDialogState(() => seciliTip = v),
-                    );
-                  }
-                ),
-                Row(
-                  children: [
-                    Expanded(child: TextField(controller: koltukController, decoration: const InputDecoration(labelText: "Koltuk"), keyboardType: TextInputType.number)),
-                    const SizedBox(width: 10),
-                    Expanded(child: TextField(controller: bagajController, decoration: const InputDecoration(labelText: "Bagaj (Litre)"), keyboardType: TextInputType.number)),
-                  ],
-                ),
-                SwitchListTile(
-                  title: const Text("Klima"),
-                  value: klima,
-                  onChanged: (v) => setDialogState(() => klima = v),
-                ),
-                const Divider(),
-                const Text("Kiralama Koşulları", style: TextStyle(fontWeight: FontWeight.bold)),
-                TextField(controller: yasController, decoration: const InputDecoration(labelText: "Minimum Müşteri Yaşı"), keyboardType: TextInputType.number),
-                TextField(controller: ehliyetController, decoration: const InputDecoration(labelText: "Minimum Müşteri Ehliyet Yılı"), keyboardType: TextInputType.number),
-                TextField(controller: teminatController, decoration: const InputDecoration(labelText: "Araç Teminat Tutarı (₺)"), keyboardType: TextInputType.number),
-              ],
+                  const SizedBox(height: 15),
+                  Row(children: [Expanded(child: TextField(controller: mC, decoration: const InputDecoration(labelText: "Marka"))), const SizedBox(width: 10), Expanded(child: TextField(controller: modC, decoration: const InputDecoration(labelText: "Model")))]),
+                  TextField(controller: pC, decoration: const InputDecoration(labelText: "Plaka")),
+                  const SizedBox(height: 10),
+                  StreamBuilder<List<String>>(
+                    stream: FirestoreServisi().aracTurleriniGetir(),
+                    builder: (context, snapshot) {
+                      final turler = snapshot.data ?? [];
+                      return DropdownButtonFormField<String>(
+                        initialValue: turler.contains(sATuru) ? sATuru : null,
+                        decoration: const InputDecoration(labelText: "Araç Türü (Yönetici)"),
+                        items: turler.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+                        onChanged: (v) => setDialogState(() => sATuru = v),
+                      );
+                    }
+                  ),
+                  StreamBuilder<List<String>>(
+                    stream: FirestoreServisi().aracSiniflariniGetir(),
+                    builder: (context, snapshot) {
+                      final siniflar = snapshot.data ?? [];
+                      return DropdownButtonFormField<String>(
+                        initialValue: siniflar.contains(sSinif) ? sSinif : null,
+                        decoration: const InputDecoration(labelText: "Araç Sınıfı"),
+                        items: siniflar.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+                        onChanged: (v) => setDialogState(() => sSinif = v),
+                      );
+                    }
+                  ),
+                  DropdownButtonFormField<String>(
+                    initialValue: sYakit,
+                    decoration: const InputDecoration(labelText: "Yakıt Tipi"),
+                    items: ["Dizel", "Benzin", "Hibrit", "Elektrik"].map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+                    onChanged: (v) => setDialogState(() => sYakit = v),
+                  ),
+                  DropdownButtonFormField<String>(
+                    initialValue: sVites,
+                    decoration: const InputDecoration(labelText: "Vites Tipi"),
+                    items: ["Otomatik", "Manuel"].map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+                    onChanged: (v) => setDialogState(() => sVites = v),
+                  ),
+                  StreamBuilder<List<String>>(
+                    stream: FirestoreServisi().aracTurleriniGetir(),
+                    builder: (context, snapshot) {
+                      final turler = snapshot.data ?? [];
+                      return DropdownButtonFormField<String>(
+                        initialValue: turler.contains(sTip) ? sTip : null,
+                        decoration: const InputDecoration(labelText: "Araç Tipi"),
+                        items: turler.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+                        onChanged: (v) => setDialogState(() => sTip = v),
+                      );
+                    }
+                  ),
+                  Row(
+                    children: [
+                      Expanded(child: TextField(controller: kC, decoration: const InputDecoration(labelText: "Koltuk"), keyboardType: TextInputType.number)),
+                      const SizedBox(width: 10),
+                      Expanded(child: TextField(controller: bC, decoration: const InputDecoration(labelText: "Bagaj (Litre)"), keyboardType: TextInputType.number)),
+                    ],
+                  ),
+                  SwitchListTile(
+                    title: const Text("Klima"),
+                    value: klima,
+                    onChanged: (v) => setDialogState(() => klima = v),
+                  ),
+                  const Divider(),
+                  const Text("Kiralama Koşulları", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                  TextField(controller: yC, decoration: const InputDecoration(labelText: "Minimum Müşteri Yaşı"), keyboardType: TextInputType.number),
+                  TextField(controller: eC, decoration: const InputDecoration(labelText: "Min. Ehliyet Yılı"), keyboardType: TextInputType.number),
+                  TextField(controller: tC, decoration: const InputDecoration(labelText: "Teminat (₺)"), keyboardType: TextInputType.number),
+                ],
+              ),
             ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  mC.dispose(); modC.dispose(); pC.dispose(); kC.dispose(); bC.dispose(); yC.dispose(); eC.dispose(); tC.dispose();
+                  Navigator.pop(context);
+                },
+                child: const Text("Vazgeç"),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  if (mC.text.isEmpty) return;
+                  final tamAd = "${mC.text} ${modC.text} (${pC.text})";
+                  final yeniArac = {
+                    "ad": tamAd, "marka": mC.text, "model": modC.text, "plaka": pC.text, "aracTuru": sATuru, 
+                    "sinif": sSinif, "yakit": sYakit, "vites": sVites, "tip": sTip, "resim": rUrl,
+                    "koltuk": int.tryParse(kC.text), "bagaj": int.tryParse(bC.text), "klima": klima,
+                    "yas": int.tryParse(yC.text), "ehliyet": int.tryParse(eC.text), "teminat": double.tryParse(tC.text),
+                  };
+                  setState(() {
+                    if (isYeni) { kiralikAraclar.add(yeniArac); kanallar.add(tamAd); } 
+                    else { kiralikAraclar[idx] = yeniArac; kanallar[idx] = tamAd; }
+                    _degisiklikVar = true;
+                  });
+                  mC.dispose(); modC.dispose(); pC.dispose(); kC.dispose(); bC.dispose(); yC.dispose(); eC.dispose(); tC.dispose();
+                  Navigator.pop(context);
+                },
+                child: Text(isYeni ? "Ekle" : "Güncelle"),
+              ),
+            ],
           ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text("Vazgeç")),
-            ElevatedButton(
-              onPressed: () {
-                if (markaController.text.trim().isEmpty || modelController.text.trim().isEmpty) return;
-
-                final tamAd = "${markaController.text.trim()} ${modelController.text.trim()} (${plakaController.text.trim()})";
-
-                final yeniArac = {
-                  "ad": tamAd,
-                  "marka": markaController.text.trim(),
-                  "model": modelController.text.trim(),
-                  "plaka": plakaController.text.trim(),
-                  "aracTuru": seciliAracTuru,
-                  "sinif": seciliSinif,
-                  "yakit": seciliYakit,
-                  "vites": seciliVites,
-                  "tip": seciliTip,
-                  "resim": resimUrl,
-                  "koltuk": int.tryParse(koltukController.text),
-                  "bagaj": int.tryParse(bagajController.text),
-                  "klima": klima,
-                  "yas": int.tryParse(yasController.text),
-                  "ehliyet": int.tryParse(ehliyetController.text),
-                  "teminat": double.tryParse(teminatController.text),
-                };
-
-                setState(() {
-                  if (isYeni) {
-                    kiralikAraclar.add(yeniArac);
-                    kanallar.add(yeniArac["ad"].toString());
-                  } else {
-                    kiralikAraclar[idx] = yeniArac;
-                    kanallar[idx] = yeniArac["ad"].toString();
-                  }
-                  _degisiklikVar = true;
-                });
-                Navigator.pop(context);
-              },
-              child: Text(isYeni ? "Ekle" : "Güncelle"),
-            ),
-          ],
         ),
-      ),
-    );
+      );
+    });
   }
 
   void _kanalDuzenle(int idx) {
@@ -1940,9 +1952,9 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
 
   void _hizmetDuzenle(int idx) {
     var h = hizmetler[idx];
-    String isim = h["isim"] ?? "";
-    int sure = h["sure"] ?? 30;
-    double ucret = (h["ucret"] ?? 0).toDouble();
+    final isimController = TextEditingController(text: h["isim"] ?? "");
+    final sureController = TextEditingController(text: (h["sure"] ?? 30).toString());
+    final ucretController = TextEditingController(text: (h["ucret"] ?? 0).toString().replaceAll(".0", ""));
     bool ucretGoster = h["ucretGoster"] ?? false;
 
     showDialog(
@@ -1954,20 +1966,46 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                if (widget.esnaf.kategori == 'Araç Kiralama') ...[
+                  DropdownButtonFormField<String>(
+                    decoration: const InputDecoration(labelText: "Hizmet Adı"),
+                    initialValue: ["Saatlik Kiralama", "Günlük Kiralama"].contains(isimController.text) 
+                        ? isimController.text 
+                        : "Saatlik Kiralama",
+                    items: const [
+                      DropdownMenuItem(value: "Saatlik Kiralama", child: Text("Saatlik Kiralama")),
+                      DropdownMenuItem(value: "Günlük Kiralama", child: Text("Günlük Kiralama")),
+                    ],
+                    onChanged: (v) {
+                      setModalState(() {
+                        if (v != null) {
+                          isimController.text = v;
+                          if (v == "Saatlik Kiralama") {
+                            sureController.text = "120";
+                          } else {
+                            sureController.text = "1440";
+                          }
+                        }
+                      });
+                    },
+                  ),
+                ] else
+                  TextFormField(
+                    controller: isimController,
+                    decoration: const InputDecoration(labelText: "Hizmet Adı"),
+                  ),
                 TextFormField(
-                  initialValue: isim,
-                  onChanged: (v) => isim = v,
-                  decoration: const InputDecoration(labelText: "Hizmet Adı"),
-                ),
-                TextFormField(
-                  initialValue: sure.toString(),
-                  onChanged: (v) => sure = int.tryParse(v) ?? 30,
-                  decoration: const InputDecoration(labelText: "Süre (Dakika)"),
+                  controller: sureController,
+                  decoration: InputDecoration(
+                    labelText: "Süre (Dakika)",
+                    helperText: widget.esnaf.kategori == 'Araç Kiralama' 
+                      ? (isimController.text.toLowerCase().contains("saatlik") ? "Min 2 Saat, Max 8 Saat" : "24 Saat ve Katları")
+                      : null,
+                  ),
                   keyboardType: TextInputType.number,
                 ),
                 TextFormField(
-                  initialValue: ucret.toString().replaceAll(".0", ""),
-                  onChanged: (v) => ucret = double.tryParse(v) ?? 0,
+                  controller: ucretController,
                   decoration: const InputDecoration(labelText: "Ücret (Opsiyonel)", suffixText: "TL"),
                   keyboardType: TextInputType.number,
                 ),
@@ -1986,21 +2024,43 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
             TextButton(onPressed: () => Navigator.pop(context), child: const Text("Vazgeç")),
             TextButton(
               onPressed: () {
-                if (isim.isNotEmpty) {
-                  setState(() {
-                    hizmetler[idx] = {
-                      "isim": isim,
-                      "sure": sure,
-                      "ucret": ucret,
-                      "ucretGoster": ucretGoster,
-                    };
-                    if (idx < _hizmetSureControllerList.length) {
-                      _hizmetSureControllerList[idx].text = sure.toString();
+                final isim = isimController.text.trim();
+                final sure = int.tryParse(sureController.text) ?? 30;
+                final ucret = double.tryParse(ucretController.text) ?? 0;
+
+                if (isim.isEmpty) return;
+
+                if (widget.esnaf.kategori == 'Araç Kiralama') {
+                  if (isim.toLowerCase().contains("saatlik")) {
+                    if (sure < 120 || sure > 480) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text("Saatlik kiralama 2 ile 8 saat arasında (120-480 dk) olmalıdır."))
+                      );
+                      return;
                     }
-                    _degisiklikVar = true;
-                  });
-                  Navigator.pop(context);
+                  } else if (isim.toLowerCase().contains("günlük")) {
+                    if (sure < 1440 || sure % 1440 != 0) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text("Günlük kiralama 24 saatlik periyotlar (1440 dk) halinde olmalıdır."))
+                      );
+                      return;
+                    }
+                  }
                 }
+
+                setState(() {
+                  hizmetler[idx] = {
+                    "isim": isim,
+                    "sure": sure,
+                    "ucret": ucret,
+                    "ucretGoster": ucretGoster,
+                  };
+                  if (idx < _hizmetSureControllerList.length) {
+                    _hizmetSureControllerList[idx].text = sure.toString();
+                  }
+                  _degisiklikVar = true;
+                });
+                Navigator.pop(context);
               },
               child: const Text("Güncelle"),
             ),
@@ -2137,9 +2197,13 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
         }),
         TextButton.icon(
           onPressed: () {
-            String isim = "";
-            int sure = 30;
-            double ucret = 0;
+            final isimController = TextEditingController(
+              text: widget.esnaf.kategori == 'Araç Kiralama' ? "Saatlik Kiralama" : ""
+            );
+            final sureController = TextEditingController(
+              text: widget.esnaf.kategori == 'Araç Kiralama' ? "120" : "30"
+            );
+            final ucretController = TextEditingController(text: "0");
             bool ucretGoster = false;
 
             showDialog(
@@ -2151,14 +2215,41 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        TextField(onChanged: (v) => isim = v, decoration: const InputDecoration(labelText: "Hizmet Adı")),
+                        if (widget.esnaf.kategori == 'Araç Kiralama') ...[
+                          DropdownButtonFormField<String>(
+                            decoration: const InputDecoration(labelText: "Hizmet Adı"),
+                            initialValue: "Saatlik Kiralama",
+                            items: const [
+                              DropdownMenuItem(value: "Saatlik Kiralama", child: Text("Saatlik Kiralama")),
+                              DropdownMenuItem(value: "Günlük Kiralama", child: Text("Günlük Kiralama")),
+                            ],
+                            onChanged: (v) {
+                              setModalState(() {
+                                if (v != null) {
+                                  isimController.text = v;
+                                  if (v == "Saatlik Kiralama") {
+                                    sureController.text = "120";
+                                  } else {
+                                    sureController.text = "1440";
+                                  }
+                                }
+                              });
+                            },
+                          ),
+                        ] else
+                          TextField(controller: isimController, decoration: const InputDecoration(labelText: "Hizmet Adı")),
                         TextField(
-                          onChanged: (v) => sure = int.tryParse(v) ?? 30,
-                          decoration: const InputDecoration(labelText: "Süre (Dakika)"),
+                          controller: sureController,
+                          decoration: InputDecoration(
+                            labelText: "Süre (Dakika)",
+                            helperText: widget.esnaf.kategori == 'Araç Kiralama' 
+                              ? (isimController.text.toLowerCase().contains("saatlik") ? "Min 2 Saat, Max 8 Saat" : "24 Saat ve Katları")
+                              : null,
+                          ),
                           keyboardType: TextInputType.number,
                         ),
                         TextField(
-                          onChanged: (v) => ucret = double.tryParse(v) ?? 0,
+                          controller: ucretController,
                           decoration: const InputDecoration(labelText: "Ücret (Opsiyonel)", suffixText: "TL"),
                           keyboardType: TextInputType.number,
                         ),
@@ -2176,7 +2267,29 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                   actions: [
                     TextButton(onPressed: () => Navigator.pop(context), child: const Text("Vazgeç")),
                     TextButton(onPressed: () {
+                      final isim = isimController.text.trim();
+                      final sure = int.tryParse(sureController.text) ?? 30;
+                      final ucret = double.tryParse(ucretController.text) ?? 0;
+
                       if (isim.isNotEmpty) {
+                        if (widget.esnaf.kategori == 'Araç Kiralama') {
+                          if (isim.toLowerCase().contains("saatlik")) {
+                            if (sure < 120 || sure > 480) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text("Saatlik kiralama 2 ile 8 saat arasında (120-480 dk) olmalıdır."))
+                              );
+                              return;
+                            }
+                          } else if (isim.toLowerCase().contains("günlük")) {
+                            if (sure < 1440 || sure % 1440 != 0) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text("Günlük kiralama 24 saatlik periyotlar (1440 dk) halinde olmalıdır."))
+                              );
+                              return;
+                            }
+                          }
+                        }
+
                         setState(() {
                           hizmetler.add({
                             "isim": isim,
@@ -2188,7 +2301,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                           _degisiklikVar = true;
                         });
                         if (!mounted) return;
-              Navigator.pop(context);
+                        Navigator.pop(context);
                       }
                     }, child: const Text("Ekle")),
                   ],
@@ -2280,6 +2393,8 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
       case 'Kuaför':
       case 'Berber':
         return "Örn: 'Saç Kesim', 'Sakal Traşı', 'Fön'. Her hizmetin süresini belirleyerek randevuların çakışmasını önleyebilirsiniz.";
+      case 'Araç Kiralama':
+        return "Kiralama hizmetlerinizi 'Saatlik' (120-480 dk) veya 'Günlük' (1440 dk) olarak tanımlayabilirsiniz. Sistem bu sürelere göre araç takvimini otomatik kapatır.";
       default:
         return "Hizmetlerinizin ortalama süresini belirlemek (Örn: 30 dk, 1 saat), randevu aralıklarını otomatik olarak en verimli şekilde düzenler.";
     }
@@ -2468,6 +2583,95 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                         ),
                       ),
                     ),
+                  
+                  if (widget.esnaf.kategori == 'Araç Kiralama') ...[
+                    _bolumKart(
+                      baslik: "Araç Filomuz",
+                      initiallyExpanded: true,
+                      icerik: Column(
+                        children: kiralikAraclar.map((a) {
+                          String ad = a["ad"] ?? "İsimsiz Araç";
+                          String? resim = a["resim"];
+                          String? plaka = a["plaka"];
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(15),
+                              border: Border.all(color: Colors.grey.shade200),
+                              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10)],
+                            ),
+                            child: Row(
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: (resim != null && resim.isNotEmpty)
+                                      ? Image.network(resim, width: 90, height: 65, fit: BoxFit.cover)
+                                      : Container(width: 90, height: 65, color: Colors.grey.shade100, child: const Icon(Icons.directions_car, color: Colors.grey)),
+                                ),
+                                const SizedBox(width: 15),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        plaka != null && plaka.isNotEmpty ? "$ad ($plaka)" : ad,
+                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      if (plaka != null && plaka.isNotEmpty)
+                                        Container(
+                                          margin: const EdgeInsets.only(top: 6),
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: Colors.blue.shade50,
+                                            borderRadius: BorderRadius.circular(4),
+                                            border: Border.all(color: Colors.blue.shade100),
+                                          ),
+                                          child: Text(
+                                            plaka,
+                                            style: TextStyle(color: Colors.blue.shade800, fontSize: 12, fontWeight: FontWeight.bold),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 20),
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (c) => RandevuEkrani(
+                                esnaf: _guncelEsnaf,
+                                kullaniciTel: null,
+                              ),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.add_task_rounded, color: Colors.white, size: 24),
+                        label: const Text("Randevu Ver", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue.shade600,
+                          minimumSize: const Size(double.infinity, 60),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                          elevation: 4,
+                          shadowColor: Colors.blue.withValues(alpha: 0.4),
+                        ),
+                      ),
+                    ),
+                  ],
+
                   _yonetimButonlari(),
                   const SizedBox(height: 15),
 
@@ -2541,7 +2745,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                                 children: [
                                   _saatSecici(
-                                    "Nöbet Başlangıç",
+                                    widget.esnaf.kategori == 'Araç Kiralama' ? "Başlangıç" : "Nöbet Başlangıç",
                                     _nobetBaslangic,
                                     (v) => setState(() {
                                       _nobetBaslangic = v;
@@ -2550,7 +2754,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                                   ),
                                   const Icon(Icons.swap_horiz, color: Colors.grey),
                                   _saatSecici(
-                                    "Nöbet Bitiş",
+                                    widget.esnaf.kategori == 'Araç Kiralama' ? "Bitiş" : "Nöbet Bitiş",
                                     _nobetBitis,
                                     (v) => setState(() {
                                       _nobetBitis = v;
@@ -2595,6 +2799,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                       icerik: _kanallarWidget()
                     ),
                     if (widget.esnaf.kategori != 'Taksi')
+                      if (widget.esnaf.kategori != 'Araç Kiralama')
                       _bolumKart(baslik: "Personeller", initiallyExpanded: false, icerik: _personellerWidget()),
 
                     _bolumKart(

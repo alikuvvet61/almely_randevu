@@ -118,17 +118,18 @@ class _EsnafParametreEkraniState extends State<EsnafParametreEkrani> {
                 onChanged: (v) => _guncelle({'ayniGunRandevuEngelle': v}),
               ),
             ),
-            _parametreKart(
-              baslik: "Slot Görünüm Modu",
-              altBaslik: "Randevu saatleri '10:00' yerine '10:00 - 11:00' şeklinde mi görünsün? (Örn: Halı Sahalar için)",
-              icon: Icons.timer_outlined,
-              icerik: SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text("Aralıklı Göster", style: TextStyle(fontSize: 16)),
-                value: _esnaf!.slotAralikliGoster,
-                onChanged: (v) => _guncelle({'slotAralikliGoster': v}),
+            if (_esnaf!.kategori != 'Araç Kiralama')
+              _parametreKart(
+                baslik: "Slot Görünüm Modu",
+                altBaslik: "Randevu saatleri '10:00' yerine '10:00 - 11:00' şeklinde mi görünsün? (Örn: Halı Sahalar için)",
+                icon: Icons.timer_outlined,
+                icerik: SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text("Aralıklı Göster", style: TextStyle(fontSize: 16)),
+                  value: _esnaf!.slotAralikliGoster,
+                  onChanged: (v) => _guncelle({'slotAralikliGoster': v}),
+                ),
               ),
-            ),
           ],
           if (_esnaf!.kategori == 'Taksi') ...[
             _parametreKart(
@@ -206,7 +207,124 @@ class _EsnafParametreEkraniState extends State<EsnafParametreEkrani> {
               ),
             ),
           ],
-          if (_esnaf!.kategori != 'Taksi')
+          if (_esnaf!.kategori == 'Araç Kiralama')
+            _parametreKart(
+              baslik: "Bakım ve Temizlik Süresi",
+              altBaslik: "Her kiralama randevusu bittikten sonra araç yaklaşık ${_esnaf!.bakimTemizlikSuresi ~/ 60} saat ${_esnaf!.bakimTemizlikSuresi % 60 > 0 ? '${_esnaf!.bakimTemizlikSuresi % 60} dk ' : ''}boyunca bakıma alınacaktır.",
+              icon: Icons.cleaning_services_rounded,
+              icerik: Column(
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Slider(
+                          value: _esnaf!.bakimTemizlikSuresi.toDouble(),
+                          min: 0,
+                          max: 480,
+                          divisions: 16, // 30 dk aralıklar
+                          label: "${_esnaf!.bakimTemizlikSuresi} dk",
+                          onChanged: (v) {
+                            setState(() {
+                              _esnaf = _esnaf!.copyWith(bakimTemizlikSuresi: v.round());
+                            });
+                          },
+                          onChangeEnd: (v) => _guncelle({'bakimTemizlikSuresi': v.round()}),
+                        ),
+                      ),
+                      Container(
+                        width: 70,
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          "${_esnaf!.bakimTemizlikSuresi}dk",
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const Text("Sınır: 0 - 8 Saat (480 dk)", style: TextStyle(fontSize: 13, color: Colors.grey)),
+                  const Divider(height: 30),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text("Bakım Sırasında Kiralama", style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                    subtitle: const Text("İşaretli olursa araç bakım sürecindeyken de yeni randevu alınabilir."),
+                    value: _esnaf!.bakimSurecindeRandevuAlinsin,
+                    onChanged: (v) async {
+                      setState(() {
+                        _esnaf = _esnaf!.copyWith(bakimSurecindeRandevuAlinsin: v);
+                      });
+                      await _guncelle({'bakimSurecindeRandevuAlinsin': v});
+                    },
+                  ),
+                  const Divider(height: 30),
+                  _parametreBaslik("Akıllı Takip Modu", Icons.auto_graph_rounded),
+                  const SizedBox(height: 10),
+                  Text(
+                    "Kiralama bitimine ${_esnaf!.akilliTakipSuresi ~/ 60} saat ${_esnaf!.akilliTakipSuresi % 60 > 0 ? '${_esnaf!.akilliTakipSuresi % 60} dk ' : ''}kala müşteriye bildirim gider. Eğer araç müsaitse, sistem otonom olarak uzatma teklif eder.",
+                    style: const TextStyle(fontSize: 13, color: Colors.grey, height: 1.4),
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text("Modu Aktif Et", style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                    value: _esnaf!.akilliTakipModu,
+                    onChanged: (v) async {
+                      setState(() {
+                        _esnaf = _esnaf!.copyWith(akilliTakipModu: v);
+                      });
+                      await _guncelle({'akilliTakipModu': v});
+                    },
+                  ),
+                  if (_esnaf!.akilliTakipModu) ...[
+                    const SizedBox(height: 10),
+                    const Text("Bildirim Zamanı", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Slider(
+                            value: _esnaf!.akilliTakipSuresi.toDouble(),
+                            min: 30,
+                            max: 300,
+                            divisions: 9, // 30 dk aralıklar
+                            label: "${_esnaf!.akilliTakipSuresi} dk",
+                            onChanged: (v) {
+                              setState(() {
+                                _esnaf = _esnaf!.copyWith(akilliTakipSuresi: v.round());
+                              });
+                            },
+                            onChangeEnd: (v) => _guncelle({'akilliTakipSuresi': v.round()}),
+                          ),
+                        ),
+                        Text("${_esnaf!.akilliTakipSuresi} dk", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
+                      ],
+                    ),
+                    const SizedBox(height: 15),
+                    const Text("Saatlik Uzatma Ücreti (TL)", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      key: ValueKey("uzatma_ucreti_${_esnaf!.id}"),
+                      initialValue: _esnaf!.saatlikUzatmaUcreti.toStringAsFixed(0),
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        suffixText: "TL / Saat",
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      ),
+                      onFieldSubmitted: (v) {
+                        double? ucret = double.tryParse(v);
+                        if (ucret != null) {
+                          _guncelle({'saatlikUzatmaUcreti': ucret});
+                        }
+                      },
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          if (_esnaf!.kategori != 'Taksi' && _esnaf!.kategori != 'Araç Kiralama')
             _parametreKart(
               baslik: "Personel Odaklı Sistem",
               altBaslik: "Müşteri kanal/saha yerine personeli seçsin. Personel seçimi zorunlu hale gelir.",
@@ -231,6 +349,16 @@ class _EsnafParametreEkraniState extends State<EsnafParametreEkrani> {
             ),
         ],
       ),
+    );
+  }
+
+  Widget _parametreBaslik(String baslik, IconData icon) {
+    return Row(
+      children: [
+        Icon(icon, size: 20, color: Colors.blue),
+        const SizedBox(width: 8),
+        Text(baslik, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+      ],
     );
   }
 

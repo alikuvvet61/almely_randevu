@@ -2,9 +2,24 @@ import 'package:flutter/material.dart';
 import 'kullanici_giris_ekrani.dart';
 import 'esnaf_giris_ekrani.dart';
 import 'admin_giris_ekrani.dart';
+import '../servisler/versiyon_servisi.dart';
 
-class GirisSecimSayfasi extends StatelessWidget {
+class GirisSecimSayfasi extends StatefulWidget {
   const GirisSecimSayfasi({super.key});
+
+  @override
+  State<GirisSecimSayfasi> createState() => _GirisSecimSayfasiState();
+}
+
+class _GirisSecimSayfasiState extends State<GirisSecimSayfasi> {
+  @override
+  void initState() {
+    super.initState();
+    // Uygulama açıldığında versiyon kontrolü yap
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      VersiyonServisi.versiyonKontrol(context);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {

@@ -3,14 +3,24 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
+import 'package:timezone/data/latest_all.dart' as tz;
+import 'package:timezone/timezone.dart' as tz;
+import 'package:flutter_timezone/flutter_timezone.dart';
 
 class BildirimServisi {
   static FirebaseMessaging get _fcm => FirebaseMessaging.instance;
-  static final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
+  static final FlutterLocalNotificationsPlugin _localNotifications =
+      FlutterLocalNotificationsPlugin();
 
   static Future<void> initialize() async {
-    if (kIsWeb) return; // Web üzerinde FCM ve yerel bildirimler şu an devre dışı
-    // 1. Bildirim izinlerini iste (iOS ve Android 13+)
+    if (kIsWeb) return;
+
+    // 1. Timezone ayarlarını yap
+    tz.initializeTimeZones();
+    final timeZoneName = await FlutterTimezone.getLocalTimezone();
+    tz.setLocalLocation(tz.getLocation(timeZoneName.toString()));
+
+    // 2. Bildirim izinlerini iste
     NotificationSettings settings = await _fcm.requestPermission(
       alert: true,
       badge: true,
@@ -93,7 +103,8 @@ class BildirimServisi {
     required String baslik,
     required String icerik,
   }) async {
-    final docRef = await FirebaseFirestore.instance.collection('bildirimler').add({
+    final docRef =
+        await FirebaseFirestore.instance.collection('bildirimler').add({
       'aliciTel': kullaniciTel,
       'baslik': baslik,
       'icerik': icerik,
@@ -101,6 +112,39 @@ class BildirimServisi {
       'tarih': FieldValue.serverTimestamp(),
     });
     debugPrint("Bildirim Firestore'a eklendi: ${docRef.id}");
+  }
+
+  // Akıllı Takip Modu için yerel saatli bildirim kur (App kapalıyken çalışır)
+  static Future<void> saatliBildirimKur({
+    required int id,
+    required String baslik,
+    required String icerik,
+    required DateTime zaman,
+  }) async {
+    if (kIsWeb) return;
+    
+    // Eğer zaman geçmişteyse hemen gönder veya iptal et
+    if (zaman.isBefore(DateTime.now())) return;
+
+    await _localNotifications.zonedSchedule(
+      id,
+      baslik,
+      icerik,
+      tz.TZDateTime.from(zaman, tz.local),
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'akilli_takip_kanali',
+          'Akıllı Takip Bildirimleri',
+          channelDescription: 'Kiralama süresi bitimine yakın uyarılar.',
+          importance: Importance.max,
+          priority: Priority.high,
+        ),
+      ),
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+    );
+    debugPrint("Saatli bildirim kuruldu: $zaman");
   }
 
   // Firestore'daki bildirimleri dinle ve telefona bildirim olarak bas

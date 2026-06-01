@@ -56,15 +56,20 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
     _esnafStream = _firestoreServisi.esnafGetir(widget.esnaf.id);
     
     if (widget.esnaf.kanallar != null && widget.esnaf.kanallar!.isNotEmpty) {
-      _seciliKanallar.add(widget.esnaf.kanallar!.first.toString());
+      final k = widget.esnaf.kanallar!.first;
+      String kanalId;
+      if (k is Map) {
+        kanalId = k['ad']?.toString() ?? k['plaka']?.toString() ?? k['aracTuru']?.toString() ?? k.toString();
+      } else {
+        kanalId = k.toString();
+      }
+      _seciliKanallar.add(kanalId);
     } else if (widget.esnaf.kategori == 'Taksi' && (widget.esnaf.aracOdakliSistem || widget.esnaf.randevularPersonelAdinaAlinsin) && widget.esnaf.araclar.isNotEmpty) {
       _seciliKanallar.add(widget.esnaf.araclar.first['plaka']);
     } else {
       _seciliKanallar.add("Uygulama");
     }
     
-    _seciliAcilisSaat = widget.esnaf.calismaSaatleri?['acilis'] ?? "09:00";
-    _seciliKapanisSaat = widget.esnaf.calismaSaatleri?['kapanis'] ?? "18:00";
     _seciliAcilisSaat = widget.esnaf.calismaSaatleri?['acilis'] ?? "09:00";
     _seciliKapanisSaat = widget.esnaf.calismaSaatleri?['kapanis'] ?? "18:00";
     _periyotController = TextEditingController(text: _periyotDeger.toString());
@@ -83,6 +88,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
   }
 
   void _ajandaStreamGuncelle() {
+    if (widget.esnaf.id.isEmpty) return;
     setState(() {
       // Eğer araçlar seçiliyse Durak dışındaki ilk kanalı dinle, yoksa ilkini seç
       String? kanal = _seciliKanallar.firstWhere((k) => k != 'Durak', orElse: () => _seciliKanallar.isNotEmpty ? _seciliKanallar.first : "");
@@ -244,7 +250,10 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
         // Çok kanallı yapı desteği (Suffix mantığını Panel ile eşitle)
         List<String> docIds = [];
         if (guncelKanallar.isNotEmpty && esnaf.kategori != 'Taksi') {
-          docIds = guncelKanallar.map((k) => "${tarihId}_$k").toList();
+          docIds = guncelKanallar.map((k) {
+            if (k is Map) return "${tarihId}_${k['ad'] ?? k['plaka'] ?? k['aracTuru']}";
+            return "${tarihId}_$k";
+          }).toList();
         } else if (esnaf.kategori == 'Taksi' && esnaf.araclar.isNotEmpty) {
           docIds = esnaf.araclar.map((a) => "${tarihId}_${a['plaka']}").toList();
         } else {
@@ -292,7 +301,6 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
         'calismaSaatleri.slotAraligi': guncelSlot,
         'calismaSaatleri.acilis': guncelAcilis,
         'calismaSaatleri.kapanis': guncelKapanis,
-        'kanallar': guncelKanallar.map((k) => k.toString()).toList(),
         'aktifGunler': tumAktifGunler,
       });
 
@@ -316,7 +324,91 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
     }
   }
 
+  void _aracKiralamaHizliKurulum(EsnafModeli esnaf) async {
+    bool? onay = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Hızlı Ajanda Kurulumu"),
+        content: const Text(
+          "Tüm araçlarınız için bugünden itibaren 30 günlük 7/24 ajanda programı otomatik olarak oluşturulacaktır.\n\n"
+          "Mevcut randevularınız etkilenmez. Devam etmek istiyor musunuz?"
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Vazgeç")),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.purple, foregroundColor: Colors.white),
+            child: const Text("Evet, Kurulumu Başlat"),
+          ),
+        ],
+      ),
+    );
+
+    if (onay != true || !mounted) return;
+
+    showDialog(
+      context: context, 
+      barrierDismissible: false, 
+      builder: (c) => const Center(
+        child: Card(
+          child: Padding(
+            padding: EdgeInsets.all(20.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(color: Colors.purple),
+                SizedBox(height: 15),
+                Text("Otomatik Yapılandırılıyor...", style: TextStyle(fontWeight: FontWeight.bold)),
+                Text("Lütfen bekleyin", style: TextStyle(fontSize: 12)),
+              ],
+            ),
+          ),
+        ),
+      )
+    );
+
+    try {
+      final List<DateTime> tarihler = [];
+      final bugun = DateTime.now();
+      for (int i = 0; i < 30; i++) {
+        tarihler.add(DateTime(bugun.year, bugun.month, bugun.day + i));
+      }
+
+      final List<String> tumKanalIsimleri = (esnaf.kanallar ?? []).map<String>((k) {
+        if (k is Map) return (k['ad'] ?? k['plaka'] ?? k['aracTuru'] ?? '').toString().trim();
+        return k.toString().trim();
+      }).where((k) => k.isNotEmpty).toList();
+
+      for (String kanal in tumKanalIsimleri) {
+        // Araç Kiralama için 24 saatlik periyot başlangıç saatine göre ayarlanır
+        String baslangic = esnaf.nobetBaslangic ?? "00:00";
+        await _firestoreServisi.ajandaOlustur(
+          esnafId: esnaf.id,
+          tarihler: tarihler,
+          kanal: kanal,
+          acilis: baslangic,
+          kapanis: baslangic,
+          slotAraligi: _slotAraligi,
+        );
+      }
+
+      if (!mounted) return;
+      Navigator.pop(context); // Loader'ı kapat
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("30 günlük ajanda başarıyla yapılandırıldı."), backgroundColor: Colors.purple)
+      );
+      _ajandaStreamGuncelle();
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Hata: $e"), backgroundColor: Colors.red));
+      }
+    }
+  }
+
   void _ajandaOlustur(EsnafModeli esnaf) async {
+    final is724 = esnaf.calismaSaatleri?['acilis'] == '00:00' && esnaf.calismaSaatleri?['kapanis'] == '00:00';
+
     if (_birGunCalisBirGunYat || esnaf.kategori == 'Taksi') {
       if (_birGunCalisIlkGun == null) {
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Lütfen başlangıç günü seçin")));
@@ -368,8 +460,6 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
       }
     } else {
       // Normal Mantık
-      final is724 = esnaf.calismaSaatleri?['acilis'] == '00:00' && esnaf.calismaSaatleri?['kapanis'] == '00:00';
-
       for (int i = 0; i <= gunSayisi; i++) {
         DateTime gun = _baslangicTarihi!.add(Duration(days: i));
         String gunAdi = DateFormat('EEEE', 'tr_TR').format(gun);
@@ -482,14 +572,22 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
           }
 
           if (tarihler.isNotEmpty) {
+            String baslangic = (is724 && esnaf.kategori == 'Araç Kiralama') 
+                ? (esnaf.nobetBaslangic ?? "00:00") 
+                : (is724 ? "00:00" : _seciliAcilisSaat!);
+            
+            String bitis = (is724 && esnaf.kategori == 'Araç Kiralama')
+                ? baslangic
+                : (is724 ? "00:00" : _seciliKapanisSaat!);
+
             await _firestoreServisi.ajandaOlustur(
               esnafId: widget.esnaf.id,
               tarihler: tarihler,
               kanal: kanal.trim(),
-              acilis: _seciliAcilisSaat!,
-              kapanis: _seciliKapanisSaat!,
-              ogleBaslangic: _ogleArasiVar ? _ogleBaslangic : null,
-              ogleBitis: _ogleArasiVar ? _ogleBitis : null,
+              acilis: baslangic,
+              kapanis: bitis,
+              ogleBaslangic: (!is724 && _ogleArasiVar) ? _ogleBaslangic : null,
+              ogleBitis: (!is724 && _ogleArasiVar) ? _ogleBitis : null,
               slotAraligi: _slotAraligi,
             );
           }
@@ -673,7 +771,11 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
 
       DateTime bas = DateFormat("HH:mm").parse(acilisStr);
       DateTime bit = DateFormat("HH:mm").parse(kapanisStr);
-      if (bit.isBefore(bas) || kapanisStr == "00:00" || kapanisStr == "24:00") bit = bit.add(const Duration(days: 1));
+      
+      // Eğer başlangıç ve bitiş aynıysa (7/24 tam gün) veya bitiş başlangıçtan önceyse (ertesi gün)
+      if (bit.isBefore(bas) || bit.isAtSameMomentAs(bas) || kapanisStr == "00:00" || kapanisStr == "24:00") {
+        bit = bit.add(const Duration(days: 1));
+      }
       
       DateTime temp = bas;
       while (temp.isBefore(bit)) {
@@ -698,18 +800,29 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
   }
 
   bool _isSlotInRange(String slot, RandevuModeli r, Map<String, dynamic> ajanda, EsnafModeli esnaf) {
-    int current = _saatiDakikayaCevir(slot);
-    int start = _saatiDakikayaCevir(r.saat);
-    String acilis = ajanda['acilis'] ?? esnaf.calismaSaatleri?['acilis'] ?? "09:00";
-    int acilisDakika = _saatiDakikayaCevir(acilis);
-    if (current < acilisDakika) current += 1440;
-    if (start < acilisDakika) start += 1440;
-    int end = start + r.sure;
-    return current >= start && current < end;
+    // 1. Slotun zamanını belirle (Seçili gün + slot saati)
+    final sParcalar = slot.split(':');
+    DateTime slotTime = DateTime(_seciliTarih.year, _seciliTarih.month, _seciliTarih.day,
+        int.parse(sParcalar[0]), int.parse(sParcalar[1]));
+
+    // 2. Randevu aralığını belirle
+    final rParcalar = r.saat.split(':');
+    DateTime rStart = DateTime(r.tarih.year, r.tarih.month, r.tarih.day,
+        int.parse(rParcalar[0]), int.parse(rParcalar[1]));
+    DateTime rEnd = rStart.add(Duration(minutes: r.sure));
+
+    // 3. Çakışma kontrolü (Slot zamanı, randevu başlangıç ve bitişi arasındaysa)
+    return (slotTime.isAtSameMomentAs(rStart) || slotTime.isAfter(rStart)) && slotTime.isBefore(rEnd);
   }
 
   @override
   Widget build(BuildContext context) {
+    if (widget.esnaf.id.isEmpty) {
+      return Scaffold(
+        appBar: AppBar(title: const Text("Hata")),
+        body: const Center(child: Text("Esnaf ID bulunamadı. Lütfen tekrar giriş yapın.")),
+      );
+    }
     return StreamBuilder<EsnafModeli>(
       stream: _esnafStream,
       builder: (context, esnafSnapshot) {
@@ -739,6 +852,12 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
             foregroundColor: Colors.black,
             elevation: 0,
             actions: [
+              if (guncelEsnaf.kategori == 'Araç Kiralama')
+                IconButton(
+                  icon: const Icon(Icons.auto_fix_high, color: Colors.purple),
+                  onPressed: () => _aracKiralamaHizliKurulum(guncelEsnaf),
+                  tooltip: "30 Günlük Otomatik Kurulum",
+                ),
               StreamBuilder<DocumentSnapshot>(
                 stream: _ajandaStream,
                 builder: (context, snapshot) {
@@ -837,7 +956,10 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                 // Seçili kanalın hala geçerli olup olmadığını kontrol et (Flicker engelleme)
                 bool secimGecersiz = _seciliKanallar.isNotEmpty && 
                     !_seciliKanallar.every((k) => 
-                        (guncelEsnaf.kanallar ?? []).map((e) => e.toString()).contains(k) || 
+                        (guncelEsnaf.kanallar ?? []).map((e) {
+                          if (e is Map) return e['ad']?.toString() ?? e['plaka']?.toString() ?? e['aracTuru']?.toString() ?? e.toString();
+                          return e.toString();
+                        }).contains(k) ||
                         (guncelEsnaf.kategori == 'Taksi' && guncelEsnaf.araclar.any((a) => a['plaka'] == k)) ||
                         k == "Uygulama"
                     );
@@ -1499,8 +1621,14 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
     // 2. Diğer kanalları da ekle (Eğer araç odaklı değilse veya ek kanal varsa)
     if (!aracModu && esnaf.kanallar != null && esnaf.kanallar!.isNotEmpty) {
       for (var k in esnaf.kanallar!) {
-        String kanal = k.toString();
-        if (!tumKanallar.contains(kanal)) {
+        String kanal;
+        if (k is Map) {
+          kanal = k['ad']?.toString() ?? k['plaka']?.toString() ?? k['aracTuru']?.toString() ?? k.toString();
+        } else {
+          kanal = k.toString();
+        }
+        
+        if (kanal.isNotEmpty && !tumKanallar.contains(kanal)) {
           tumKanallar.add(kanal);
         }
       }
@@ -1555,6 +1683,21 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
               orElse: () => null,
             );
             if (p != null) soforAdi = p['isim'];
+          }
+
+          // Araç Kiralama için detay bilgisini çek
+          if (esnaf.kategori == 'Araç Kiralama' && soforAdi == null) {
+            final a = esnaf.kanallar?.firstWhere(
+              (element) {
+                if (element is! Map) return false;
+                String name = element['ad']?.toString() ?? element['plaka']?.toString() ?? element['aracTuru']?.toString() ?? "";
+                return name == kanalAdi;
+              },
+              orElse: () => null,
+            );
+            if (a != null && a is Map) {
+              soforAdi = "${a['aracTuru'] ?? ''} ${a['vites'] ?? ''}".trim();
+            }
           }
 
           final isSelected = _seciliKanallar.contains(kanalAdi);
@@ -2472,13 +2615,31 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                 if (islenmisRandevular.contains(randevu.id)) return const SizedBox.shrink();
                 islenmisRandevular.add(randevu.id);
 
+                // Randevu zamanlarını belirle
+                final rParcalar = randevu.saat.split(':');
+                DateTime rStart = DateTime(randevu.tarih.year, randevu.tarih.month, randevu.tarih.day,
+                    int.parse(rParcalar[0]), int.parse(rParcalar[1]));
+                DateTime rEnd = rStart.add(Duration(minutes: randevu.sure));
+                
+                // Mevcut slot zamanını belirle
+                final sParcalar = saat.split(':');
+                DateTime currentSlot = DateTime(_seciliTarih.year, _seciliTarih.month, _seciliTarih.day,
+                    int.parse(sParcalar[0]), int.parse(sParcalar[1]));
+
+                bool isFirstSlot = (currentSlot.isAtSameMomentAs(rStart) || (currentSlot.isAfter(rStart) && currentSlot.subtract(Duration(minutes: slotDakika)).isBefore(rStart)));
+                bool isLastSlot = currentSlot.add(Duration(minutes: slotDakika)).isAfter(rEnd) || currentSlot.add(Duration(minutes: slotDakika)).isAtSameMomentAs(rEnd);
+
                 return Container(
-                  margin: const EdgeInsets.only(bottom: 6),
+                  margin: EdgeInsets.only(bottom: isLastSlot ? 6 : 0),
                   height: 70, 
                   decoration: BoxDecoration(
                     color: Colors.orange.withValues(alpha: 0.05),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.orange.withValues(alpha: 0.3), width: 1),
+                    border: Border(
+                      left: BorderSide(color: Colors.orange.withValues(alpha: 0.3), width: 1),
+                      right: BorderSide(color: Colors.orange.withValues(alpha: 0.3), width: 1),
+                      top: isFirstSlot ? BorderSide(color: Colors.orange.withValues(alpha: 0.3), width: 1) : BorderSide.none,
+                      bottom: isLastSlot ? BorderSide(color: Colors.orange.withValues(alpha: 0.3), width: 1) : BorderSide.none,
+                    ),
                   ),
                   child: Row(
                     children: [
@@ -2486,10 +2647,18 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                         width: 105,
                         decoration: BoxDecoration(
                           color: Colors.orange.withValues(alpha: 0.1),
-                          borderRadius: const BorderRadius.horizontal(left: Radius.circular(7)),
+                          borderRadius: BorderRadius.vertical(
+                            top: isFirstSlot ? const Radius.circular(7) : Radius.zero,
+                            bottom: isLastSlot ? const Radius.circular(7) : Radius.zero,
+                          ),
                         ),
                         child: Center(
-                          child: _saatGostergesi(randevu.saat, bitisSaati, esnaf.slotAralikliGoster, Colors.orange.shade800),
+                          child: _saatGostergesi(
+                            randevu.saat == saat ? randevu.saat : saat, 
+                            bitisSaati, 
+                            esnaf.slotAralikliGoster, 
+                            Colors.orange.shade800
+                          ),
                         ),
                       ),
                       Expanded(
@@ -2504,41 +2673,52 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
-                                      Text(
-                                        randevu.kullaniciAd, 
-                                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.orange.shade900),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      Text(
-                                        randevu.hizmetAdi, 
-                                        style: const TextStyle(fontSize: 15, color: Colors.black87),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
+                                      if (isFirstSlot) ...[
+                                        Text(
+                                          randevu.kullaniciAd, 
+                                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.orange.shade900),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        Text(
+                                          randevu.hizmetAdi, 
+                                          style: const TextStyle(fontSize: 15, color: Colors.black87),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ] else 
+                                        Text(
+                                          "Kiralama Devam Ediyor...", 
+                                          style: TextStyle(color: Colors.orange.shade700, fontSize: 13, fontStyle: FontStyle.italic),
+                                        ),
                                     ],
                                   ),
                                 ),
-                                if (_seciliKanallar.length > 1) 
-                                  Container(
-                                    margin: const EdgeInsets.symmetric(horizontal: 6),
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                    decoration: BoxDecoration(color: Colors.orange.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(6)),
-                                    child: Text(randevu.randevuKanali ?? '', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.orange)),
+                                if (isFirstSlot) ...[
+                                  if (_seciliKanallar.length > 1) 
+                                    Container(
+                                      margin: const EdgeInsets.symmetric(horizontal: 6),
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                      decoration: BoxDecoration(color: Colors.orange.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(6)),
+                                      child: Text(randevu.randevuKanali ?? '', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.orange)),
+                                    ),
+                                  Text(
+                                    randevu.kullaniciTel, 
+                                    style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
                                   ),
-                                Text(
-                                  randevu.kullaniciTel, 
-                                  style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
-                                ),
+                                ],
                               ],
                             ),
                           ),
                         ),
                       ),
-                      const Padding(
-                        padding: EdgeInsets.only(right: 12),
-                        child: Icon(Icons.check_circle_rounded, color: Colors.green, size: 28),
-                      ),
+                      if (isFirstSlot || isLastSlot)
+                        const Padding(
+                          padding: EdgeInsets.only(right: 12),
+                          child: Icon(Icons.check_circle_rounded, color: Colors.green, size: 28),
+                        )
+                      else 
+                        const SizedBox(width: 40),
                     ],
                   ),
                 );

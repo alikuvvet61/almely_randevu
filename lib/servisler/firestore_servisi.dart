@@ -1,5 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-
+import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import '../modeller/esnaf_modeli.dart';
 import '../modeller/randevu_modeli.dart';
@@ -18,70 +18,133 @@ class FirestoreServisi {
   CollectionReference get _ayarlarRef => _db.collection('ayarlar');
 
   // --- AYARLAR VE TANIMLAMALAR ---
+  List<String> get _varsayilanAracTurleri => ["Binek", "SUV", "Minibüs", "Panelvan", "Kamyonet"];
+  List<String> get _varsayilanAracSiniflari => ["Ekonomik", "Orta", "Üst Sınıf", "Lüks", "VIP"];
+
   Stream<List<String>> aracTurleriniGetir() {
     return _ayarlarRef.doc('arac_tanimlari').snapshots().map((doc) {
-      if (!doc.exists) return ["Binek", "SUV", "Minibüs", "Panelvan", "Kamyonet"];
+      if (!doc.exists) return _varsayilanAracTurleri;
       final data = doc.data() as Map<String, dynamic>;
-      return List<String>.from(data['turler'] ?? ["Binek", "SUV", "Minibüs", "Panelvan", "Kamyonet"]);
+      return List<String>.from(data['turler'] ?? _varsayilanAracTurleri);
     });
   }
 
   Future<void> aracTuruEkle(String tur) async {
-    await _ayarlarRef.doc('arac_tanimlari').set({
-      'turler': FieldValue.arrayUnion([tur])
-    }, SetOptions(merge: true));
+    DocumentReference docRef = _ayarlarRef.doc('arac_tanimlari');
+    await _db.runTransaction((transaction) async {
+      DocumentSnapshot snapshot = await transaction.get(docRef);
+      List<String> turler;
+      if (!snapshot.exists || (snapshot.data() as Map<String, dynamic>)['turler'] == null) {
+        turler = List.from(_varsayilanAracTurleri);
+      } else {
+        turler = List<String>.from((snapshot.data() as Map<String, dynamic>)['turler']);
+      }
+
+      if (!turler.contains(tur)) {
+        turler.add(tur);
+        transaction.set(docRef, {'turler': turler}, SetOptions(merge: true));
+      }
+    });
   }
 
   Future<void> aracTuruSil(String tur) async {
-    await _ayarlarRef.doc('arac_tanimlari').update({
-      'turler': FieldValue.arrayRemove([tur])
+    DocumentReference docRef = _ayarlarRef.doc('arac_tanimlari');
+    await _db.runTransaction((transaction) async {
+      DocumentSnapshot snapshot = await transaction.get(docRef);
+      List<String> turler;
+      if (!snapshot.exists || (snapshot.data() as Map<String, dynamic>)['turler'] == null) {
+        turler = List.from(_varsayilanAracTurleri);
+      } else {
+        turler = List<String>.from((snapshot.data() as Map<String, dynamic>)['turler']);
+      }
+
+      if (turler.contains(tur)) {
+        turler.remove(tur);
+        transaction.set(docRef, {'turler': turler}, SetOptions(merge: true));
+      }
     });
   }
 
   Future<void> aracTuruGuncelle(String eskiTur, String yeniTur) async {
-    var doc = await _ayarlarRef.doc('arac_tanimlari').get();
-    if (doc.exists) {
-      final data = doc.data() as Map<String, dynamic>;
-      List<String> turler = List<String>.from(data['turler'] ?? []);
+    DocumentReference docRef = _ayarlarRef.doc('arac_tanimlari');
+    await _db.runTransaction((transaction) async {
+      DocumentSnapshot snapshot = await transaction.get(docRef);
+      List<String> turler;
+      if (!snapshot.exists || (snapshot.data() as Map<String, dynamic>)['turler'] == null) {
+        turler = List.from(_varsayilanAracTurleri);
+      } else {
+        turler = List<String>.from((snapshot.data() as Map<String, dynamic>)['turler']);
+      }
+
       int index = turler.indexOf(eskiTur);
       if (index != -1) {
         turler[index] = yeniTur;
-        await _ayarlarRef.doc('arac_tanimlari').update({'turler': turler});
+        transaction.set(docRef, {'turler': turler}, SetOptions(merge: true));
       }
-    }
+    });
   }
 
   Stream<List<String>> aracSiniflariniGetir() {
     return _ayarlarRef.doc('arac_tanimlari').snapshots().map((doc) {
-      if (!doc.exists) return ["Ekonomik", "Orta", "Üst Sınıf", "Lüks", "VIP"];
+      if (!doc.exists) return _varsayilanAracSiniflari;
       final data = doc.data() as Map<String, dynamic>;
-      return List<String>.from(data['siniflar'] ?? ["Ekonomik", "Orta", "Üst Sınıf", "Lüks", "VIP"]);
+      return List<String>.from(data['siniflar'] ?? _varsayilanAracSiniflari);
     });
   }
 
   Future<void> aracSinifiEkle(String sinif) async {
-    await _ayarlarRef.doc('arac_tanimlari').set({
-      'siniflar': FieldValue.arrayUnion([sinif])
-    }, SetOptions(merge: true));
+    DocumentReference docRef = _ayarlarRef.doc('arac_tanimlari');
+    await _db.runTransaction((transaction) async {
+      DocumentSnapshot snapshot = await transaction.get(docRef);
+      List<String> siniflar;
+      if (!snapshot.exists || (snapshot.data() as Map<String, dynamic>)['siniflar'] == null) {
+        siniflar = List.from(_varsayilanAracSiniflari);
+      } else {
+        siniflar = List<String>.from((snapshot.data() as Map<String, dynamic>)['siniflar']);
+      }
+
+      if (!siniflar.contains(sinif)) {
+        siniflar.add(sinif);
+        transaction.set(docRef, {'siniflar': siniflar}, SetOptions(merge: true));
+      }
+    });
   }
 
   Future<void> aracSinifiSil(String sinif) async {
-    await _ayarlarRef.doc('arac_tanimlari').update({
-      'siniflar': FieldValue.arrayRemove([sinif])
+    DocumentReference docRef = _ayarlarRef.doc('arac_tanimlari');
+    await _db.runTransaction((transaction) async {
+      DocumentSnapshot snapshot = await transaction.get(docRef);
+      List<String> siniflar;
+      if (!snapshot.exists || (snapshot.data() as Map<String, dynamic>)['siniflar'] == null) {
+        siniflar = List.from(_varsayilanAracSiniflari);
+      } else {
+        siniflar = List<String>.from((snapshot.data() as Map<String, dynamic>)['siniflar']);
+      }
+
+      if (siniflar.contains(sinif)) {
+        siniflar.remove(sinif);
+        transaction.set(docRef, {'siniflar': siniflar}, SetOptions(merge: true));
+      }
     });
   }
 
   Future<void> aracSinifiGuncelle(String eskiSinif, String yeniSinif) async {
-    var doc = await _ayarlarRef.doc('arac_tanimlari').get();
-    if (doc.exists) {
-      final data = doc.data() as Map<String, dynamic>;
-      List<String> siniflar = List<String>.from(data['siniflar'] ?? []);
+    DocumentReference docRef = _ayarlarRef.doc('arac_tanimlari');
+    await _db.runTransaction((transaction) async {
+      DocumentSnapshot snapshot = await transaction.get(docRef);
+      List<String> siniflar;
+      if (!snapshot.exists || (snapshot.data() as Map<String, dynamic>)['siniflar'] == null) {
+        siniflar = List.from(_varsayilanAracSiniflari);
+      } else {
+        siniflar = List<String>.from((snapshot.data() as Map<String, dynamic>)['siniflar']);
+      }
+
       int index = siniflar.indexOf(eskiSinif);
       if (index != -1) {
         siniflar[index] = yeniSinif;
-        await _ayarlarRef.doc('arac_tanimlari').update({'siniflar': siniflar});
+        transaction.set(docRef, {'siniflar': siniflar}, SetOptions(merge: true));
       }
-    }
+    });
   }
 
   // --- KULLANICI İŞLEMLERİ ---
@@ -113,7 +176,13 @@ class FirestoreServisi {
   }
 
   Stream<EsnafModeli> esnafGetir(String id) {
-    return _esnaflarRef.doc(id).snapshots().map((doc) => EsnafModeli.fromFirestore(doc));
+    if (id.trim().isEmpty) return const Stream.empty();
+    try {
+      return _esnaflarRef.doc(id).snapshots().map((doc) => EsnafModeli.fromFirestore(doc));
+    } catch (e) {
+      debugPrint("Esnaf getir stream hatası: $e");
+      return const Stream.empty();
+    }
   }
 
   Future<EsnafModeli?> esnafGetirDoc(String id) async {
@@ -218,6 +287,7 @@ class FirestoreServisi {
 
   // --- AJANDA İŞLEMLERİ ---
   Future<Map<String, dynamic>?> gunlukAjandaGetir(String esnafId, DateTime tarih, String? kanal) async {
+    if (esnafId.isEmpty) return null;
     String tarihStr = DateFormat('yyyy-MM-dd').format(tarih);
     String k = (kanal != null && kanal.trim().isNotEmpty) ? kanal.trim() : "";
     String docId = k.isNotEmpty ? "${tarihStr}_$k" : tarihStr;
@@ -227,16 +297,28 @@ class FirestoreServisi {
   }
 
   Stream<DocumentSnapshot> gunlukAjandaSnapStream(String esnafId, DateTime tarih, String? kanal) {
+    if (esnafId.trim().isEmpty) return const Stream.empty();
     String tarihStr = DateFormat('yyyy-MM-dd').format(tarih);
     String k = (kanal != null && kanal.trim().isNotEmpty) ? kanal.trim() : "";
     String docId = k.isNotEmpty ? "${tarihStr}_$k" : tarihStr;
     
-    return _esnaflarRef.doc(esnafId).collection('ajanda').doc(docId).snapshots();
+    try {
+      return _esnaflarRef.doc(esnafId).collection('ajanda').doc(docId).snapshots();
+    } catch (e) {
+      debugPrint("Ajanda stream hatası: $e");
+      return const Stream.empty();
+    }
   }
 
   Stream<DocumentSnapshot> taksiAjandasiSnapStream(String esnafId, DateTime tarih) {
+    if (esnafId.trim().isEmpty) return const Stream.empty();
     String ayKey = DateFormat('yyyy-MM').format(tarih);
-    return _esnaflarRef.doc(esnafId).collection('taksi_ajanda').doc(ayKey).snapshots();
+    try {
+      return _esnaflarRef.doc(esnafId).collection('taksi_ajanda').doc(ayKey).snapshots();
+    } catch (e) {
+      debugPrint("Taksi ajanda stream hatası: $e");
+      return const Stream.empty();
+    }
   }
 
   Future<void> ajandaOlustur({
@@ -249,6 +331,7 @@ class FirestoreServisi {
     String? ogleBitis,
     required int slotAraligi,
   }) async {
+    if (esnafId.isEmpty) return;
     // Firestore batch limiti 500'dür. Veriyi 400'lük parçalara bölerek işleyelim.
     const int chunkLimit = 400;
     for (var i = 0; i < tarihler.length; i += chunkLimit) {
@@ -286,6 +369,7 @@ class FirestoreServisi {
   }
 
   Future<void> ajandaSil(String esnafId, DateTime tarih, String? kanal) async {
+    if (esnafId.isEmpty) return;
     String tarihStr = DateFormat('yyyy-MM-dd').format(tarih);
     String k = (kanal != null && kanal.trim().isNotEmpty) ? kanal.trim() : "";
     String docId = k.isNotEmpty ? "${tarihStr}_$k" : tarihStr;
@@ -302,6 +386,7 @@ class FirestoreServisi {
     required DateTime bitis,
     String? kanal,
   }) async {
+    if (esnafId.isEmpty) return;
     int gunSayisi = bitis.difference(baslangic).inDays;
     String k = (kanal != null && kanal.trim().isNotEmpty) ? kanal.trim() : "";
     
@@ -332,6 +417,7 @@ class FirestoreServisi {
   }
 
   Future<void> slotKapatAc(String esnafId, DateTime tarih, String? kanal, String saat, bool kapat, {String? neden}) async {
+    if (esnafId.isEmpty) return;
     String tarihStr = DateFormat('yyyy-MM-dd').format(tarih);
     String k = (kanal != null && kanal.trim().isNotEmpty) ? kanal.trim() : "";
     String docId = k.isNotEmpty ? "${tarihStr}_$k" : tarihStr;
@@ -366,6 +452,7 @@ class FirestoreServisi {
   }
 
   Future<void> gunuKapatAc(String esnafId, DateTime tarih, String? kanal, List<String> slotlar, bool kapat, {String? neden}) async {
+    if (esnafId.isEmpty) return;
     String tarihStr = DateFormat('yyyy-MM-dd').format(tarih);
     String k = (kanal != null && kanal.trim().isNotEmpty) ? kanal.trim() : "";
     String docId = k.isNotEmpty ? "${tarihStr}_$k" : tarihStr;
@@ -395,14 +482,15 @@ class FirestoreServisi {
   }
 
   // --- RANDEVU İŞLEMLERİ ---
-  Stream<List<RandevuModeli>> randevulariGetir(String esnafId, DateTime tarih) {
-    DateTime bas = DateTime(tarih.year, tarih.month, tarih.day);
-    DateTime bit = bas.add(const Duration(days: 1));
+  Stream<List<RandevuModeli>> randevulariGetir(String esnafId, DateTime tarih, {int pencereGun = 30}) {
+    // Car rental gibi uzun süreli işlemler için pencereyi geniş tutalım (30 güne kadar olan kiralamaları yakalamak için)
+    DateTime bas = DateTime(tarih.year, tarih.month, tarih.day).subtract(Duration(days: pencereGun));
+    DateTime bit = DateTime(tarih.year, tarih.month, tarih.day).add(const Duration(days: 1));
     
     return _randevularRef
         .where('esnafId', isEqualTo: esnafId)
         .where('tarih', isGreaterThanOrEqualTo: Timestamp.fromDate(bas))
-        .where('tarih', isLessThan: Timestamp.fromDate(bit))
+        .where('tarih', isLessThan: Timestamp.fromDate(bit.add(const Duration(days: 1)))) // İleriye dönük de bir miktar al
         .snapshots()
         .map((snap) => snap.docs
             .map((doc) => RandevuModeli.fromFirestore(doc))
@@ -450,47 +538,47 @@ class FirestoreServisi {
     String? kanal,
     String? haricRandevuId,
   }) async {
-    DateTime bas = DateTime(tarih.year, tarih.month, tarih.day);
-    DateTime bit = bas.add(const Duration(days: 1));
+    // 1. Yeni randevu zaman aralığını belirle
+    final parcalar = saat.split(':');
+    DateTime reqStart = DateTime(tarih.year, tarih.month, tarih.day, 
+        int.parse(parcalar[0]), int.parse(parcalar[1]));
+    DateTime reqEnd = reqStart.add(Duration(minutes: sure));
+
+    // 2. Çakışma ihtimali olan randevuları sorgula (30 gün öncesine kadar bak)
+    DateTime queryStart = reqStart.subtract(const Duration(days: 30));
+    DateTime queryEnd = reqEnd.add(const Duration(days: 1));
 
     var query = _randevularRef
         .where('esnafId', isEqualTo: esnafId)
-        .where('tarih', isGreaterThanOrEqualTo: Timestamp.fromDate(bas))
-        .where('tarih', isLessThan: Timestamp.fromDate(bit));
+        .where('tarih', isGreaterThanOrEqualTo: Timestamp.fromDate(queryStart))
+        .where('tarih', isLessThan: Timestamp.fromDate(queryEnd));
 
     var snap = await query.get();
     
-    int yeniBas = _saatiDakikayaCevir(saat);
-    int yeniBit = yeniBas + sure;
-
     for (var doc in snap.docs) {
       if (doc.id == haricRandevuId) continue;
       
       final data = doc.data() as Map<String, dynamic>;
       if (data['durum'] == 'Reddedildi' || data['durum'] == 'İptal Edildi') continue;
       
-      // Kanal kontrolü (Eğer kanal belirtilmişse sadece o kanaldaki çakışmalara bak)
+      // Kanal kontrolü
       if (kanal != null && kanal.isNotEmpty && data['randevu_kanali'] != kanal) continue;
 
-      int mevcutBas = _saatiDakikayaCevir(data['saat']);
-      int mevcutSure = data['sure'] ?? 30;
-      int mevcutBit = mevcutBas + mevcutSure;
+      // Mevcut randevu aralığı
+      DateTime mTarih = (data['tarih'] as Timestamp).toDate();
+      String mSaat = data['saat'] ?? "00:00";
+      final mParcalar = mSaat.split(':');
+      DateTime mStart = DateTime(mTarih.year, mTarih.month, mTarih.day, 
+          int.parse(mParcalar[0]), int.parse(mParcalar[1]));
+      int mSure = data['sure'] ?? 30;
+      DateTime mEnd = mStart.add(Duration(minutes: mSure));
 
-      // Çakışma mantığı: (yeniBas < mevcutBit) && (yeniBit > mevcutBas)
-      if (yeniBas < mevcutBit && yeniBit > mevcutBas) {
+      // Çakışma mantığı: (reqStart < mEnd) && (reqEnd > mStart)
+      if (reqStart.isBefore(mEnd) && reqEnd.isAfter(mStart)) {
         return true;
       }
     }
     return false;
-  }
-
-  int _saatiDakikayaCevir(String saat) {
-    try {
-      final parcalar = saat.split(':');
-      return int.parse(parcalar[0]) * 60 + int.parse(parcalar[1]);
-    } catch (e) {
-      return 0;
-    }
   }
 
   Future<void> randevuSerisiniSil(String seriId) async {

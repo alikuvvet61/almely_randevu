@@ -4,6 +4,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'firebase_options.dart';
 import 'servisler/bildirim_servisi.dart';
+import 'servisler/versiyon_servisi.dart';
 import 'ekranlar/giris_secim_ekrani.dart';
 
 void main() async {
@@ -12,20 +13,23 @@ void main() async {
   // Türkçe tarih formatlarını başlat
   await initializeDateFormatting('tr_TR', null);
 
-  // Bildirim servisini başlat (Hata olsa bile uygulama açılmaya devam etsin)
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    // Firebase başlatıldıktan sonra Remote Config'i başlat
+    await VersiyonServisi.initialize();
+  } catch (e) {
+    debugPrint("Firebase başlatma hatası: $e");
+  }
+
+  // Bildirim servisini başlat
   try {
     await BildirimServisi.initialize();
   } catch (e) {
     debugPrint("Bildirim servisi başlatılamadı: $e");
   }
 
-  try {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
-  } catch (e) {
-    debugPrint("Firebase başlatma hatası: $e");
-  }
   runApp(const AlmElyApp());
 }
 

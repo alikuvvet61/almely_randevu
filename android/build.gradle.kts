@@ -5,6 +5,8 @@ allprojects {
     }
 }
 
+project.extra.set("kotlin_version", "2.2.20")
+
 val newBuildDir: Directory =
     rootProject.layout.buildDirectory
         .dir("../../build")
@@ -15,7 +17,10 @@ subprojects {
     val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
     project.layout.buildDirectory.value(newSubprojectBuildDir)
 }
-// Removed subprojects { project.evaluationDependsOn(":app") } as it causes issues with plugin evaluation
+
+subprojects {
+    project.evaluationDependsOn(":app")
+}
 
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
