@@ -412,8 +412,10 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
   String _dakikaFormatli(int toplamDakika) {
     int saat = (toplamDakika ~/ 60) % 24;
     int dakika = toplamDakika % 60;
-    return "${saat.toString().padLeft(2, '0')}:${dakika.toString().padLeft(2, '0')}";
+    return "${saat.toString().padLeft(2, '0')}:${min(59, dakika).toString().padLeft(2, '0')}";
   }
+
+  int min(int a, int b) => a < b ? a : b;
 
   String? _saatNedenKapali(
       EsnafModeli esnaf, String slot, List<RandevuModeli> randevular, int hizmetSuresi,
@@ -498,22 +500,24 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
     final slotParcalar = slot.split(':');
     DateTime sBaslangic = DateTime(tarih.year, tarih.month, tarih.day,
         int.parse(slotParcalar[0]), int.parse(slotParcalar[1]));
+
+    final simdi = DateTime.now();
+    final bugun = DateTime(simdi.year, simdi.month, simdi.day);
+    final seciliGun = DateTime(tarih.year, tarih.month, tarih.day);
+
+    if (seciliGun.isAtSameMomentAs(bugun)) {
+      // Sadece bugünse saat kontrolü yap
+      if (sBaslangic
+          .isBefore(simdi.subtract(const Duration(minutes: 1)))) {
+        return "Geçmiş saat";
+      }
+    } else if (seciliGun.isBefore(bugun)) {
+      // Geçmiş bir günse direkt kapalı
+      return "Geçmiş tarih";
+    }
+
     int kontrolSuresi = hizmetSuresi > 0 ? hizmetSuresi : slotDakika;
     DateTime sBitis = sBaslangic.add(Duration(minutes: kontrolSuresi));
-
-    for (int t = 0; t < kontrolSuresi; t += slotDakika) {
-      DateTime kZaman = sBaslangic.add(Duration(minutes: t));
-      if (kZaman.day == tarih.day) {
-        String kSaat = DateFormat("HH:mm").format(kZaman);
-        if (kapaliSlotlarMap.containsKey(kSaat)) {
-          return kapaliSlotlarMap[kSaat].toString();
-        }
-      }
-    }
-
-    if (sBaslangic.isBefore(DateTime.now())) {
-      return "Geçmiş saat";
-    }
 
     if (esnaf.kategori != 'Araç Kiralama' &&
         (calisma['acilis'] != "00:00" || calisma['kapanis'] != "00:00")) {
@@ -1273,50 +1277,129 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                 if (diff > 0) {
                   dGun = diff ~/ 1440;
                   dSaat = (diff % 1440) ~/ 60;
-                } else if (basT != bitT) {
+                } else {
                   hataVar = true;
                 }
               }
 
-              String sureMetni = "0 GÜN";
-              if (hataVar) {
-                sureMetni = "GEÇERSİZ ARALIK";
-              } else if (basT != null && bitT != null) {
-                if (dGun > 0 && dSaat > 0) {
-                  sureMetni = "$dGun GÜN $dSaat SAAT";
-                } else if (dGun > 0) {
-                  sureMetni = "$dGun GÜN";
-                } else if (dSaat > 0) {
-                  sureMetni = "$dSaat SAAT";
-                }
-              }
-
               return Container(
-                padding: const EdgeInsets.all(20),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 25, horizontal: 15),
                 decoration: BoxDecoration(
-                  color: hataVar ? Colors.red.shade900 : const Color(0xFF1A1F2C),
-                  borderRadius: BorderRadius.circular(20),
+                  color: const Color(0xFF1A1F2C),
+                  borderRadius: BorderRadius.circular(24),
                 ),
                 child: Column(
                   children: [
-                    Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-          _eliteTarihKarti("ALIŞ TARİHİ", basT, basS ?? "",
-                              esnaf, true),
-                          Expanded(
-                            child: Center(
-                              child: Text(
-                                sureMetni,
-                                style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold),
-                              ),
-                            ),
+                    Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        // Konnektör Çizgisi
+                        Positioned(
+                          top: 75, // Gün kutularının ortası hizası
+                          left: 50,
+                          right: 50,
+                          child: Container(
+                            height: 2,
+                            color: Colors.orange.withValues(alpha: 0.3),
                           ),
-                          _eliteTarihKarti("İADE TARİHİ", bitT, bitS ?? "",
-                              esnaf, false),
-                        ]),
+                        ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            _eliteTarihKarti(
+                                "ALIŞ TARİHİ", basT, basS, true),
+                            // Orta Kutu (Toplam Süre)
+                            Column(
+                              children: [
+                                Container(
+                                  width: 110,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 15),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(20),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color:
+                                            Colors.black.withValues(alpha: 0.3),
+                                        blurRadius: 15,
+                                      )
+                                    ],
+                                  ),
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      const Text("TOPLAM SÜRE",
+                                          style: TextStyle(
+                                              color: Colors.indigo,
+                                              fontSize: 9,
+                                              fontWeight: FontWeight.bold,
+                                              letterSpacing: 0.5)),
+                                      const SizedBox(height: 10),
+                                      if (!hataVar && dGun > 0) ...[
+                                        Text(dGun.toString(),
+                                            style: const TextStyle(
+                                                fontSize: 28,
+                                                fontWeight: FontWeight.w900,
+                                                color: Colors.black,
+                                                height: 1.0)),
+                                        const Text("GÜN",
+                                            style: TextStyle(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.grey)),
+                                      ],
+                                      if (!hataVar && dGun > 0 && dSaat > 0)
+                                        const Padding(
+                                          padding:
+                                              EdgeInsets.symmetric(vertical: 4),
+                                          child: Text("ve",
+                                              style: TextStyle(
+                                                  color: Colors.orange,
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.bold,
+                                                  fontStyle: FontStyle.italic)),
+                                        ),
+                                      if (!hataVar && dSaat > 0) ...[
+                                        Text(dSaat.toString(),
+                                            style: const TextStyle(
+                                                fontSize: 28,
+                                                fontWeight: FontWeight.w900,
+                                                color: Colors.black,
+                                                height: 1.0)),
+                                        const Text("SAAT",
+                                            style: TextStyle(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.grey)),
+                                      ],
+                                      if (hataVar || (dGun == 0 && dSaat == 0))
+                                        const Text("--",
+                                            style: TextStyle(
+                                                fontSize: 24,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.grey)),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                Text(
+                                    hataVar
+                                        ? "Geçersiz aralık!"
+                                        : "Lütfen süreyi onaylayın.",
+                                    style: const TextStyle(
+                                        color: Colors.white70,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w500)),
+                              ],
+                            ),
+                            _eliteTarihKarti(
+                                "İADE TARİHİ", bitT, bitS, false),
+                          ],
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               );
@@ -1328,32 +1411,80 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
   }
 
   Widget _eliteTarihKarti(
-      String etiket, DateTime? tarih, String saat, EsnafModeli esnaf, bool alisMi) {
-    return InkWell(
-      onTap: () => _tarihSec(alisMi),
-      child: Column(
-        children: [
-          Text(etiket,
-              style: const TextStyle(color: Colors.orange, fontSize: 10)),
-          const SizedBox(height: 8),
-          Container(
-            padding: const EdgeInsets.all(10),
+      String etiket, DateTime? tarih, String? saat, bool alisMi) {
+    String gunText = "Seçiniz";
+    String ay = "";
+    String yil = "";
+    String gunAdi = "";
+    if (tarih != null) {
+      gunText = tarih.day.toString();
+      ay = DateFormat('MMMM', 'tr_TR').format(tarih).toUpperCase();
+      yil = tarih.year.toString();
+      gunAdi = DateFormat('EEEE', 'tr_TR').format(tarih);
+    }
+
+    return Column(
+      children: [
+        Text(etiket,
+            style: const TextStyle(
+                color: Colors.orange,
+                fontSize: 11,
+                fontWeight: FontWeight.bold)),
+        const SizedBox(height: 12),
+        InkWell(
+          onTap: () => _tarihSec(alisMi),
+          child: Container(
+            width: 100,
+            height: 120,
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            alignment: Alignment.center,
             decoration: BoxDecoration(
-                color: Colors.white, borderRadius: BorderRadius.circular(10)),
-            child: Text(tarih != null ? tarih.day.toString() : "--",
-                style:
-                    const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-          ),
-          const SizedBox(height: 8),
-          if (saat.isNotEmpty)
-            GestureDetector(
-              onTap: () => _saatSec(tarih, alisMi),
-              child: Text(saat,
-                  style: const TextStyle(
-                      color: Colors.white, fontWeight: FontWeight.bold)),
+                color: Colors.white, borderRadius: BorderRadius.circular(15)),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(gunText,
+                    style: TextStyle(
+                        fontSize: tarih == null ? 18 : 32,
+                        fontWeight: FontWeight.w900,
+                        color: tarih == null ? Colors.blue : Colors.black)),
+                if (tarih != null) ...[
+                  Text(ay,
+                      style: const TextStyle(
+                          color: Colors.black87,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold)),
+                  Text(yil,
+                      style:
+                          const TextStyle(color: Colors.black54, fontSize: 10)),
+                  const SizedBox(height: 2),
+                  Text(gunAdi,
+                      style: const TextStyle(
+                          color: Colors.indigo,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w500)),
+                ],
+              ],
             ),
-        ],
-      ),
+          ),
+        ),
+        const SizedBox(height: 15),
+        InkWell(
+          onTap: () => _saatSec(tarih, alisMi),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: saat == null ? Colors.white12 : Colors.white24,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(saat ?? "--:--",
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18)),
+          ),
+        ),
+      ],
     );
   }
 
@@ -1379,20 +1510,26 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
     if (picked != null) {
       if (alisMi) {
         _seciliTarihNotifier.value = picked;
+        // Zaman seçimi değiştiğinde eski seçimleri temizle ki initialTime tekrar hesaplansın
+        _seciliSaatNotifier.value = null;
+        _saatKendimSececegimNotifier.value = false;
+
         // 1. Alış Günü -> Alış Saati'ni aç
         Future.delayed(const Duration(milliseconds: 300), () {
           if (!mounted) {
-        return;
-      }
+            return;
+          }
           _saatSec(picked, true);
         });
       } else {
         _seciliBitisTarihiNotifier.value = picked;
+        _seciliBitisSaatiNotifier.value = null;
+
         // 3. İade Günü -> İade Saati'ni aç
         Future.delayed(const Duration(milliseconds: 300), () {
           if (!mounted) {
-        return;
-      }
+            return;
+          }
           _saatSec(picked, false);
         });
       }
@@ -1409,13 +1546,54 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
     }
     final val =
         alisMi ? _seciliSaatNotifier.value : _seciliBitisSaatiNotifier.value;
+
+    // Varsayılan saati belirle
+    TimeOfDay initialTime;
+    if (val != null) {
+      initialTime = TimeOfDay(
+          hour: int.parse(val.split(':')[0]),
+          minute: int.parse(val.split(':')[1]));
+    } else {
+      // Eğer İade Saati seçiliyorsa ve Alış Saati zaten belliyse ve günler aynıysa
+      if (!alisMi &&
+          _seciliSaatNotifier.value != null &&
+          _seciliTarihNotifier.value != null &&
+          tarih.year == _seciliTarihNotifier.value!.year &&
+          tarih.month == _seciliTarihNotifier.value!.month &&
+          tarih.day == _seciliTarihNotifier.value!.day) {
+        // Alış saatinden 1 saat sonrasını varsayılan yap
+        int alisH = int.parse(_seciliSaatNotifier.value!.split(':')[0]);
+        int alisM = int.parse(_seciliSaatNotifier.value!.split(':')[1]);
+        initialTime = TimeOfDay(hour: (alisH + 1) % 24, minute: alisM);
+      } else {
+        final bugun = DateFormat('yyyy-MM-dd').format(DateTime.now());
+        final secili = DateFormat('yyyy-MM-dd').format(tarih);
+
+        if (bugun == secili) {
+          // Bugünse şimdiki saat
+          initialTime = TimeOfDay.now();
+        } else {
+          // Gelecek günse mesai başlangıcı
+          final calisma = _gununAjandaVerisi ?? widget.esnaf.calismaSaatleri;
+          String acilis = "09:00";
+          if (calisma != null) {
+            if (calisma['acilis'] != null && calisma['acilis'] != "00:00") {
+              acilis = calisma['acilis'];
+            } else if (widget.esnaf.calismaSaatleri?['acilis'] != null &&
+                widget.esnaf.calismaSaatleri?['acilis'] != "00:00") {
+              acilis = widget.esnaf.calismaSaatleri!['acilis'];
+            }
+          }
+          initialTime = TimeOfDay(
+              hour: int.parse(acilis.split(':')[0]),
+              minute: int.parse(acilis.split(':')[1]));
+        }
+      }
+    }
+
     final t = await showTimePicker(
       context: context,
-      initialTime: val != null
-          ? TimeOfDay(
-              hour: int.parse(val.split(':')[0]),
-              minute: int.parse(val.split(':')[1]))
-          : const TimeOfDay(hour: 10, minute: 0),
+      initialTime: initialTime,
     );
 
     if (!mounted) {
@@ -1425,7 +1603,18 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
     if (t != null) {
       final s =
           "${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}";
+
+      // Geçmiş zaman veya yetersiz süre kontrolü
+      final DateTime secilenTamZaman = DateTime(
+          tarih.year, tarih.month, tarih.day, t.hour, t.minute);
+      
       if (alisMi) {
+        if (secilenTamZaman.isBefore(DateTime.now().subtract(const Duration(minutes: 1)))) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Geçmiş bir saat seçemezsiniz."), backgroundColor: Colors.red)
+          );
+          return;
+        }
         _seciliSaatNotifier.value = s;
         _saatKendimSececegimNotifier.value = true;
         // 2. Alış Saati -> İade Günü'nü aç
@@ -1436,6 +1625,24 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
           _tarihSec(false);
         });
       } else {
+        // İade saati kontrolü: Alıştan en az 1 saat sonra olmalı
+        if (_seciliTarihNotifier.value != null && _seciliSaatNotifier.value != null) {
+          final alisParca = _seciliSaatNotifier.value!.split(':');
+          final DateTime alisZamani = DateTime(
+            _seciliTarihNotifier.value!.year,
+            _seciliTarihNotifier.value!.month,
+            _seciliTarihNotifier.value!.day,
+            int.parse(alisParca[0]),
+            int.parse(alisParca[1]),
+          );
+          
+          if (secilenTamZaman.difference(alisZamani).inMinutes < 60) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text("Kiralama süresi en az 1 saat olmalıdır."), backgroundColor: Colors.red)
+            );
+            return;
+          }
+        }
         _seciliBitisSaatiNotifier.value = s;
       }
       _seciliKanalNotifier.value = null;

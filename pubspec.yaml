@@ -1,7 +1,7 @@
 name: almely_randevu
 description: "Türkiye'nin Tek Nokta Randevu Portalı - almely_randevu"
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.1+1
 
 environment:
   sdk: '>=3.2.3 <4.0.0'

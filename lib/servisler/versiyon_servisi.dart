@@ -2,7 +2,7 @@ import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'dart:io';
+
 
 class VersiyonServisi {
   static final FirebaseRemoteConfig _remoteConfig = FirebaseRemoteConfig.instance;
@@ -15,7 +15,7 @@ class VersiyonServisi {
 
     // Varsayılan değerler
     await _remoteConfig.setDefaults({
-      "guncel_versiyon": "1.0.0",
+      "guncel_versiyon": "1.0.1",
       "zorunlu_guncelleme": false,
       "market_url": "https://play.google.com/store/apps/details?id=com.example.almely_randevu",
     });

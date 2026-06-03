@@ -1256,6 +1256,202 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
     );
   }
 
+  void _aracDetayiniGoster(Map<String, dynamic> a) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(a["ad"] ?? "Araç Detayı"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (a["resim"] != null)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: Image.network(a["resim"], height: 150, width: double.infinity, fit: BoxFit.cover),
+              ),
+            const SizedBox(height: 15),
+            _detaySatiri(Icons.branding_watermark, "Marka/Model", "${a["marka"] ?? ""} ${a["model"] ?? ""}"),
+            _detaySatiri(Icons.local_gas_station, "Yakıt", a["yakit"] ?? "-"),
+            _detaySatiri(Icons.settings, "Vites", a["vites"] ?? "-"),
+            _detaySatiri(Icons.event_seat, "Koltuk", a["koltuk"]?.toString() ?? "-"),
+            const Divider(),
+            const Text("Araç şu an müsait durumda.", style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("Kapat"))],
+      ),
+    );
+  }
+
+  void _kiraDetayiniGoster(RandevuModeli r) {
+    // Kiralama süresini Gün ve Saat cinsinden hesapla
+    int toplamSure = r.sure;
+    int gun = toplamSure ~/ 1440;
+    int sa = (toplamSure % 1440) ~/ 60;
+    String sureMetni = "";
+    if (gun > 0) sureMetni += "$gun Gün ";
+    if (sa > 0) sureMetni += "$sa Saat";
+    if (sureMetni.isEmpty) sureMetni = "$toplamSure Dakika";
+
+    // İade zamanını hesapla
+    final DateTime rBas = DateTime(r.tarih.year, r.tarih.month, r.tarih.day,
+        int.parse(r.saat.split(':')[0]), int.parse(r.saat.split(':')[1]));
+    final DateTime iadeZamani = rBas.add(Duration(minutes: r.sure));
+    String iadeTarihi = DateFormat('dd.MM.yyyy').format(iadeZamani);
+    String iadeSaati = DateFormat('HH:mm').format(iadeZamani);
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.key, color: Colors.red),
+            SizedBox(width: 10),
+            Text("Aktif Kiralama"),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(r.randevuKanali ?? "Bilinmeyen Araç",
+                style:
+                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+            const SizedBox(height: 15),
+            _detaySatiri(Icons.person, "Müşteri", r.kullaniciAd),
+            _detaySatiri(Icons.phone, "Telefon", r.kullaniciTel),
+            const Divider(height: 25),
+            _detaySatiri(Icons.calendar_today, "Alış Tarihi",
+                DateFormat('dd.MM.yyyy').format(r.tarih)),
+            _detaySatiri(Icons.access_time, "Alış Saati", r.saat),
+            const SizedBox(height: 8),
+            _detaySatiri(Icons.keyboard_return, "İade Tarihi", iadeTarihi),
+            _detaySatiri(Icons.history_toggle_off, "İade Saati", iadeSaati),
+            const Divider(height: 25),
+            _detaySatiri(Icons.timer, "Toplam Süre", sureMetni),
+            const Divider(),
+            Center(
+              child: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(10)),
+                child: const Text("ARAÇ ŞU AN KİRADADIR",
+                    style: TextStyle(
+                        color: Colors.red, fontWeight: FontWeight.bold)),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text("Kapat")),
+                  ElevatedButton(
+                    onPressed: () => _aramaYap(r.kullaniciTel),
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        foregroundColor: Colors.white),
+                    child: const Text("Müşteriyi Ara"),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 5),
+              SizedBox(
+                width: double.infinity,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: OutlinedButton.icon(
+                    onPressed: () => _kiraBitirOnay(r),
+                    icon: const Icon(Icons.check_circle_outline, size: 18),
+                    label: const Text("Kiralama Randevusunu Kapat (Boşa Çıkar)"),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red,
+                      side: const BorderSide(color: Colors.red),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _kiraBitirOnay(RandevuModeli r) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Kiralama Sonlandırılsın mı?"),
+        content: const Text(
+            "Bu işlem aracı hemen müsait duruma getirecektir. Randevu durumu 'Tamamlandı' olarak güncellenecek."),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Vazgeç")),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(ctx); // Onay kutusunu kapat
+              Navigator.pop(context); // Detay penceresini kapat
+              await _kiraSonlandir(r);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+            child: const Text("Evet, Bitir"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _kiraSonlandir(RandevuModeli r) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('randevular')
+          .doc(r.id)
+          .update({'durum': 'Tamamlandı'});
+      
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Araç başarıyla boşa çıkarıldı."), backgroundColor: Colors.green)
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Hata: $e"), backgroundColor: Colors.red)
+      );
+    }
+  }
+
+  Widget _detaySatiri(IconData ikon, String baslik, String icerik) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Icon(ikon, size: 18, color: Colors.blueGrey),
+          const SizedBox(width: 10),
+          Text("$baslik: ", style: const TextStyle(color: Colors.grey, fontSize: 13)),
+          Expanded(child: Text(icerik, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14))),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _aramaYap(String tel) async {
+    final url = Uri.parse('tel:$tel');
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url);
+    }
+  }
+
   Widget _filoWidget() {
     return Column(
       children: [
@@ -2584,64 +2780,112 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                       ),
                     ),
                   
-                  if (widget.esnaf.kategori == 'Araç Kiralama') ...[
+                    if (widget.esnaf.kategori == 'Araç Kiralama') ...[
                     _bolumKart(
                       baslik: "Araç Filomuz",
                       initiallyExpanded: true,
-                      icerik: Column(
-                        children: kiralikAraclar.map((a) {
-                          String ad = a["ad"] ?? "İsimsiz Araç";
-                          String? resim = a["resim"];
-                          String? plaka = a["plaka"];
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(15),
-                              border: Border.all(color: Colors.grey.shade200),
-                              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10)],
-                            ),
-                            child: Row(
-                              children: [
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(10),
-                                  child: (resim != null && resim.isNotEmpty)
-                                      ? Image.network(resim, width: 90, height: 65, fit: BoxFit.cover)
-                                      : Container(width: 90, height: 65, color: Colors.grey.shade100, child: const Icon(Icons.directions_car, color: Colors.grey)),
-                                ),
-                                const SizedBox(width: 15),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                      icerik: StreamBuilder<List<RandevuModeli>>(
+                        stream: FirebaseFirestore.instance
+                            .collection('randevular')
+                            .where('esnafId', isEqualTo: widget.esnaf.id)
+                            .where('tarih', isGreaterThanOrEqualTo: DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day))
+                            .snapshots()
+                            .map((s) => s.docs.map((d) => RandevuModeli.fromMap(d.data(), d.id)).toList()),
+                        builder: (context, randevuSnapshot) {
+                          final randevular = randevuSnapshot.data ?? [];
+                          final simdi = DateTime.now();
+
+                          return Column(
+                            children: kiralikAraclar.map((a) {
+                              String ad = a["ad"] ?? "İsimsiz Araç";
+                              String? resim = a["resim"];
+                              String? plaka = a["plaka"];
+                              
+                              // Aracın o anki kira durumunu bul
+                              RandevuModeli? aktifRandevu;
+                              try {
+                                aktifRandevu = randevular.firstWhere((r) {
+                                  if (r.randevuKanali != ad && r.randevuKanali != plaka) return false;
+                                  if (r.durum != 'Onaylandı') return false;
+                                  
+                                  final rBas = DateTime(r.tarih.year, r.tarih.month, r.tarih.day, 
+                                    int.parse(r.saat.split(':')[0]), int.parse(r.saat.split(':')[1]));
+                                  final rBit = rBas.add(Duration(minutes: r.sure));
+                                  
+                                  return simdi.isAfter(rBas) && simdi.isBefore(rBit);
+                                });
+                              } catch (_) {}
+
+                              bool dolu = aktifRandevu != null;
+
+                              return InkWell(
+                                onTap: dolu
+                                    ? () => _kiraDetayiniGoster(aktifRandevu!)
+                                    : null,
+                                child: Container(
+                                  margin: const EdgeInsets.only(bottom: 12),
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(15),
+                                    border: Border.all(color: dolu ? Colors.red.shade200 : Colors.grey.shade200),
+                                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10)],
+                                  ),
+                                  child: Row(
                                     children: [
-                                      Text(
-                                        plaka != null && plaka.isNotEmpty ? "$ad ($plaka)" : ad,
-                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
+                                      Stack(
+                                        children: [
+                                          ClipRRect(
+                                            borderRadius: BorderRadius.circular(10),
+                                            child: (resim != null && resim.isNotEmpty)
+                                                ? Image.network(resim, width: 90, height: 65, fit: BoxFit.cover)
+                                                : Container(width: 90, height: 65, color: Colors.grey.shade100, child: const Icon(Icons.directions_car, color: Colors.grey)),
+                                          ),
+                                          if (dolu)
+                                            Positioned.fill(
+                                              child: Container(
+                                                decoration: BoxDecoration(color: Colors.red.withValues(alpha: 0.7), borderRadius: BorderRadius.circular(10)),
+                                                child: const Center(child: Text("DOLU", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12))),
+                                              ),
+                                            ),
+                                        ],
                                       ),
-                                      if (plaka != null && plaka.isNotEmpty)
-                                        Container(
-                                          margin: const EdgeInsets.only(top: 6),
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                          decoration: BoxDecoration(
-                                            color: Colors.blue.shade50,
-                                            borderRadius: BorderRadius.circular(4),
-                                            border: Border.all(color: Colors.blue.shade100),
-                                          ),
-                                          child: Text(
-                                            plaka,
-                                            style: TextStyle(color: Colors.blue.shade800, fontSize: 12, fontWeight: FontWeight.bold),
-                                          ),
+                                      const SizedBox(width: 15),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              plaka != null && plaka.isNotEmpty ? "$ad ($plaka)" : ad,
+                                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                            if (plaka != null && plaka.isNotEmpty)
+                                              Container(
+                                                margin: const EdgeInsets.only(top: 6),
+                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                                decoration: BoxDecoration(
+                                                  color: dolu ? Colors.red.shade50 : Colors.blue.shade50,
+                                                  borderRadius: BorderRadius.circular(4),
+                                                  border: Border.all(color: dolu ? Colors.red.shade100 : Colors.blue.shade100),
+                                                ),
+                                                child: Text(
+                                                  dolu ? "ŞU AN KİRADA" : plaka,
+                                                  style: TextStyle(color: dolu ? Colors.red.shade800 : Colors.blue.shade800, fontSize: 11, fontWeight: FontWeight.bold),
+                                                ),
+                                              ),
+                                          ],
                                         ),
+                                      ),
+                                      const Icon(Icons.chevron_right, color: Colors.grey),
                                     ],
                                   ),
                                 ),
-                              ],
-                            ),
+                              );
+                            }).toList(),
                           );
-                        }).toList(),
+                        }
                       ),
                     ),
                     const SizedBox(height: 10),
