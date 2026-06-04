@@ -4,6 +4,7 @@ import 'esnaf_giris_ekrani.dart';
 import 'admin_giris_ekrani.dart';
 import '../servisler/versiyon_servisi.dart';
 import '../servisler/bildirim_servisi.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class GirisSecimSayfasi extends StatefulWidget {
   const GirisSecimSayfasi({super.key});
@@ -24,7 +25,11 @@ class _GirisSecimSayfasiState extends State<GirisSecimSayfasi> {
   }
 
   Future<void> _bildirimIzniIste() async {
-    // Önce servisi tekrar tetikleyelim
+    // Android 13+ için doğrudan izin talebi
+    if (await Permission.notification.isDenied) {
+      await Permission.notification.request();
+    }
+    // FCM ve yerel bildirimleri de initialize edelim
     await BildirimServisi.initialize();
   }
 

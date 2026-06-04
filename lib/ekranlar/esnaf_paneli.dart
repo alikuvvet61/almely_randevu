@@ -1256,65 +1256,6 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
     );
   }
 
-  void _aracDetayiniGoster(dynamic a) {
-    Map<String, dynamic> data = {};
-    if (a is Map) {
-      data = Map<String, dynamic>.from(a);
-    } else {
-      // Veri Map değilse (String gelmişse) kurtarma mantığı
-      String s = a.toString();
-      if (s.contains('{')) {
-        try {
-          RegExp regExp = RegExp(r'([a-zA-Z0-9]+):\s?([^,}]+)');
-          for (var match in regExp.allMatches(s)) {
-            String key = match.group(1)!;
-            String value = match.group(2)!.trim();
-            if (value != 'null') data[key] = value;
-          }
-        } catch (_) {}
-      }
-      if (!data.containsKey('ad')) data['ad'] = s;
-    }
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(data["ad"] ?? "Araç Detayı"),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (data["resim"] != null && data["resim"].toString().isNotEmpty)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: Image.network(
-                  data["resim"].toString(), 
-                  height: 150, 
-                  width: double.infinity, 
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) => Container(
-                    height: 150, 
-                    width: double.infinity, 
-                    color: Colors.grey.shade100,
-                    child: const Icon(Icons.image_not_supported, color: Colors.grey),
-                  ),
-                ),
-              ),
-            const SizedBox(height: 15),
-            _detaySatiri(Icons.branding_watermark, "Marka/Model", "${data["marka"] ?? ""} ${data["model"] ?? ""}".trim().isEmpty ? (data["ad"] ?? "-") : "${data["marka"] ?? ""} ${data["model"] ?? ""}"),
-            _detaySatiri(Icons.local_gas_station, "Yakıt", data["yakit"] ?? "-"),
-            _detaySatiri(Icons.settings, "Vites", data["vites"] ?? "-"),
-            _detaySatiri(Icons.event_seat, "Koltuk", data["koltuk"]?.toString() ?? "-"),
-            const Divider(),
-            const Text("Araç şu an müsait durumda.", style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
-          ],
-        ),
-        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("Kapat"))],
-      ),
-    );
-  }
-
   void _kiraDetayiniGoster(RandevuModeli r) {
     // Kiralama süresini Gün ve Saat cinsinden hesapla
     int toplamSure = r.sure;
@@ -2849,50 +2790,59 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
 
                           final simdi = DateTime.now();
 
-                          try {
-                            // 1. Önce aktif veya bekleyen randevuları bul
-                            // 'hepsi' listesi dıştaki StreamBuilder'dan geliyor (tüm randevular)
-                            aktifRandevu = hepsi.firstWhere((r) {
-                              // Durum kontrolü: Onaylı veya Bekleyenler
-                              bool durumGecerli = r.durum == 'Onaylandı' || r.durum == 'Onay bekliyor' || r.durum == 'Beklemede';
-                              if (!durumGecerli) return false;
-                              
-                              String rKanal = (r.randevuKanali ?? "").trim();
-                              String temizRKanal = rKanal.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').toLowerCase();
+                              try {
+                                // 1. Önce aktif veya bekleyen randevuları bul
+                                // 'hepsi' listesi dıştaki StreamBuilder'dan geliyor (tüm randevular)
+                                aktifRandevu = hepsi.firstWhere((r) {
+                                  // Durum kontrolü: Onaylı veya Bekleyenler
+                                  bool durumGecerli = r.durum == 'Onaylandı' || r.durum == 'Onay bekliyor' || r.durum == 'Beklemede';
+                                  if (!durumGecerli) return false;
+                                  
+                                  String rKanal = (r.randevuKanali ?? "").trim();
+                                  String temizRKanal = rKanal.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').toLowerCase();
 
-                              bool match = false;
-                              if (temizRKanal.isNotEmpty) {
-                                if (temizRKanal == temizAd || temizRKanal == temizPlaka) {
-                                  match = true;
-                                } else if (temizPlaka.isNotEmpty && temizRKanal.contains(temizPlaka)) {
-                                  match = true;
-                                } else if (temizAd.isNotEmpty && temizRKanal.contains(temizAd)) {
-                                  match = true;
-                                } else if (temizAd.contains(temizRKanal)) {
-                                  match = true;
-                                }
-                              }
-                              
-                              if (!match) return false;
-                              
-                              final rBas = DateTime(r.tarih.year, r.tarih.month, r.tarih.day, 
-                                int.parse(r.saat.split(':')[0]), int.parse(r.saat.split(':')[1]));
-                              final rBit = rBas.add(Duration(minutes: r.sure));
-                              
-                              bool suAnAralikta = !simdi.isBefore(rBas) && simdi.isBefore(rBit);
-                              bool bugun = r.tarih.year == simdi.year && r.tarih.month == simdi.month && r.tarih.day == simdi.day;
+                                  bool match = false;
+                                  if (temizRKanal.isNotEmpty) {
+                                    if (temizRKanal == temizAd || temizRKanal == temizPlaka) {
+                                      match = true;
+                                    } else if (temizPlaka.isNotEmpty && temizRKanal.contains(temizPlaka)) {
+                                      match = true;
+                                    } else if (temizAd.isNotEmpty && temizRKanal.contains(temizAd)) {
+                                      match = true;
+                                    } else if (temizAd.contains(temizRKanal)) {
+                                      match = true;
+                                    }
+                                  }
+                                  
+                                  if (!match) return false;
+                                  
+                                  final rBas = DateTime(r.tarih.year, r.tarih.month, r.tarih.day, 
+                                    int.parse(r.saat.split(':')[0]), int.parse(r.saat.split(':')[1]));
+                                  final rBit = rBas.add(Duration(minutes: r.sure));
+                                  // Bakım süresi dahil bitiş
+                                  final rTamBit = rBit.add(Duration(minutes: widget.esnaf.bakimTemizlikSuresi));
+                                  
+                                  // EĞER ŞU AN TAM BİTİŞTEN SONRA İSE, BU RANDEVU ARTIK GEÇERLİ DEĞİLDİR (ARAÇ BOŞALMIŞTIR)
+                                  if (simdi.isAfter(rTamBit)) return false;
 
-                              if (r.durum == 'Onaylandı' && suAnAralikta) {
-                                durumEtiketi = "ŞU AN KİRADA";
-                                return true;
-                              } else if (bugun || suAnAralikta || rBas.isAfter(simdi)) {
-                                // Bugün için herhangi bir bekleyen/onaylı randevu veya gelecekteki randevu
-                                durumEtiketi = "REZERVE";
-                                return true;
-                              }
-                              return false;
-                            });
-                          } catch (_) {}
+                                  bool suAnAralikta = !simdi.isBefore(rBas) && simdi.isBefore(rBit);
+                                  bool suAnBakimda = !simdi.isBefore(rBit) && simdi.isBefore(rTamBit);
+                                  bool bugun = r.tarih.year == simdi.year && r.tarih.month == simdi.month && r.tarih.day == simdi.day;
+
+                                  if (r.durum == 'Onaylandı' && suAnAralikta) {
+                                    durumEtiketi = "ŞU AN KİRADA";
+                                    return true;
+                                  } else if (r.durum == 'Onaylandı' && suAnBakimda) {
+                                    durumEtiketi = "BAKIMDA";
+                                    return true;
+                                  } else if (bugun || rBas.isAfter(simdi)) {
+                                    // Gelecek bir randevu veya bekleyen bir işlem
+                                    durumEtiketi = "REZERVE";
+                                    return true;
+                                  }
+                                  return false;
+                                });
+                              } catch (_) {}
 
                           bool dolu = aktifRandevu != null;
 

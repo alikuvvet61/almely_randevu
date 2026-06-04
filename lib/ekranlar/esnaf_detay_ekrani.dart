@@ -703,15 +703,24 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
                                   final rBas = DateTime(r.tarih.year, r.tarih.month, r.tarih.day, 
                                     int.parse(r.saat.split(':')[0]), int.parse(r.saat.split(':')[1]));
                                   final rBit = rBas.add(Duration(minutes: r.sure));
-                                  
+                                  // Bakım süresi dahil bitiş
+                                  final rTamBit = rBit.add(Duration(minutes: widget.esnaf.bakimTemizlikSuresi));
+
+                                  // EĞER ŞU AN TAM BİTİŞTEN SONRA İSE, BU RANDEVU ARTIK GEÇERLİ DEĞİLDİR (ARAÇ BOŞALMIŞTIR)
+                                  if (simdi.isAfter(rTamBit)) return false;
+
                                   bool suAnAralikta = !simdi.isBefore(rBas) && simdi.isBefore(rBit);
+                                  bool suAnBakimda = !simdi.isBefore(rBit) && simdi.isBefore(rTamBit);
                                   bool bugun = r.tarih.year == simdi.year && r.tarih.month == simdi.month && r.tarih.day == simdi.day;
 
                                   if (r.durum == 'Onaylandı' && suAnAralikta) {
                                     durumEtiketi = "ŞU AN KİRADA";
                                     return true;
-                                  } else if (bugun || suAnAralikta || rBas.isAfter(simdi)) {
-                                    // Bugün için herhangi bir bekleyen/onaylı randevu veya gelecekteki randevu
+                                  } else if (r.durum == 'Onaylandı' && suAnBakimda) {
+                                    durumEtiketi = "BAKIMDA";
+                                    return true;
+                                  } else if (bugun || rBas.isAfter(simdi)) {
+                                    // Gelecek bir randevu veya bekleyen bir işlem
                                     durumEtiketi = "REZERVE";
                                     return true;
                                   }
