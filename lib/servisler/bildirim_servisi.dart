@@ -25,15 +25,18 @@ class BildirimServisi {
     final timeZoneName = await FlutterTimezone.getLocalTimezone();
     tz.setLocalLocation(tz.getLocation(timeZoneName.toString()));
 
-    // 2. Bildirim izinlerini iste
+    // 2. Bildirim izinlerini iste (Android 13+ desteği ile)
     NotificationSettings settings = await _fcm.requestPermission(
       alert: true,
       badge: true,
       sound: true,
+      provisional: false,
     );
 
     if (settings.authorizationStatus == AuthorizationStatus.authorized) {
       debugPrint('Bildirim izni verildi.');
+    } else if (settings.authorizationStatus == AuthorizationStatus.denied) {
+      debugPrint('Bildirim izni reddedildi.');
     }
 
     // 3. Arka plan mesaj dinleyicisini kaydet

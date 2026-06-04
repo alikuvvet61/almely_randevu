@@ -3,6 +3,7 @@ import 'kullanici_giris_ekrani.dart';
 import 'esnaf_giris_ekrani.dart';
 import 'admin_giris_ekrani.dart';
 import '../servisler/versiyon_servisi.dart';
+import '../servisler/bildirim_servisi.dart';
 
 class GirisSecimSayfasi extends StatefulWidget {
   const GirisSecimSayfasi({super.key});
@@ -15,10 +16,16 @@ class _GirisSecimSayfasiState extends State<GirisSecimSayfasi> {
   @override
   void initState() {
     super.initState();
-    // Uygulama açıldığında versiyon kontrolü yap
+    // Uygulama açıldığında versiyon kontrolü ve bildirim izni yap
     WidgetsBinding.instance.addPostFrameCallback((_) {
       VersiyonServisi.versiyonKontrol(context);
+      _bildirimIzniIste();
     });
+  }
+
+  Future<void> _bildirimIzniIste() async {
+    // Önce servisi tekrar tetikleyelim
+    await BildirimServisi.initialize();
   }
 
   @override
