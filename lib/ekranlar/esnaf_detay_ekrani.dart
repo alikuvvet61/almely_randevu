@@ -8,6 +8,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:almely_randevu/modeller/esnaf_modeli.dart';
+import 'package:almely_randevu/modeller/randevu_modeli.dart';
 import 'package:almely_randevu/servisler/firestore_servisi.dart';
 import 'package:almely_randevu/servisler/konum_servisi.dart';
 import 'package:almely_randevu/servisler/bildirim_servisi.dart';
@@ -641,66 +642,163 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
                     Text(_guncelEsnaf.kategori == 'Araç Kiralama' ? "Araç Filomuz" : "Kullanılabilir Randevu Alanları", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 10),
                     if (_guncelEsnaf.kategori == 'Araç Kiralama')
-                      Column(
-                        children: _guncelEsnaf.kanallar!.map((k) {
-                          String ad = "";
-                          String resim = "";
-                          String plaka = "";
+                      StreamBuilder<List<RandevuModeli>>(
+                        stream: _firestoreServisi.randevulariGetir(_guncelEsnaf.id, DateTime.now()),
+                        builder: (context, randevuSnapshot) {
+                          final randevular = randevuSnapshot.data ?? [];
+                          final simdi = DateTime.now();
 
-                          if (k is Map) {
-                            ad = k['ad']?.toString() ?? k['plaka']?.toString() ?? k['marka']?.toString() ?? "İsimsiz Araç";
-                            resim = k['resim']?.toString() ?? "";
-                            plaka = k['plaka']?.toString() ?? "";
-                          } else {
-                            String s = k.toString();
-                            if (s.contains('{')) {
-                              ad = s.split(',').firstWhere((e) => e.contains('ad:'), orElse: () => s).replaceAll('{', '').replaceAll('ad:', '').trim();
-                              plaka = s.contains('plaka:') ? s.split('plaka:')[1].split(',')[0].replaceAll('}', '').trim() : "";
-                            } else {
-                              ad = s;
-                            }
-                          }
+                          return Column(
+                            children: _guncelEsnaf.kanallar!.map((k) {
+                              String ad = "";
+                              String resim = "";
+                              String plaka = "";
 
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(15),
-                              border: Border.all(color: Colors.grey.shade200),
-                              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10)],
-                            ),
-                            child: Row(
-                              children: [
-                                GestureDetector(
-                                  onTap: resim.isNotEmpty ? () => _resimGoster(context, resim, ad) : null,
-                                  child: ClipRRect(
-                                    borderRadius: BorderRadius.circular(10),
-                                    child: resim.isNotEmpty
-                                        ? Image.network(resim, width: 100, height: 70, fit: BoxFit.cover)
-                                        : Container(width: 100, height: 70, color: Colors.grey.shade100, child: const Icon(Icons.directions_car, color: Colors.grey)),
-                                  ),
+                              if (k is Map) {
+                                ad = k['ad']?.toString() ?? k['plaka']?.toString() ?? k['marka']?.toString() ?? "İsimsiz Araç";
+                                resim = k['resim']?.toString() ?? "";
+                                plaka = k['plaka']?.toString() ?? "";
+                              } else {
+                                String s = k.toString();
+                                if (s.contains('{')) {
+                                  ad = s.split(',').firstWhere((e) => e.contains('ad:'), orElse: () => s).replaceAll('{', '').replaceAll('ad:', '').trim();
+                                  plaka = s.contains('plaka:') ? s.split('plaka:')[1].split(',')[0].replaceAll('}', '').trim() : "";
+                                } else {
+                                  ad = s;
+                                }
+                              }
+
+                              // Aracın o anki kira veya rezervasyon durumunu bul (Fuzzy Match ile)
+                              RandevuModeli? aktifRandevu;
+                              String durumEtiketi = "";
+                              
+                              String temizAd = ad.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').toLowerCase();
+                              String temizPlaka = plaka.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').toLowerCase();
+
+                              try {
+                                // 1. Önce aktif veya bekleyen randevuları bul
+                                aktifRandevu = randevular.firstWhere((r) {
+                                  // Durum kontrolü: Onaylı veya Bekleyenler
+                                  bool durumGecerli = r.durum == 'Onaylandı' || r.durum == 'Onay bekliyor' || r.durum == 'Beklemede';
+                                  if (!durumGecerli) return false;
+                                  
+                                  String rKanal = (r.randevuKanali ?? "").trim();
+                                  String temizRKanal = rKanal.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').toLowerCase();
+
+                                  bool match = false;
+                                  if (temizRKanal.isNotEmpty) {
+                                    if (temizRKanal == temizAd || temizRKanal == temizPlaka) {
+                                      match = true;
+                                    } else if (temizPlaka.isNotEmpty && temizRKanal.contains(temizPlaka)) {
+                                      match = true;
+                                    } else if (temizAd.isNotEmpty && temizRKanal.contains(temizAd)) {
+                                      match = true;
+                                    } else if (temizAd.contains(temizRKanal)) {
+                                      match = true;
+                                    }
+                                  }
+                                  
+                                  if (!match) return false;
+                                  
+                                  final rBas = DateTime(r.tarih.year, r.tarih.month, r.tarih.day, 
+                                    int.parse(r.saat.split(':')[0]), int.parse(r.saat.split(':')[1]));
+                                  final rBit = rBas.add(Duration(minutes: r.sure));
+                                  
+                                  bool suAnAralikta = !simdi.isBefore(rBas) && simdi.isBefore(rBit);
+                                  bool bugun = r.tarih.year == simdi.year && r.tarih.month == simdi.month && r.tarih.day == simdi.day;
+
+                                  if (r.durum == 'Onaylandı' && suAnAralikta) {
+                                    durumEtiketi = "ŞU AN KİRADA";
+                                    return true;
+                                  } else if (bugun || suAnAralikta || rBas.isAfter(simdi)) {
+                                    // Bugün için herhangi bir bekleyen/onaylı randevu veya gelecekteki randevu
+                                    durumEtiketi = "REZERVE";
+                                    return true;
+                                  }
+                                  return false;
+                                });
+                              } catch (_) {}
+
+                              bool dolu = aktifRandevu != null;
+
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 12),
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(15),
+                                  border: Border.all(color: dolu ? (durumEtiketi == "REZERVE" ? Colors.orange.shade200 : Colors.red.shade200) : Colors.grey.shade200),
+                                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10)],
                                 ),
-                                const SizedBox(width: 15),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(ad, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                                      const SizedBox(height: 4),
-                                      if (plaka.isNotEmpty)
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                          decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(4)),
-                                          child: Text(plaka, style: TextStyle(color: Colors.blue.shade800, fontSize: 12, fontWeight: FontWeight.bold)),
+                                child: Row(
+                                  children: [
+                                    Stack(
+                                      children: [
+                                        GestureDetector(
+                                          onTap: resim.isNotEmpty ? () => _resimGoster(context, resim, ad) : null,
+                                          child: ClipRRect(
+                                            borderRadius: BorderRadius.circular(10),
+                                            child: resim.isNotEmpty
+                                                ? Image.network(resim, width: 100, height: 70, fit: BoxFit.cover)
+                                                : Container(width: 100, height: 70, color: Colors.grey.shade100, child: const Icon(Icons.directions_car, color: Colors.grey)),
+                                          ),
                                         ),
-                                    ],
-                                  ),
+                                        if (dolu)
+                                          Positioned.fill(
+                                            child: Container(
+                                              decoration: BoxDecoration(
+                                                color: (durumEtiketi == "REZERVE" ? Colors.orange : Colors.red).withValues(alpha: 0.7), 
+                                                borderRadius: BorderRadius.circular(10)
+                                              ),
+                                              child: Center(
+                                                child: Text(
+                                                  durumEtiketi == "REZERVE" ? "REZERVE" : "DOLU", 
+                                                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11)
+                                                )
+                                              ),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                    const SizedBox(width: 15),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(ad, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                                          const SizedBox(height: 4),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: dolu
+                                                  ? (durumEtiketi == "REZERVE" ? Colors.orange.shade50 : Colors.red.shade50)
+                                                  : Colors.blue.shade50,
+                                              borderRadius: BorderRadius.circular(4),
+                                              border: Border.all(
+                                                  color: dolu
+                                                      ? (durumEtiketi == "REZERVE" ? Colors.orange.shade100 : Colors.red.shade100)
+                                                      : Colors.blue.shade100),
+                                            ),
+                                            child: Text(
+                                              dolu ? durumEtiketi : (plaka.isNotEmpty ? plaka : "PLAKA YOK"), 
+                                              style: TextStyle(
+                                                color: dolu
+                                                    ? (durumEtiketi == "REZERVE" ? Colors.orange.shade800 : Colors.red.shade800)
+                                                    : Colors.blue.shade800, 
+                                                fontSize: 12, 
+                                                fontWeight: FontWeight.bold
+                                              )
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              ],
-                            ),
+                              );
+                            }).toList(),
                           );
-                        }).toList(),
+                        }
                       )
                     else
                       Wrap(

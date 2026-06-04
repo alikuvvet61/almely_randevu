@@ -7,6 +7,11 @@ import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:flutter_timezone/flutter_timezone.dart';
 
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  debugPrint("Arka plan bildirimi geldi: ${message.messageId}");
+}
+
 class BildirimServisi {
   static FirebaseMessaging get _fcm => FirebaseMessaging.instance;
   static final FlutterLocalNotificationsPlugin _localNotifications =
@@ -31,7 +36,10 @@ class BildirimServisi {
       debugPrint('Bildirim izni verildi.');
     }
 
-    // 2. Yerel bildirimleri ayarla (Ön planda bildirim göstermek için)
+    // 3. Arka plan mesaj dinleyicisini kaydet
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
+    // 4. Yerel bildirimleri ayarla (Ön planda bildirim göstermek için)
     const AndroidInitializationSettings initializationSettingsAndroid =
         AndroidInitializationSettings('@mipmap/ic_launcher');
         
@@ -183,5 +191,34 @@ class BildirimServisi {
         }
       }
     });
+  }
+
+  // Cihazlar arası senkronizasyon (Web'den alınan randevuyu telefona kurma)
+  static Future<void> syncAkilliTakipBildirimleri(String telefon) async {
+    if (kIsWeb) return;
+
+    final snapshot = await FirebaseFirestore.instance
+        .collection('randevular')
+        .where('kullaniciTel', isEqualTo: telefon)
+        .where('akilliTakipAktif', isEqualTo: true)
+        .where('durum', isEqualTo: 'Onaylandı')
+        .get();
+
+    for (var doc in snapshot.docs) {
+      final data = doc.data();
+      final Timestamp? bZamanTs = data['bildirimZamani'] as Timestamp?;
+      
+      if (bZamanTs != null) {
+        final DateTime bZaman = bZamanTs.toDate();
+        if (bZaman.isAfter(DateTime.now())) {
+          await saatliBildirimKur(
+            id: doc.id.hashCode.remainder(100000),
+            baslik: "Kiralama Süreniz Doluyor",
+            icerik: "Aktif araç kiralamanızın süresi yakında doluyor. Detaylar için uygulamayı açın.",
+            zaman: bZaman,
+          );
+        }
+      }
+    }
   }
 }

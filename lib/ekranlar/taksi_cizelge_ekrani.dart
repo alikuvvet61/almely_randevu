@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../modeller/esnaf_modeli.dart';
@@ -937,6 +936,7 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
             itemCount: filtrelenmisAraclar.length,
             addAutomaticKeepAlives: false,
             addRepaintBoundaries: true,
+            // ignore: deprecated_member_use
             cacheExtent: 500.0,
             itemBuilder: (context, index) {
               final arac = filtrelenmisAraclar[index];

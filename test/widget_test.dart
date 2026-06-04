@@ -6,7 +6,7 @@ void main() {
     // Uygulamayı başlat
     await tester.pumpWidget(const AlmElyApp());
 
-    // Giriş ekranında "Kullanıcı Girişi" yazısını ara
-    expect(find.text('Kullanıcı Girişi'), findsOneWidget);
+    // Giriş ekranında "Müşteri Girişi" yazısını ara
+    expect(find.text('Müşteri Girişi'), findsOneWidget);
   });
 }

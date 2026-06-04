@@ -1256,26 +1256,56 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
     );
   }
 
-  void _aracDetayiniGoster(Map<String, dynamic> a) {
+  void _aracDetayiniGoster(dynamic a) {
+    Map<String, dynamic> data = {};
+    if (a is Map) {
+      data = Map<String, dynamic>.from(a);
+    } else {
+      // Veri Map değilse (String gelmişse) kurtarma mantığı
+      String s = a.toString();
+      if (s.contains('{')) {
+        try {
+          RegExp regExp = RegExp(r'([a-zA-Z0-9]+):\s?([^,}]+)');
+          for (var match in regExp.allMatches(s)) {
+            String key = match.group(1)!;
+            String value = match.group(2)!.trim();
+            if (value != 'null') data[key] = value;
+          }
+        } catch (_) {}
+      }
+      if (!data.containsKey('ad')) data['ad'] = s;
+    }
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(a["ad"] ?? "Araç Detayı"),
+        title: Text(data["ad"] ?? "Araç Detayı"),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (a["resim"] != null)
+            if (data["resim"] != null && data["resim"].toString().isNotEmpty)
               ClipRRect(
                 borderRadius: BorderRadius.circular(10),
-                child: Image.network(a["resim"], height: 150, width: double.infinity, fit: BoxFit.cover),
+                child: Image.network(
+                  data["resim"].toString(), 
+                  height: 150, 
+                  width: double.infinity, 
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) => Container(
+                    height: 150, 
+                    width: double.infinity, 
+                    color: Colors.grey.shade100,
+                    child: const Icon(Icons.image_not_supported, color: Colors.grey),
+                  ),
+                ),
               ),
             const SizedBox(height: 15),
-            _detaySatiri(Icons.branding_watermark, "Marka/Model", "${a["marka"] ?? ""} ${a["model"] ?? ""}"),
-            _detaySatiri(Icons.local_gas_station, "Yakıt", a["yakit"] ?? "-"),
-            _detaySatiri(Icons.settings, "Vites", a["vites"] ?? "-"),
-            _detaySatiri(Icons.event_seat, "Koltuk", a["koltuk"]?.toString() ?? "-"),
+            _detaySatiri(Icons.branding_watermark, "Marka/Model", "${data["marka"] ?? ""} ${data["model"] ?? ""}".trim().isEmpty ? (data["ad"] ?? "-") : "${data["marka"] ?? ""} ${data["model"] ?? ""}"),
+            _detaySatiri(Icons.local_gas_station, "Yakıt", data["yakit"] ?? "-"),
+            _detaySatiri(Icons.settings, "Vites", data["vites"] ?? "-"),
+            _detaySatiri(Icons.event_seat, "Koltuk", data["koltuk"]?.toString() ?? "-"),
             const Divider(),
             const Text("Araç şu an müsait durumda.", style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
           ],
@@ -1302,15 +1332,34 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
     String iadeTarihi = DateFormat('dd.MM.yyyy').format(iadeZamani);
     String iadeSaati = DateFormat('HH:mm').format(iadeZamani);
 
+    // Durum Belirleme
+    final simdi = DateTime.now();
+    final bool suAnAralikta = !simdi.isBefore(rBas) && simdi.isBefore(iadeZamani);
+    final bool onayli = r.durum == 'Onaylandı';
+    
+    String baslikMetni = "Araç Rezervasyonu";
+    IconData baslikIkon = Icons.calendar_today;
+    Color temaRengi = Colors.orange;
+    String rozetMetni = "ARAÇ REZERVE EDİLMİŞTİR";
+
+    if (onayli && suAnAralikta) {
+      baslikMetni = "Aktif Kiralama";
+      baslikIkon = Icons.key;
+      temaRengi = Colors.red;
+      rozetMetni = "ARAÇ ŞU AN KİRADADIR";
+    } else if (r.durum != 'Onaylandı') {
+      rozetMetni = "REZERVASYON (ONAY BEKLİYOR)";
+    }
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.key, color: Colors.red),
-            SizedBox(width: 10),
-            Text("Aktif Kiralama"),
+            Icon(baslikIkon, color: temaRengi),
+            const SizedBox(width: 10),
+            Text(baslikMetni),
           ],
         ),
         content: Column(
@@ -1337,11 +1386,11 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
               child: Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                    color: Colors.red.shade50,
+                    color: temaRengi.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(10)),
-                child: const Text("ARAÇ ŞU AN KİRADADIR",
+                child: Text(rozetMetni,
                     style: TextStyle(
-                        color: Colors.red, fontWeight: FontWeight.bold)),
+                        color: temaRengi, fontWeight: FontWeight.bold)),
               ),
             ),
           ],
@@ -2784,108 +2833,166 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                     _bolumKart(
                       baslik: "Araç Filomuz",
                       initiallyExpanded: true,
-                      icerik: StreamBuilder<List<RandevuModeli>>(
-                        stream: FirebaseFirestore.instance
-                            .collection('randevular')
-                            .where('esnafId', isEqualTo: widget.esnaf.id)
-                            .where('tarih', isGreaterThanOrEqualTo: DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day))
-                            .snapshots()
-                            .map((s) => s.docs.map((d) => RandevuModeli.fromMap(d.data(), d.id)).toList()),
-                        builder: (context, randevuSnapshot) {
-                          final randevular = randevuSnapshot.data ?? [];
+                      icerik: Column(
+                        children: kiralikAraclar.map((a) {
+                          String ad = a["ad"] ?? "İsimsiz Araç";
+                          String? resim = a["resim"];
+                          String? plaka = a["plaka"];
+                          
+                          // Aracın o anki kira veya rezervasyon durumunu bul
+                          RandevuModeli? aktifRandevu;
+                          String durumEtiketi = "";
+                          
+                          // Eşleşme için temizlenmiş araç isimleri (Fuzzy match)
+                          String temizAd = ad.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').toLowerCase();
+                          String temizPlaka = (plaka ?? "").replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').toLowerCase();
+
                           final simdi = DateTime.now();
 
-                          return Column(
-                            children: kiralikAraclar.map((a) {
-                              String ad = a["ad"] ?? "İsimsiz Araç";
-                              String? resim = a["resim"];
-                              String? plaka = a["plaka"];
+                          try {
+                            // 1. Önce aktif veya bekleyen randevuları bul
+                            // 'hepsi' listesi dıştaki StreamBuilder'dan geliyor (tüm randevular)
+                            aktifRandevu = hepsi.firstWhere((r) {
+                              // Durum kontrolü: Onaylı veya Bekleyenler
+                              bool durumGecerli = r.durum == 'Onaylandı' || r.durum == 'Onay bekliyor' || r.durum == 'Beklemede';
+                              if (!durumGecerli) return false;
                               
-                              // Aracın o anki kira durumunu bul
-                              RandevuModeli? aktifRandevu;
-                              try {
-                                aktifRandevu = randevular.firstWhere((r) {
-                                  if (r.randevuKanali != ad && r.randevuKanali != plaka) return false;
-                                  if (r.durum != 'Onaylandı') return false;
-                                  
-                                  final rBas = DateTime(r.tarih.year, r.tarih.month, r.tarih.day, 
-                                    int.parse(r.saat.split(':')[0]), int.parse(r.saat.split(':')[1]));
-                                  final rBit = rBas.add(Duration(minutes: r.sure));
-                                  
-                                  return simdi.isAfter(rBas) && simdi.isBefore(rBit);
-                                });
-                              } catch (_) {}
+                              String rKanal = (r.randevuKanali ?? "").trim();
+                              String temizRKanal = rKanal.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').toLowerCase();
 
-                              bool dolu = aktifRandevu != null;
+                              bool match = false;
+                              if (temizRKanal.isNotEmpty) {
+                                if (temizRKanal == temizAd || temizRKanal == temizPlaka) {
+                                  match = true;
+                                } else if (temizPlaka.isNotEmpty && temizRKanal.contains(temizPlaka)) {
+                                  match = true;
+                                } else if (temizAd.isNotEmpty && temizRKanal.contains(temizAd)) {
+                                  match = true;
+                                } else if (temizAd.contains(temizRKanal)) {
+                                  match = true;
+                                }
+                              }
+                              
+                              if (!match) return false;
+                              
+                              final rBas = DateTime(r.tarih.year, r.tarih.month, r.tarih.day, 
+                                int.parse(r.saat.split(':')[0]), int.parse(r.saat.split(':')[1]));
+                              final rBit = rBas.add(Duration(minutes: r.sure));
+                              
+                              bool suAnAralikta = !simdi.isBefore(rBas) && simdi.isBefore(rBit);
+                              bool bugun = r.tarih.year == simdi.year && r.tarih.month == simdi.month && r.tarih.day == simdi.day;
 
-                              return InkWell(
-                                onTap: dolu
-                                    ? () => _kiraDetayiniGoster(aktifRandevu!)
-                                    : null,
-                                child: Container(
-                                  margin: const EdgeInsets.only(bottom: 12),
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(15),
-                                    border: Border.all(color: dolu ? Colors.red.shade200 : Colors.grey.shade200),
-                                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10)],
-                                  ),
-                                  child: Row(
+                              if (r.durum == 'Onaylandı' && suAnAralikta) {
+                                durumEtiketi = "ŞU AN KİRADA";
+                                return true;
+                              } else if (bugun || suAnAralikta || rBas.isAfter(simdi)) {
+                                // Bugün için herhangi bir bekleyen/onaylı randevu veya gelecekteki randevu
+                                durumEtiketi = "REZERVE";
+                                return true;
+                              }
+                              return false;
+                            });
+                          } catch (_) {}
+
+                          bool dolu = aktifRandevu != null;
+
+                          return InkWell(
+                            onTap: dolu 
+                                ? () => Future.delayed(Duration.zero, () => _kiraDetayiniGoster(aktifRandevu!)) 
+                                : null,
+                            child: Container(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(15),
+                                border: Border.all(color: dolu ? (durumEtiketi == "REZERVE" ? Colors.orange.shade200 : Colors.red.shade200) : Colors.grey.shade200),
+                                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10)],
+                              ),
+                              child: Row(
+                                children: [
+                                  Stack(
                                     children: [
-                                      Stack(
-                                        children: [
-                                          ClipRRect(
-                                            borderRadius: BorderRadius.circular(10),
-                                            child: (resim != null && resim.isNotEmpty)
-                                                ? Image.network(resim, width: 90, height: 65, fit: BoxFit.cover)
-                                                : Container(width: 90, height: 65, color: Colors.grey.shade100, child: const Icon(Icons.directions_car, color: Colors.grey)),
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(10),
+                                        child: (resim != null && resim.isNotEmpty)
+                                            ? Image.network(resim, width: 90, height: 65, fit: BoxFit.cover)
+                                            : Container(width: 90, height: 65, color: Colors.grey.shade100, child: const Icon(Icons.directions_car, color: Colors.grey)),
+                                      ),
+                                      if (dolu)
+                                        Positioned.fill(
+                                          child: Container(
+                                            decoration: BoxDecoration(
+                                              color: (durumEtiketi == "REZERVE" ? Colors.orange : Colors.red).withValues(alpha: 0.7), 
+                                              borderRadius: BorderRadius.circular(10)
+                                            ),
+                                            child: Center(
+                                              child: Text(
+                                                durumEtiketi == "REZERVE" ? "REZERVE" : "DOLU", 
+                                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11)
+                                              )
+                                            ),
                                           ),
-                                          if (dolu)
-                                            Positioned.fill(
-                                              child: Container(
-                                                decoration: BoxDecoration(color: Colors.red.withValues(alpha: 0.7), borderRadius: BorderRadius.circular(10)),
-                                                child: const Center(child: Text("DOLU", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12))),
-                                              ),
-                                            ),
-                                        ],
-                                      ),
-                                      const SizedBox(width: 15),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              plaka != null && plaka.isNotEmpty ? "$ad ($plaka)" : ad,
-                                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                                              maxLines: 2,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                            if (plaka != null && plaka.isNotEmpty)
-                                              Container(
-                                                margin: const EdgeInsets.only(top: 6),
-                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                                decoration: BoxDecoration(
-                                                  color: dolu ? Colors.red.shade50 : Colors.blue.shade50,
-                                                  borderRadius: BorderRadius.circular(4),
-                                                  border: Border.all(color: dolu ? Colors.red.shade100 : Colors.blue.shade100),
-                                                ),
-                                                child: Text(
-                                                  dolu ? "ŞU AN KİRADA" : plaka,
-                                                  style: TextStyle(color: dolu ? Colors.red.shade800 : Colors.blue.shade800, fontSize: 11, fontWeight: FontWeight.bold),
-                                                ),
-                                              ),
-                                          ],
                                         ),
-                                      ),
-                                      const Icon(Icons.chevron_right, color: Colors.grey),
                                     ],
                                   ),
-                                ),
-                              );
-                            }).toList(),
+                                  const SizedBox(width: 15),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          ad,
+                                          style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 16),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        if (plaka != null &&
+                                            plaka.isNotEmpty)
+                                          Container(
+                                            margin: const EdgeInsets.only(
+                                                top: 6),
+                                            padding:
+                                                const EdgeInsets.symmetric(
+                                                    horizontal: 8,
+                                                    vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: dolu
+                                                  ? (durumEtiketi == "REZERVE" ? Colors.orange.shade50 : Colors.red.shade50)
+                                                  : Colors.blue.shade50,
+                                              borderRadius:
+                                                  BorderRadius.circular(4),
+                                              border: Border.all(
+                                                  color: dolu
+                                                      ? (durumEtiketi == "REZERVE" ? Colors.orange.shade100 : Colors.red.shade100)
+                                                      : Colors.blue
+                                                          .shade100),
+                                            ),
+                                            child: Text(
+                                              dolu
+                                                  ? durumEtiketi
+                                                  : plaka,
+                                              style: TextStyle(
+                                                  color: dolu
+                                                      ? (durumEtiketi == "REZERVE" ? Colors.orange.shade800 : Colors.red.shade800)
+                                                      : Colors.blue
+                                                          .shade800,
+                                                  fontSize: 11,
+                                                  fontWeight:
+                                                      FontWeight.bold),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                  if (dolu) const Icon(Icons.chevron_right, color: Colors.grey),
+                                ],
+                              ),
+                            ),
                           );
-                        }
+                        }).toList(),
                       ),
                     ),
                     const SizedBox(height: 10),

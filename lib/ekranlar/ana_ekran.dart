@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'dart:async';
 import '../servisler/firestore_servisi.dart';
+import '../servisler/bildirim_servisi.dart';
 import '../modeller/esnaf_modeli.dart';
 import 'esnaf_detay_ekrani.dart';
 import 'kullanici_randevu_ekrani.dart';
@@ -25,6 +26,11 @@ class _AnaEkranState extends State<AnaEkran> {
     super.initState();
     _determinePosition();
     _favoriAboneligiBaslat();
+    
+    // Akıllı Takip Bildirimlerini Senkronize Et (Web'den alınan randevular için)
+    if (widget.kullaniciTel != null) {
+      BildirimServisi.syncAkilliTakipBildirimleri(widget.kullaniciTel!);
+    }
   }
 
   @override

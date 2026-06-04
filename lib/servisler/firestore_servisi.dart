@@ -483,19 +483,28 @@ class FirestoreServisi {
 
   // --- RANDEVU İŞLEMLERİ ---
   Stream<List<RandevuModeli>> randevulariGetir(String esnafId, DateTime tarih, {int pencereGun = 30}) {
-    // Car rental gibi uzun süreli işlemler için pencereyi geniş tutalım (30 güne kadar olan kiralamaları yakalamak için)
+    // Karmaşık index gereksinimini ortadan kaldırmak için sadece esnafId ile sorgulayalım
+    // Filtrelemeyi bellek üzerinde (map fonksiyonu içinde) yapacağız.
     DateTime bas = DateTime(tarih.year, tarih.month, tarih.day).subtract(Duration(days: pencereGun));
-    DateTime bit = DateTime(tarih.year, tarih.month, tarih.day).add(const Duration(days: 1));
+    DateTime bit = DateTime(tarih.year, tarih.month, tarih.day).add(const Duration(days: 2)); // Yarını da kapsasın
     
     return _randevularRef
         .where('esnafId', isEqualTo: esnafId)
-        .where('tarih', isGreaterThanOrEqualTo: Timestamp.fromDate(bas))
-        .where('tarih', isLessThan: Timestamp.fromDate(bit.add(const Duration(days: 1)))) // İleriye dönük de bir miktar al
         .snapshots()
-        .map((snap) => snap.docs
-            .map((doc) => RandevuModeli.fromFirestore(doc))
-            .where((r) => r.durum == 'Beklemede' || r.durum == 'Onaylandı' || r.durum == 'Onay bekliyor')
-            .toList());
+        .map((snap) {
+          final hepsi = snap.docs.map((doc) => RandevuModeli.fromFirestore(doc)).toList();
+          
+          return hepsi.where((r) {
+            // Durum filtresi
+            if (!(r.durum == 'Beklemede' || r.durum == 'Onaylandı' || r.durum == 'Onay bekliyor')) {
+              return false;
+            }
+            
+            // Tarih aralığı filtresi (Bellekte)
+            return r.tarih.isAfter(bas.subtract(const Duration(seconds: 1))) && 
+                   r.tarih.isBefore(bit.add(const Duration(seconds: 1)));
+          }).toList();
+        });
   }
 
   Stream<List<RandevuModeli>> esnafTumRandevulariGetir(String esnafId) {

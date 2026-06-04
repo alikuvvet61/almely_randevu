@@ -18,6 +18,8 @@ class RandevuModeli {
   final String? seriId; // Periyodik randevular için grup ID
   final bool puanlandi;
   final DateTime? olusturulmaTarihi;
+  final bool akilliTakipAktif;
+  final DateTime? bildirimZamani;
 
   RandevuModeli({
     required this.id,
@@ -37,6 +39,8 @@ class RandevuModeli {
     this.seriId,
     this.puanlandi = false,
     this.olusturulmaTarihi,
+    this.akilliTakipAktif = false,
+    this.bildirimZamani,
   });
 
   factory RandevuModeli.fromFirestore(DocumentSnapshot doc) {
@@ -64,6 +68,10 @@ class RandevuModeli {
       olusturulmaTarihi: data['olusturulmaTarihi'] != null 
           ? (data['olusturulmaTarihi'] as Timestamp).toDate() 
           : null,
+      akilliTakipAktif: data['akilliTakipAktif'] ?? false,
+      bildirimZamani: data['bildirimZamani'] != null 
+          ? (data['bildirimZamani'] as Timestamp).toDate() 
+          : null,
     );
   }
 
@@ -87,6 +95,10 @@ class RandevuModeli {
       'olusturulmaTarihi': olusturulmaTarihi != null 
           ? Timestamp.fromDate(olusturulmaTarihi!) 
           : FieldValue.serverTimestamp(),
+      'akilliTakipAktif': akilliTakipAktif,
+      'bildirimZamani': bildirimZamani != null 
+          ? Timestamp.fromDate(bildirimZamani!) 
+          : null,
     };
   }
 
@@ -108,6 +120,8 @@ class RandevuModeli {
     String? seriId,
     bool? puanlandi,
     DateTime? olusturulmaTarihi,
+    bool? akilliTakipAktif,
+    DateTime? bildirimZamani,
   }) {
     return RandevuModeli(
       id: id ?? this.id,
@@ -127,6 +141,8 @@ class RandevuModeli {
       seriId: seriId ?? this.seriId,
       puanlandi: puanlandi ?? this.puanlandi,
       olusturulmaTarihi: olusturulmaTarihi ?? this.olusturulmaTarihi,
+      akilliTakipAktif: akilliTakipAktif ?? this.akilliTakipAktif,
+      bildirimZamani: bildirimZamani ?? this.bildirimZamani,
     );
   }
 }

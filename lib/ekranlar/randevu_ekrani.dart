@@ -507,8 +507,9 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
 
     if (seciliGun.isAtSameMomentAs(bugun)) {
       // Sadece bugünse saat kontrolü yap
-      if (sBaslangic
-          .isBefore(simdi.subtract(const Duration(minutes: 1)))) {
+      // Araç kiralama için 30, diğerleri için 10 dk tolerans
+      int tolerans = esnaf.kategori == 'Araç Kiralama' ? 30 : 10;
+      if (sBaslangic.isBefore(simdi.subtract(Duration(minutes: tolerans)))) {
         return "Geçmiş saat";
       }
     } else if (seciliGun.isBefore(bugun)) {
@@ -633,6 +634,20 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
         ? "${toplamSure > 1440 ? 'Günlük' : 'Saatlik'} Kiralama"
         : hizmetler.map((h) => h['isim']).join(' + ');
 
+    bool akilliTakipModu = esnaf.kategori == 'Araç Kiralama' && esnaf.akilliTakipModu;
+    DateTime? bildirimZamani;
+    
+    if (akilliTakipModu) {
+      final DateTime bitisZamani = DateTime(
+        tarih.year,
+        tarih.month,
+        tarih.day,
+        int.parse(saat.split(':')[0]),
+        int.parse(saat.split(':')[1]),
+      ).add(Duration(minutes: toplamSure));
+      bildirimZamani = bitisZamani.subtract(Duration(minutes: esnaf.akilliTakipSuresi));
+    }
+
     final yeniRandevu = RandevuModeli(
       id: '',
       esnafId: esnaf.id,
@@ -647,25 +662,15 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
       randevuKanali: kanal,
       calisanPersonel: aracModu ? null : personel,
       durum: durm,
+      akilliTakipAktif: akilliTakipModu,
+      bildirimZamani: bildirimZamani,
     );
 
     try {
       await _firestoreServisi.randevuEkle(yeniRandevu);
 
       // Akıllı Takip Bildirimi Programla (Cihaz yerelinde)
-      // NOT: Bu sadece randevuyu alan kişinin cihazında çalışır.
-      if (esnaf.kategori == 'Araç Kiralama' && esnaf.akilliTakipModu) {
-        final DateTime bitisZamani = DateTime(
-          tarih.year,
-          tarih.month,
-          tarih.day,
-          int.parse(saat.split(':')[0]),
-          int.parse(saat.split(':')[1]),
-        ).add(Duration(minutes: toplamSure));
-
-        final DateTime bildirimZamani =
-            bitisZamani.subtract(Duration(minutes: esnaf.akilliTakipSuresi));
-
+      if (akilliTakipModu && bildirimZamani != null) {
         BildirimServisi.saatliBildirimKur(
           id: DateTime.now().millisecondsSinceEpoch.remainder(100000),
           baslik: "Kiralama Süreniz Doluyor",
@@ -1609,9 +1614,11 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
           tarih.year, tarih.month, tarih.day, t.hour, t.minute);
       
       if (alisMi) {
-        if (secilenTamZaman.isBefore(DateTime.now().subtract(const Duration(minutes: 1)))) {
+        // Alış saati kontrolü: Tolerans payı ile (Kiralama: 30dk)
+        int tolerans = widget.esnaf.kategori == 'Araç Kiralama' ? 30 : 10;
+        if (secilenTamZaman.isBefore(DateTime.now().subtract(Duration(minutes: tolerans)))) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Geçmiş bir saat seçemezsiniz."), backgroundColor: Colors.red)
+            SnackBar(content: Text("Geçmiş bir saat seçemezsiniz (Max $tolerans dk tolerans)."), backgroundColor: Colors.red)
           );
           return;
         }
