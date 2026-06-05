@@ -2,10 +2,12 @@ import 'dart:async';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart'; // kIsWeb için gerekli
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:flutter_timezone/flutter_timezone.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:intl/intl.dart';
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -66,7 +68,21 @@ class BildirimServisi {
         .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(taxiChannel);
 
-    // 3. Ön planda (app açıkken) bildirim gelirse yakala ve yerel olarak göster
+    // Akıllı Takip kanalı oluştur (Kritik uyarılar için) - V2
+    const AndroidNotificationChannel smartTrackChannel = AndroidNotificationChannel(
+      'akilli_takip_kanali_v2',
+      'Akıllı Takip Bildirimleri v2',
+      description: 'Kiralama süresi bitimine yakın kritik uyarılar.',
+      importance: Importance.max,
+      playSound: true,
+      enableVibration: true,
+    );
+
+    await _localNotifications
+        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(smartTrackChannel);
+
+    // 5. Ön planda (app açıkken) bildirim gelirse yakala ve yerel olarak göster
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
       RemoteNotification? notification = message.notification;
       AndroidNotification? android = message.notification?.android;
@@ -131,33 +147,88 @@ class BildirimServisi {
     required String baslik,
     required String icerik,
     required DateTime zaman,
+    Function(String)? onError,
   }) async {
     if (kIsWeb) return;
     
-    // Eğer zaman geçmişteyse hemen gönder veya iptal et
-    if (zaman.isBefore(DateTime.now())) return;
+    if (zaman.isBefore(DateTime.now())) {
+      debugPrint("HATA: Bildirim zamanı geçmişte.");
+      return;
+    }
 
-    await _localNotifications.zonedSchedule(
-      id,
-      baslik,
-      icerik,
-      tz.TZDateTime.from(zaman, tz.local),
-      const NotificationDetails(
-        android: AndroidNotificationDetails(
-          'akilli_takip_kanali',
-          'Akıllı Takip Bildirimleri',
-          channelDescription: 'Kiralama süresi bitimine yakın uyarılar.',
-          importance: Importance.max,
-          priority: Priority.max,
-          fullScreenIntent: true,
-          category: AndroidNotificationCategory.alarm,
+    try {
+      // 1. Android sürümüne ve iznine göre modu belirle
+      AndroidScheduleMode scheduleMode = AndroidScheduleMode.exactAllowWhileIdle;
+      
+      // SCHEDULE_EXACT_ALARM iznini kontrol et
+      if (await Permission.scheduleExactAlarm.isDenied) {
+        debugPrint("UYARI: Tam zamanlı alarm izni yok, yaklaşık mod kullanılıyor.");
+        scheduleMode = AndroidScheduleMode.inexactAllowWhileIdle;
+      }
+
+      await _localNotifications.zonedSchedule(
+        id,
+        baslik,
+        icerik,
+        tz.TZDateTime.from(zaman, tz.local),
+        const NotificationDetails(
+          android: AndroidNotificationDetails(
+            'akilli_takip_kanali_v2',
+            'Akıllı Takip Bildirimleri v2',
+            channelDescription: 'Kiralama süresi bitimine yakın uyarılar.',
+            importance: Importance.max,
+            priority: Priority.max,
+            fullScreenIntent: true,
+            category: AndroidNotificationCategory.alarm,
+          ),
         ),
-      ),
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation:
-          UILocalNotificationDateInterpretation.absoluteTime,
-    );
-    debugPrint("Saatli bildirim kuruldu: $zaman");
+        androidScheduleMode: scheduleMode,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+      );
+      debugPrint("BAŞARILI: Saatli bildirim kuruldu ($scheduleMode): $zaman");
+    } catch (e) {
+      debugPrint("KRİTİK HATA (Saatli Bildirim): $e");
+      if (onError != null) onError(e.toString());
+    }
+  }
+
+  // Cihazlar arası senkronizasyon (Web'den alınan randevuyu telefona kurma)
+  static Future<void> syncAkilliTakipBildirimleri(String telefon, {Function(int, String)? onSyncSuccess}) async {
+    if (kIsWeb) return;
+
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('randevular')
+          .where('kullaniciTel', isEqualTo: telefon)
+          .where('akilliTakipAktif', isEqualTo: true)
+          .where('durum', isEqualTo: 'Onaylandı')
+          .get();
+
+      int count = 0;
+      String alarmZamani = "";
+      for (var doc in snapshot.docs) {
+        final data = doc.data();
+        final Timestamp? bZamanTs = data['bildirimZamani'] as Timestamp?;
+        
+        if (bZamanTs != null) {
+          final DateTime bZaman = bZamanTs.toDate();
+          if (bZaman.isAfter(DateTime.now())) {
+            await saatliBildirimKur(
+              id: doc.id.hashCode.remainder(100000),
+              baslik: "Kiralama Süreniz Doluyor",
+              icerik: "Aktif araç kiralamanızın süresi yakında doluyor. Detaylar için uygulamayı açın.",
+              zaman: bZaman,
+            );
+            alarmZamani = DateFormat('HH:mm').format(bZaman);
+            count++;
+          }
+        }
+      }
+      if (count > 0 && onSyncSuccess != null) onSyncSuccess(count, alarmZamani);
+    } catch (e) {
+      debugPrint("Senkronizasyon Hatası: $e");
+    }
   }
 
   // Firestore'daki bildirimleri dinle ve telefona bildirim olarak bas
@@ -196,34 +267,5 @@ class BildirimServisi {
         }
       }
     });
-  }
-
-  // Cihazlar arası senkronizasyon (Web'den alınan randevuyu telefona kurma)
-  static Future<void> syncAkilliTakipBildirimleri(String telefon) async {
-    if (kIsWeb) return;
-
-    final snapshot = await FirebaseFirestore.instance
-        .collection('randevular')
-        .where('kullaniciTel', isEqualTo: telefon)
-        .where('akilliTakipAktif', isEqualTo: true)
-        .where('durum', isEqualTo: 'Onaylandı')
-        .get();
-
-    for (var doc in snapshot.docs) {
-      final data = doc.data();
-      final Timestamp? bZamanTs = data['bildirimZamani'] as Timestamp?;
-      
-      if (bZamanTs != null) {
-        final DateTime bZaman = bZamanTs.toDate();
-        if (bZaman.isAfter(DateTime.now())) {
-          await saatliBildirimKur(
-            id: doc.id.hashCode.remainder(100000),
-            baslik: "Kiralama Süreniz Doluyor",
-            icerik: "Aktif araç kiralamanızın süresi yakında doluyor. Detaylar için uygulamayı açın.",
-            zaman: bZaman,
-          );
-        }
-      }
-    }
   }
 }

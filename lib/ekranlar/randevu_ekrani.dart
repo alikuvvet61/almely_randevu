@@ -677,6 +677,13 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
           icerik:
               "Kiralama süreniz ${esnaf.akilliTakipSuresi ~/ 60} saat ${esnaf.akilliTakipSuresi % 60 > 0 ? '${esnaf.akilliTakipSuresi % 60} dk ' : ''}sonra bitiyor. Uzatmak ister misiniz?",
           zaman: bildirimZamani,
+          onError: (error) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text("Bildirim Kurulamadı: $error"), backgroundColor: Colors.red)
+              );
+            }
+          },
         );
       }
 

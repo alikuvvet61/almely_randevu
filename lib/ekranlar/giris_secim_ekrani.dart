@@ -5,6 +5,7 @@ import 'admin_giris_ekrani.dart';
 import '../servisler/versiyon_servisi.dart';
 import '../servisler/bildirim_servisi.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:disable_battery_optimization/disable_battery_optimization.dart';
 
 class GirisSecimSayfasi extends StatefulWidget {
   const GirisSecimSayfasi({super.key});
@@ -29,6 +30,18 @@ class _GirisSecimSayfasiState extends State<GirisSecimSayfasi> {
     if (await Permission.notification.isDenied) {
       await Permission.notification.request();
     }
+    
+    // Android 13+ SCHEDULE_EXACT_ALARM izni kontrolü
+    if (await Permission.scheduleExactAlarm.isDenied) {
+      await Permission.scheduleExactAlarm.request();
+    }
+
+    // Pil Optimizasyonu Kontrolü ve İsteği
+    bool? isBatteryOptimizationDisabled = await DisableBatteryOptimization.isBatteryOptimizationDisabled;
+    if (isBatteryOptimizationDisabled == false && mounted) {
+      await DisableBatteryOptimization.showDisableBatteryOptimizationSettings();
+    }
+
     // FCM ve yerel bildirimleri de initialize edelim
     await BildirimServisi.initialize();
   }

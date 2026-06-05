@@ -2827,18 +2827,25 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
 
                                   bool suAnAralikta = !simdi.isBefore(rBas) && simdi.isBefore(rBit);
                                   bool suAnBakimda = !simdi.isBefore(rBit) && simdi.isBefore(rTamBit);
-                                  bool bugun = r.tarih.year == simdi.year && r.tarih.month == simdi.month && r.tarih.day == simdi.day;
+                                  bool gelecekte = rBas.isAfter(simdi);
 
-                                  if (r.durum == 'Onaylandı' && suAnAralikta) {
-                                    durumEtiketi = "ŞU AN KİRADA";
-                                    return true;
-                                  } else if (r.durum == 'Onaylandı' && suAnBakimda) {
-                                    durumEtiketi = "BAKIMDA";
-                                    return true;
-                                  } else if (bugun || rBas.isAfter(simdi)) {
-                                    // Gelecek bir randevu veya bekleyen bir işlem
-                                    durumEtiketi = "REZERVE";
-                                    return true;
+                                  if (r.durum == 'Onaylandı') {
+                                    if (suAnAralikta) {
+                                      durumEtiketi = "ŞU AN KİRADA";
+                                      return true;
+                                    } else if (suAnBakimda) {
+                                      durumEtiketi = "BAKIMDA";
+                                      return true;
+                                    } else if (gelecekte) {
+                                      durumEtiketi = "REZERVE";
+                                      return true;
+                                    }
+                                  } else if (r.durum == 'Onay bekliyor' || r.durum == 'Beklemede') {
+                                    // Bekleyen randevu ancak geçmişte kalmışsa (onaylanmadığı için vakti geçmiş) rezerve gösterme
+                                    if (gelecekte || suAnAralikta) {
+                                       durumEtiketi = "REZERVE";
+                                       return true;
+                                    }
                                   }
                                   return false;
                                 });
