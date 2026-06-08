@@ -87,12 +87,13 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
   @override
   void initState() {
     super.initState();
-    BildirimServisi.tokenKaydet(widget.esnaf.telefon);
-    BildirimServisi.bildirimDinle(widget.esnaf.telefon);
+    // TEŞHİS: Bildirim servisini bağla ve kullanıcıyı bilgilendir
+    BildirimServisi.tokenKaydet(widget.esnaf.telefon, context: context);
+    BildirimServisi.bildirimDinle(widget.esnaf.telefon, context: context);
 
     if (_isSofor) {
-      BildirimServisi.tokenKaydet(widget.soforTel!);
-      BildirimServisi.bildirimDinle(widget.soforTel!);
+      BildirimServisi.tokenKaydet(widget.soforTel!, context: context);
+      BildirimServisi.bildirimDinle(widget.soforTel!, context: context);
       _otomatikKonumPaylasiminiBaslat();
     }
 

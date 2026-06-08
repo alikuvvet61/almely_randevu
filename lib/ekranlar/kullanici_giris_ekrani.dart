@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../servisler/onesignal_servisi.dart';
 import 'ana_ekran.dart';
 import '../servisler/bildirim_servisi.dart';
 
@@ -24,9 +25,10 @@ class _KullaniciGirisSayfasiState extends State<KullaniciGirisSayfasi> {
 
     setState(() => _loading = true);
     
-    // Bildirim ayarlarını yap
-    BildirimServisi.tokenKaydet(tel);
-    BildirimServisi.bildirimDinle(tel);
+    // TEŞHİS: Bildirim ayarlarını yap ve kullanıcıya teyit ver
+    BildirimServisi.tokenKaydet(tel, context: context);
+    BildirimServisi.bildirimDinle(tel, context: context);
+    OneSignalServisi.kullaniciyiKaydet(tel);
     
     Future.delayed(const Duration(milliseconds: 500), () {
       if (!mounted) return;

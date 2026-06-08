@@ -5,7 +5,7 @@ import 'admin_giris_ekrani.dart';
 import '../servisler/versiyon_servisi.dart';
 import '../servisler/bildirim_servisi.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:disable_battery_optimization/disable_battery_optimization.dart';
+import '../servisler/onesignal_servisi.dart';
 
 class GirisSecimSayfasi extends StatefulWidget {
   const GirisSecimSayfasi({super.key});
@@ -36,14 +36,9 @@ class _GirisSecimSayfasiState extends State<GirisSecimSayfasi> {
       await Permission.scheduleExactAlarm.request();
     }
 
-    // Pil Optimizasyonu Kontrolü ve İsteği
-    bool? isBatteryOptimizationDisabled = await DisableBatteryOptimization.isBatteryOptimizationDisabled;
-    if (isBatteryOptimizationDisabled == false && mounted) {
-      await DisableBatteryOptimization.showDisableBatteryOptimizationSettings();
-    }
-
-    // FCM ve yerel bildirimleri de initialize edelim
+    // FCM, OneSignal ve yerel bildirimleri de initialize edelim
     await BildirimServisi.initialize();
+    await OneSignalServisi.initialize();
   }
 
   @override

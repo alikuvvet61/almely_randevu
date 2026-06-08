@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart'; // kIsWeb için gerekli
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
@@ -11,7 +12,7 @@ import 'package:intl/intl.dart';
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  debugPrint("Arka plan bildirimi geldi: ${message.messageId}");
+  debugPrint("ARKA PLAN BİLDİRİMİ GELDİ: ${message.messageId}");
 }
 
 class BildirimServisi {
@@ -27,7 +28,7 @@ class BildirimServisi {
     final timeZoneName = await FlutterTimezone.getLocalTimezone();
     tz.setLocalLocation(tz.getLocation(timeZoneName.toString()));
 
-    // 2. Bildirim izinlerini iste (Android 13+ desteği ile)
+    // 2. Bildirim izinlerini iste
     NotificationSettings settings = await _fcm.requestPermission(
       alert: true,
       badge: true,
@@ -37,14 +38,12 @@ class BildirimServisi {
 
     if (settings.authorizationStatus == AuthorizationStatus.authorized) {
       debugPrint('Bildirim izni verildi.');
-    } else if (settings.authorizationStatus == AuthorizationStatus.denied) {
-      debugPrint('Bildirim izni reddedildi.');
     }
 
     // 3. Arka plan mesaj dinleyicisini kaydet
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
-    // 4. Yerel bildirimleri ayarla (Ön planda bildirim göstermek için)
+    // 4. Yerel bildirimleri ayarla
     const AndroidInitializationSettings initializationSettingsAndroid =
         AndroidInitializationSettings('@mipmap/ic_launcher');
         
@@ -54,24 +53,10 @@ class BildirimServisi {
     
     await _localNotifications.initialize(initializationSettings);
 
-    // Taksi kanalı oluştur (Özel sesli)
-    const AndroidNotificationChannel taxiChannel = AndroidNotificationChannel(
-      'taksi_cagrisi_kanali',
-      'Taksi Çağrıları',
-      description: 'Yeni taksi çağrısı bildirimi.',
-      importance: Importance.max,
-      playSound: true,
-      sound: RawResourceAndroidNotificationSound('taxi_horn'),
-    );
-
-    await _localNotifications
-        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-        ?.createNotificationChannel(taxiChannel);
-
-    // Akıllı Takip kanalı oluştur (Kritik uyarılar için) - V2
+    // Kanalları oluştur (V3 - Kesinlik ve Görünürlük için)
     const AndroidNotificationChannel smartTrackChannel = AndroidNotificationChannel(
-      'akilli_takip_kanali_v2',
-      'Akıllı Takip Bildirimleri v2',
+      'akilli_takip_kanali_v3',
+      'KRİTİK UYARILAR',
       description: 'Kiralama süresi bitimine yakın kritik uyarılar.',
       importance: Importance.max,
       playSound: true,
@@ -82,21 +67,18 @@ class BildirimServisi {
         .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(smartTrackChannel);
 
-    // 5. Ön planda (app açıkken) bildirim gelirse yakala ve yerel olarak göster
+    // 5. Ön planda bildirim yakalama
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
       RemoteNotification? notification = message.notification;
-      AndroidNotification? android = message.notification?.android;
-      
-      if (notification != null && android != null) {
+      if (notification != null) {
         _localNotifications.show(
           notification.hashCode,
-          notification.title,
+          "ÖN PLAN: ${notification.title}",
           notification.body,
           const NotificationDetails(
             android: AndroidNotificationDetails(
-              'randevu_kanal_id',
-              'Randevu Bildirimleri',
-              channelDescription: 'Randevu durumu değişiklikleri bildirilir.',
+              'akilli_takip_kanali_v3',
+              'KRİTİK UYARILAR',
               importance: Importance.max,
               priority: Priority.high,
               showWhen: true,
@@ -107,8 +89,7 @@ class BildirimServisi {
     });
   }
 
-  // FCM Token al ve Firestore'a telefon numarasıyla eşleştirerek kaydet
-  static Future<void> tokenKaydet(String telefon) async {
+  static Future<void> tokenKaydet(String telefon, {BuildContext? context}) async {
     if (kIsWeb) return;
     try {
       String? token = await _fcm.getToken();
@@ -116,51 +97,65 @@ class BildirimServisi {
         await FirebaseFirestore.instance.collection('kullanici_tokenlar').doc(telefon).set({
           'token': token,
           'sonGuncelleme': FieldValue.serverTimestamp(),
+          'cihaz': kIsWeb ? "Web" : "Mobil",
         });
-        debugPrint("Token başarıyla kaydedildi.");
+        
+        if (context != null && context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("BİLDİRİM KİMLİĞİ KAYDEDİLDİ: Bildirim almaya hazırsınız."),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 3),
+              behavior: SnackBarBehavior.floating,
+            )
+          );
+        }
       }
     } catch (e) {
-      debugPrint("Token kaydedilemedi: $e");
+      debugPrint("Token Hatası: $e");
+      if (context != null && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("KİMLİK HATASI: $e"), backgroundColor: Colors.red)
+        );
+      }
     }
   }
 
-  // Firestore üzerinden bildirim gönderimi
   static Future<void> bildirimGonder({
     required String kullaniciTel,
     required String baslik,
     required String icerik,
   }) async {
-    final docRef =
-        await FirebaseFirestore.instance.collection('bildirimler').add({
+    await FirebaseFirestore.instance.collection('bildirimler').add({
       'aliciTel': kullaniciTel,
       'baslik': baslik,
       'icerik': icerik,
       'okundu': false,
       'tarih': FieldValue.serverTimestamp(),
     });
-    debugPrint("Bildirim Firestore'a eklendi: ${docRef.id}");
   }
 
-  // Akıllı Takip Modu için yerel saatli bildirim kur (App kapalıyken çalışır)
+  // HATA TESPİT SİSTEMİ: Bildirim kurulurken hata olursa kullanıcıya bildir
   static Future<void> saatliBildirimKur({
     required int id,
     required String baslik,
     required String icerik,
     required DateTime zaman,
-    Function(String)? onError,
+    BuildContext? context,
   }) async {
     if (kIsWeb) return;
     
     if (zaman.isBefore(DateTime.now())) {
-      debugPrint("HATA: Bildirim zamanı geçmişte.");
+      String msg = "HATA: Bildirim zamanı geçmişte (${DateFormat('HH:mm').format(zaman)}).";
+      if (context != null && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: Colors.red));
+      }
       return;
     }
 
     try {
-      // 1. Android sürümüne ve iznine göre modu belirle
       AndroidScheduleMode scheduleMode = AndroidScheduleMode.exactAllowWhileIdle;
       
-      // SCHEDULE_EXACT_ALARM iznini kontrol et
       if (await Permission.scheduleExactAlarm.isDenied) {
         debugPrint("UYARI: Tam zamanlı alarm izni yok, yaklaşık mod kullanılıyor.");
         scheduleMode = AndroidScheduleMode.inexactAllowWhileIdle;
@@ -173,28 +168,29 @@ class BildirimServisi {
         tz.TZDateTime.from(zaman, tz.local),
         const NotificationDetails(
           android: AndroidNotificationDetails(
-            'akilli_takip_kanali_v2',
-            'Akıllı Takip Bildirimleri v2',
-            channelDescription: 'Kiralama süresi bitimine yakın uyarılar.',
+            'akilli_takip_kanali_v3',
+            'KRİTİK UYARILAR',
             importance: Importance.max,
             priority: Priority.max,
             fullScreenIntent: true,
             category: AndroidNotificationCategory.alarm,
+            visibility: NotificationVisibility.public,
           ),
         ),
         androidScheduleMode: scheduleMode,
         uiLocalNotificationDateInterpretation:
             UILocalNotificationDateInterpretation.absoluteTime,
       );
-      debugPrint("BAŞARILI: Saatli bildirim kuruldu ($scheduleMode): $zaman");
+      debugPrint("BAŞARILI: Bildirim kuruldu: $zaman");
     } catch (e) {
-      debugPrint("KRİTİK HATA (Saatli Bildirim): $e");
-      if (onError != null) onError(e.toString());
+      String msg = "BİLDİRİM KURULAMADI: $e";
+      if (context != null && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: Colors.red, duration: const Duration(seconds: 8)));
+      }
     }
   }
 
-  // Cihazlar arası senkronizasyon (Web'den alınan randevuyu telefona kurma)
-  static Future<void> syncAkilliTakipBildirimleri(String telefon, {Function(int, String)? onSyncSuccess}) async {
+  static Future<void> syncAkilliTakipBildirimleri(String telefon, BuildContext context) async {
     if (kIsWeb) return;
 
     try {
@@ -217,22 +213,30 @@ class BildirimServisi {
             await saatliBildirimKur(
               id: doc.id.hashCode.remainder(100000),
               baslik: "Kiralama Süreniz Doluyor",
-              icerik: "Aktif araç kiralamanızın süresi yakında doluyor. Detaylar için uygulamayı açın.",
+              icerik: "Aktif araç kiralamanızın süresi yakında doluyor.",
               zaman: bZaman,
+              context: context,
             );
             alarmZamani = DateFormat('HH:mm').format(bZaman);
             count++;
           }
         }
       }
-      if (count > 0 && onSyncSuccess != null) onSyncSuccess(count, alarmZamani);
+      if (count > 0 && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("$count bildirim telefonunuza kuruldu. Saat: $alarmZamani"), 
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+          )
+        );
+      }
     } catch (e) {
       debugPrint("Senkronizasyon Hatası: $e");
     }
   }
 
-  // Firestore'daki bildirimleri dinle ve telefona bildirim olarak bas
-  static void bildirimDinle(String telefon) {
+  static void bildirimDinle(String telefon, {BuildContext? context}) {
     if (kIsWeb) return;
     FirebaseFirestore.instance
         .collection('bildirimler')
@@ -244,24 +248,26 @@ class BildirimServisi {
         if (change.type == DocumentChangeType.added) {
           var data = change.doc.data();
           if (data != null) {
-            final bool isTaxi = data['baslik']?.toString().contains('Taksi') ?? false;
-            
             _localNotifications.show(
               change.doc.id.hashCode,
               data['baslik'] ?? 'Yeni Bildirim',
               data['icerik'] ?? '',
-              NotificationDetails(
+              const NotificationDetails(
                 android: AndroidNotificationDetails(
-                  isTaxi ? 'taksi_cagrisi_kanali' : 'randevu_kanal_id',
-                  isTaxi ? 'Taksi Çağrıları' : 'Randevu Bildirimleri',
+                  'akilli_takip_kanali_v3',
+                  'KRİTİK UYARILAR',
                   importance: Importance.max,
                   priority: Priority.high,
                   showWhen: true,
-                  sound: isTaxi ? const RawResourceAndroidNotificationSound('taxi_horn') : null,
                 ),
               ),
             );
-            // Bildirimi okundu olarak işaretle ki tekrar tetiklenmesin
+            
+            if (context != null && context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text("BİLDİRİM GELDİ: ${data['baslik']}"), backgroundColor: Colors.indigo)
+              );
+            }
             change.doc.reference.update({'okundu': true});
           }
         }

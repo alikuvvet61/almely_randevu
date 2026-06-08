@@ -29,20 +29,7 @@ class _AnaEkranState extends State<AnaEkran> {
     
     // Akıllı Takip Bildirimlerini Senkronize Et (Web'den alınan randevular için)
     if (widget.kullaniciTel != null) {
-       BildirimServisi.syncAkilliTakipBildirimleri(
-        widget.kullaniciTel!,
-        onSyncSuccess: (count, alarmSaati) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text("$count adet aktif kiralama bildirimi telefonunuza kuruldu. Alarm Saati: $alarmSaati"), 
-                backgroundColor: Colors.green,
-                behavior: SnackBarBehavior.floating,
-              )
-            );
-          }
-        },
-      );
+       BildirimServisi.syncAkilliTakipBildirimleri(widget.kullaniciTel!, context);
     }
   }
 

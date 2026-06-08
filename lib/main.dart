@@ -4,6 +4,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'firebase_options.dart';
 import 'servisler/bildirim_servisi.dart';
+import 'servisler/onesignal_servisi.dart';
 import 'servisler/versiyon_servisi.dart';
 import 'ekranlar/giris_secim_ekrani.dart';
 
@@ -23,11 +24,13 @@ void main() async {
     debugPrint("Firebase başlatma hatası: $e");
   }
 
-  // Bildirim servisini başlat
+  // Bildirim servislerini başlat
   try {
     await BildirimServisi.initialize();
+    // OneSignal profesyonel bildirimleri başlat
+    await OneSignalServisi.initialize();
   } catch (e) {
-    debugPrint("Bildirim servisi başlatılamadı: $e");
+    debugPrint("Bildirim servisleri başlatılamadı: $e");
   }
 
   runApp(const AlmElyApp());
