@@ -1,53 +1,82 @@
 import 'package:onesignal_flutter/onesignal_flutter.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 class OneSignalServisi {
-  // Lütfen OneSignal App ID'nizi buraya girin (OneSignal Panelinden alabilirsiniz)
-  // OneSignal App ID'si başarıyla bağlandı
-  static const String appId = "40997d21-3c4a-4585-bbf1-8b30c01cba54";
+  static const String appId = "40997d21-3c4a-4585-bbf1-8b30c01cba54"; 
+  static const String restApiKey = "os_v2_app_icmx2ij4jjcylo7rrmymahf2kqjqvqbgm3xupemwmzb5kj7zsfumguxl4gnaeggtxc7bmlxvvubke6lmijcjsv6ooqefyig6ele2cqq"; 
 
-  static Future<void> initialize() async {
+  // Kesin kalıcı veri saklama (Global Bellek)
+  static Map<String, dynamic>? sonTiklananVeri;
+
+  static Future<void> initialize({BuildContext? context}) async {
     if (kIsWeb) return;
 
-    // Log seviyesini ayarla
-    OneSignal.Debug.setLogLevel(OSLogLevel.verbose);
-
-    // OneSignal'ı başlat
-    OneSignal.initialize(appId);
-
-    // Bildirim izni iste
-    OneSignal.Notifications.requestPermission(true);
-  }
-
-  // Kullanıcıyı telefon numarasıyla eşleştir (Tag ekle)
-  static Future<void> kullaniciyiKaydet(String telefon) async {
-    if (kIsWeb) return;
-    
     try {
-      // Önce giriş yap
-      OneSignal.login(telefon);
-      
-      // Bildirimleri aç ve tag ekle
-      OneSignal.User.addTagWithKey("telefon", telefon);
+      OneSignal.Debug.setLogLevel(OSLogLevel.verbose);
+      OneSignal.initialize(appId);
+      OneSignal.Notifications.requestPermission(true);
       OneSignal.User.pushSubscription.optIn();
       
-      debugPrint("OneSignal: Kullanıcı $telefon başarıyla abone edildi ve kaydedildi.");
+      // BİLDİRİM TIKLAMA DİNLEYİCİSİ (Uygulama kapalıyken bile çalışır)
+      OneSignal.Notifications.addClickListener((event) {
+        final data = event.notification.additionalData;
+        if (data != null && data.containsKey("action")) {
+          // Veriyi en tepe statik değişkene yaz
+          sonTiklananVeri = Map<String, dynamic>.from(data);
+          debugPrint("OneSignal: Bildirim verisi belleğe alındı: ${data['action']}");
+        }
+      });
+    } catch (e) {
+      debugPrint("OneSignal Başlatma Hatası: $e");
+    }
+  }
+
+  static Future<void> kullaniciyiKaydet(String telefon, {BuildContext? context}) async {
+    if (kIsWeb) return;
+    try {
+      OneSignal.login(telefon);
+      OneSignal.User.addTagWithKey("telefon", telefon);
+      OneSignal.User.pushSubscription.optIn();
     } catch (e) {
       debugPrint("OneSignal Kayıt Hatası: $e");
     }
   }
 
-  // Bildirim gönderimi (Profesyonel uygulamalarda bu sunucu tarafında yapılır)
-  // Burada mantığı kuruyoruz.
-  static Future<void> bildirimGonder({
-    required String kullaniciTel,
+  static Future<bool> bildirimPlanla({
     required String baslik,
     required String icerik,
-    DateTime? gonderimZamani,
+    required DateTime zaman,
+    required String telefon,
   }) async {
-    // NOT: OneSignal istemci tarafı (App içinden) doğrudan diğer kullanıcılara 
-    // bildirim göndermeyi güvenlik nedeniyle kısıtlar. 
-    // Gerçek profesyonel çözümde bu fonksiyon REST API üzerinden sunucudan çağrılır.
-    debugPrint("OneSignal: $kullaniciTel için bildirim emri oluşturuldu.");
+    if (kIsWeb) return false;
+
+    try {
+      final response = await http.post(
+        Uri.parse('https://onesignal.com/api/v1/notifications'),
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Authorization': 'Basic $restApiKey',
+        },
+        body: jsonEncode({
+          'app_id': appId,
+          'include_external_user_ids': [telefon],
+          'headings': {'en': baslik},
+          'contents': {'en': icerik},
+          'send_after': zaman.toUtc().toIso8601String(),
+          'data': {
+            'action': 'uzatma_ekrani',
+            'tel': telefon,
+          },
+          'android_accent_color': 'FF0000FF',
+          'priority': 10,
+        }),
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      return false;
+    }
   }
 }

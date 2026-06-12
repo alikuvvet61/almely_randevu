@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import '../modeller/esnaf_modeli.dart';
 import '../modeller/randevu_modeli.dart';
+import 'onesignal_servisi.dart';
 
 class FirestoreServisi {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -616,6 +617,45 @@ class FirestoreServisi {
     if (iptalNedeni != null) veri['iptalNedeni'] = iptalNedeni;
     await _randevularRef.doc(id).update(veri);
 
+    // [YENİ] Onay Odaklı Akıllı Takip Bildirimi
+    if (yeniDurum == 'Onaylandı') {
+      try {
+        final rSnap = await _randevularRef.doc(id).get();
+        final r = RandevuModeli.fromFirestore(rSnap);
+        
+        final esnafSnap = await _esnaflarRef.doc(r.esnafId).get();
+        final esnaf = EsnafModeli.fromFirestore(esnafSnap);
+
+        if (esnaf.kategori == 'Araç Kiralama' && esnaf.akilliTakipModu) {
+          final DateTime bitisZamani = DateTime(
+            r.tarih.year,
+            r.tarih.month,
+            r.tarih.day,
+            int.parse(r.saat.split(':')[0]),
+            int.parse(r.saat.split(':')[1]),
+          ).add(Duration(minutes: r.sure));
+          
+          final DateTime bZaman = bitisZamani.subtract(Duration(minutes: esnaf.akilliTakipSuresi));
+          
+          if (bZaman.isAfter(DateTime.now())) {
+            String dinamikIcerik = "Kiralama süreniz ${esnaf.akilliTakipSuresi ~/ 60} saat sonra bitiyor. Uzatmak ister misiniz?";
+            if (esnaf.akilliTakipSuresi < 60) {
+              dinamikIcerik = "Kiralama süreniz ${esnaf.akilliTakipSuresi} dakika sonra bitiyor. Uzatmak ister misiniz?";
+            }
+
+            OneSignalServisi.bildirimPlanla(
+              baslik: "Kiralama Süreniz Doluyor",
+              icerik: dinamikIcerik,
+              zaman: bZaman,
+              telefon: r.kullaniciTel,
+            );
+          }
+        }
+      } catch (e) {
+        debugPrint("Onay sonrası OneSignal hatası: $e");
+      }
+    }
+
     // Bildirim gönder
     if (aliciTel != null && esnafAdi != null && tarihSaat != null) {
       String baslik = "";
@@ -765,5 +805,53 @@ class FirestoreServisi {
 
   Future<void> taksiTalebiGuncelle(String talepId, Map<String, dynamic> veri) async {
     await _db.collection('taksi_talepleri').doc(talepId).update(veri);
+  }
+
+  // --- AKILLI TAKİP: OTONOM UZATMA KONTROLÜ ---
+  Future<bool> randevuUzatmaMusaitMi(RandevuModeli r, int ekDakika) async {
+    // Randevunun asıl bitiş zamanını hesapla
+    final parcalar = r.saat.split(':');
+    DateTime rBaslangic = DateTime(r.tarih.year, r.tarih.month, r.tarih.day, 
+        int.parse(parcalar[0]), int.parse(parcalar[1]));
+    DateTime rBitis = rBaslangic.add(Duration(minutes: r.sure));
+    
+    // Uzatılmak istenen yeni bitiş zamanı
+    DateTime yeniBitis = rBitis.add(Duration(minutes: ekDakika));
+
+    // Otonom Sorgu: Bu araç (kanal) için bu zaman diliminde başka randevu var mı?
+    var snap = await _randevularRef
+        .where('esnafId', isEqualTo: r.esnafId)
+        .where('randevu_kanali', isEqualTo: r.randevuKanali)
+        .where('tarih', isGreaterThanOrEqualTo: Timestamp.fromDate(r.tarih.subtract(const Duration(days: 1))))
+        .where('tarih', isLessThanOrEqualTo: Timestamp.fromDate(r.tarih.add(const Duration(days: 1))))
+        .get();
+
+    for (var doc in snap.docs) {
+      if (doc.id == r.id) continue;
+      final data = doc.data() as Map<String, dynamic>;
+      if (data['durum'] == 'Reddedildi' || data['durum'] == 'İptal Edildi') continue;
+
+      DateTime mTarih = (data['tarih'] as Timestamp).toDate();
+      final mParcalar = (data['saat'] as String).split(':');
+      DateTime mStart = DateTime(mTarih.year, mTarih.month, mTarih.day, 
+          int.parse(mParcalar[0]), int.parse(mParcalar[1]));
+      
+      // Eğer yeni bitiş zamanımız, sıradaki randevunun başlangıcından sonraysa çakışma vardır.
+      if (rBitis.isBefore(mStart) && yeniBitis.isAfter(mStart)) {
+        return false; // Müsait değil
+      }
+    }
+    return true; // Müsait
+  }
+
+  Future<void> randevuUzat(String randevuId, int ekDakika) async {
+    final doc = await _randevularRef.doc(randevuId).get();
+    if (!doc.exists) return;
+    
+    final currentSure = doc.get('sure') as int;
+    await _randevularRef.doc(randevuId).update({
+      'sure': currentSure + ekDakika,
+      'guncellemeTarihi': FieldValue.serverTimestamp(),
+    });
   }
 }

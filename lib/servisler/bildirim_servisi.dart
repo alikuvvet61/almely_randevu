@@ -51,7 +51,8 @@ class BildirimServisi {
       android: initializationSettingsAndroid,
     );
     
-    await _localNotifications.initialize(initializationSettings);
+    // V18+ DÜZELTMESİ: İsimlendirilmiş parametre kullanımı
+    await _localNotifications.initialize(settings: initializationSettings);
 
     // Kanalları oluştur (V3 - Kesinlik ve Görünürlük için)
     const AndroidNotificationChannel smartTrackChannel = AndroidNotificationChannel(
@@ -72,10 +73,10 @@ class BildirimServisi {
       RemoteNotification? notification = message.notification;
       if (notification != null) {
         _localNotifications.show(
-          notification.hashCode,
-          "ÖN PLAN: ${notification.title}",
-          notification.body,
-          const NotificationDetails(
+          id: notification.hashCode,
+          title: "ÖN PLAN: ${notification.title}",
+          body: notification.body,
+          notificationDetails: const NotificationDetails(
             android: AndroidNotificationDetails(
               'akilli_takip_kanali_v3',
               'KRİTİK UYARILAR',
@@ -161,12 +162,13 @@ class BildirimServisi {
         scheduleMode = AndroidScheduleMode.inexactAllowWhileIdle;
       }
 
+      // V18+ DÜZELTMESİ: zonedSchedule parametreleri isimlendirilmiş hale getirildi
       await _localNotifications.zonedSchedule(
-        id,
-        baslik,
-        icerik,
-        tz.TZDateTime.from(zaman, tz.local),
-        const NotificationDetails(
+        id: id,
+        title: baslik,
+        body: icerik,
+        scheduledDate: tz.TZDateTime.from(zaman, tz.local),
+        notificationDetails: const NotificationDetails(
           android: AndroidNotificationDetails(
             'akilli_takip_kanali_v3',
             'KRİTİK UYARILAR',
@@ -178,8 +180,6 @@ class BildirimServisi {
           ),
         ),
         androidScheduleMode: scheduleMode,
-        uiLocalNotificationDateInterpretation:
-            UILocalNotificationDateInterpretation.absoluteTime,
       );
       debugPrint("BAŞARILI: Bildirim kuruldu: $zaman");
     } catch (e) {
@@ -210,15 +210,18 @@ class BildirimServisi {
         if (bZamanTs != null) {
           final DateTime bZaman = bZamanTs.toDate();
           if (bZaman.isAfter(DateTime.now())) {
-            await saatliBildirimKur(
-              id: doc.id.hashCode.remainder(100000),
-              baslik: "Kiralama Süreniz Doluyor",
-              icerik: "Aktif araç kiralamanızın süresi yakında doluyor.",
-              zaman: bZaman,
-              context: context,
-            );
-            alarmZamani = DateFormat('HH:mm').format(bZaman);
-            count++;
+            // Her kurma işleminden önce context hala geçerli mi kontrol et
+            if (context.mounted) {
+              await saatliBildirimKur(
+                id: doc.id.hashCode.remainder(100000),
+                baslik: "Kiralama Süreniz Doluyor",
+                icerik: "Aktif araç kiralamanızın süresi yakında doluyor.",
+                zaman: bZaman,
+                context: context,
+              );
+              alarmZamani = DateFormat('HH:mm').format(bZaman);
+              count++;
+            }
           }
         }
       }
@@ -249,10 +252,10 @@ class BildirimServisi {
           var data = change.doc.data();
           if (data != null) {
             _localNotifications.show(
-              change.doc.id.hashCode,
-              data['baslik'] ?? 'Yeni Bildirim',
-              data['icerik'] ?? '',
-              const NotificationDetails(
+              id: change.doc.id.hashCode,
+              title: data['baslik'] ?? 'Yeni Bildirim',
+              body: data['icerik'] ?? '',
+              notificationDetails: const NotificationDetails(
                 android: AndroidNotificationDetails(
                   'akilli_takip_kanali_v3',
                   'KRİTİK UYARILAR',
@@ -265,7 +268,10 @@ class BildirimServisi {
             
             if (context != null && context.mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text("BİLDİRİM GELDİ: ${data['baslik']}"), backgroundColor: Colors.indigo)
+                SnackBar(
+                  content: Text("BİLDİRİM GELDİ: ${data['baslik']}"),
+                  backgroundColor: Colors.indigo,
+                ),
               );
             }
             change.doc.reference.update({'okundu': true});

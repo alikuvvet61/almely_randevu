@@ -5,6 +5,7 @@ import '../modeller/esnaf_modeli.dart';
 import '../modeller/randevu_modeli.dart';
 import '../servisler/firestore_servisi.dart';
 import '../servisler/bildirim_servisi.dart';
+import '../servisler/onesignal_servisi.dart';
 import '../widgets/ana_buton.dart';
 
 class RandevuEkrani extends StatefulWidget {
@@ -314,12 +315,10 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
       bool tarihUygun = false;
 
       if (kanal != null && kanal.isNotEmpty) {
-        // Kanal seçiliyse: Ya bu kanala özel tarih ya da genel tarih (alt çizgisiz)
         if (s.endsWith("_$kanal") || !s.contains('_')) {
           tarihUygun = true;
         }
       } else {
-        // Kanal seçili değilse: Sadece genel tarihleri göster
         if (!s.contains('_')) {
           tarihUygun = true;
         }
@@ -452,7 +451,6 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
           }
         }
       } else {
-        // Ajanda kaydı yoksa şablona bak (Taksi için)
         final arac = esnaf.araclar.cast<Map<String, dynamic>?>().firstWhere(
               (a) => a?['plaka'] == kanal,
               orElse: () => null,
@@ -474,18 +472,6 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
 
     int slotDakika = calisma['slotDakika'] ?? calisma['slotAraligi'] ?? 30;
 
-    Map<String, dynamic> kapaliSlotlarMap = {};
-    if (ajandaVerisi != null && ajandaVerisi.containsKey('kapaliSlotlar')) {
-      var raw = ajandaVerisi['kapaliSlotlar'];
-      if (raw is Map) {
-        kapaliSlotlarMap = Map<String, dynamic>.from(raw);
-      } else if (raw is List) {
-        for (var s in raw) {
-          kapaliSlotlarMap[s.toString()] = "Belirtilmedi";
-        }
-      }
-    }
-
     if (ajandaVerisi != null &&
         ajandaVerisi['ogleBaslangic'] != null &&
         ajandaVerisi['ogleBitis'] != null) {
@@ -506,14 +492,11 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
     final seciliGun = DateTime(tarih.year, tarih.month, tarih.day);
 
     if (seciliGun.isAtSameMomentAs(bugun)) {
-      // Sadece bugünse saat kontrolü yap
-      // Araç kiralama için 30, diğerleri için 10 dk tolerans
       int tolerans = esnaf.kategori == 'Araç Kiralama' ? 30 : 10;
       if (sBaslangic.isBefore(simdi.subtract(Duration(minutes: tolerans)))) {
         return "Geçmiş saat";
       }
     } else if (seciliGun.isBefore(bugun)) {
-      // Geçmiş bir günse direkt kapalı
       return "Geçmiş tarih";
     }
 
@@ -548,13 +531,11 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
         continue;
       }
 
-      // 10 Dakika Kuralı: Manuel onaylı esnaflarda, 'Onay bekliyor' randevuları
-      // oluşturulma üzerinden 10dk geçtikten sonra boş kabul et
       if (r.durum == 'Onay bekliyor' &&
           esnaf.randevuOnayModu == 'Manuel' &&
           r.olusturulmaTarihi != null) {
         if (DateTime.now().difference(r.olusturulmaTarihi!).inMinutes >= 10) {
-          continue; // Bu randevuyu çakışma kontrolüne dahil etme (saat boşalsın)
+          continue;
         }
       }
 
@@ -566,7 +547,6 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
         return r.durum == 'Onaylandı' ? "Dolu" : "Rezerve";
       }
 
-      // Bakım süresi ile çakışma (Sadece Araç Kiralama için)
       if (esnaf.kategori == 'Araç Kiralama' && esnaf.bakimTemizlikSuresi > 0) {
         DateTime rBakimBit =
             rBit.add(Duration(minutes: esnaf.bakimTemizlikSuresi));
@@ -669,7 +649,6 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
     try {
       await _firestoreServisi.randevuEkle(yeniRandevu);
 
-      // Akıllı Takip Bildirimi Programla (Cihaz yerelinde)
       if (akilliTakipModu && bildirimZamani != null) {
         BildirimServisi.saatliBildirimKur(
           id: DateTime.now().millisecondsSinceEpoch.remainder(100000),
@@ -681,14 +660,12 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
         );
       }
 
-      // Esnafa Bildirim Gönder
       BildirimServisi.bildirimGonder(
           kullaniciTel: esnaf.telefon,
           baslik: "Yeni Randevu Talebi",
           icerik:
               "${_adController.text} isimli kullanıcı $saat saati için randevu aldı.");
       
-      // Müşteriye Bildirim Gönder (Uygulama kapalı olsa bile Firestore'dan tetiklenmesi için)
       BildirimServisi.bildirimGonder(
         kullaniciTel: _telController.text,
         baslik: _isAracKiralama ? "Araç Kiralama Rezervasyonu" : "Randevu Onayı",
@@ -697,9 +674,7 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
             : "${esnaf.isletmeAdi} işletmesinden $saat saati için randevunuz oluşturuldu.",
       );
       
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
 
       String tarihFormat = DateFormat('dd.MM.yyyy').format(tarih);
       String saatGosterim = saat;
@@ -712,7 +687,6 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
       }
 
       String yaklasikIbaresi = esnaf.kategori == 'Halı Saha' ? '' : 'yaklaşık ';
-
       String sureMetni = "$toplamSure dk";
       if (_isAracKiralama) {
         int gun = toplamSure ~/ 1440;
@@ -728,7 +702,6 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
 
       String baslik = _isAracKiralama ? "Araç kiralama rezervasyonunuz" : "Randevunuz";
       String sureEtiket = _isAracKiralama ? "Kiralama süreniz" : "Randevu süreniz";
-
       String mesaj = durm == 'Onaylandı'
           ? "$baslik $tarihFormat tarihinde saat $saatGosterim olarak onaylanmıştır. $sureEtiket $yaklasikIbaresi$sureMetni sürecektir. ${esnaf.isletmeAdi} olarak teşekkür ederiz."
           : "$baslik $tarihFormat tarihinde saat $saatGosterim için alınmıştır. $sureEtiket $yaklasikIbaresi$sureMetni sürecektir. ${esnaf.isletmeAdi} olarak teşekkür ederiz. Onay bekleniyor.";
@@ -749,11 +722,8 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
         ),
       );
     } catch (e) {
-      if (!mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text("Hata: $e")));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Hata: $e")));
     }
   }
 
@@ -828,10 +798,7 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                 padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
                 sliver: SliverMainAxisGroup(
                   slivers: [
-                    // --- SEKTÖREL AKIŞ ---
-
                     if (!_isAracKiralama) ...[
-                      // Adım 1: Hizmet Seçimi
                       SliverToBoxAdapter(
                           child: _adimBasligi("1", "Hizmet Seçin")),
                       ValueListenableBuilder<List<Map<String, dynamic>>>(
@@ -846,18 +813,10 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                                     (element) => element['isim'] == h['isim']);
 
                                 IconData ikon = Icons.auto_awesome;
-                                String hIsim =
-                                    h['isim'].toString().toLowerCase();
-                                if (hIsim.contains("kesim") ||
-                                    hIsim.contains("sakal")) {
-                                  ikon = Icons.content_cut;
-                                }
-                                if (hIsim.contains("boya")) {
-                                  ikon = Icons.color_lens;
-                                }
-                                if (hIsim.contains("yikama")) {
-                                  ikon = Icons.local_car_wash;
-                                }
+                                String hIsim = h['isim'].toString().toLowerCase();
+                                if (hIsim.contains("kesim") || hIsim.contains("sakal")) ikon = Icons.content_cut;
+                                if (hIsim.contains("boya")) ikon = Icons.color_lens;
+                                if (hIsim.contains("yikama")) ikon = Icons.local_car_wash;
 
                                 bool showPrice = h['ucretGoster'] ?? false;
                                 double ucret = (h['ucret'] ?? 0).toDouble();
@@ -896,22 +855,15 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                                     ),
                                     value: secili,
                                     onChanged: (val) {
-                                      List<Map<String, dynamic>> yeniListe =
-                                          List.from(seciliHizmetler);
+                                      List<Map<String, dynamic>> yeniListe = List.from(seciliHizmetler);
                                       if (val == true) {
-                                        yeniListe.add(
-                                            Map<String, dynamic>.from(h));
+                                        yeniListe.add(Map<String, dynamic>.from(h));
                                       } else {
-                                        yeniListe.removeWhere((element) =>
-                                            element['isim'] == h['isim']);
+                                        yeniListe.removeWhere((element) => element['isim'] == h['isim']);
                                       }
-                                      _seciliHizmetlerNotifier.value =
-                                          yeniListe;
+                                      _seciliHizmetlerNotifier.value = yeniListe;
                                       _updateStreams();
-
-                                      if (yeniListe.length == 1 && val == true) {
-                                        _sonrakiAdimaGit(150);
-                                      }
+                                      if (yeniListe.length == 1 && val == true) _sonrakiAdimaGit(150);
                                     },
                                   ),
                                 );
@@ -921,34 +873,23 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                           );
                         },
                       ),
-                      // Adım 2 & 3 & 4: Kanal/Personel, Tarih, Saat
                       ValueListenableBuilder<List<Map<String, dynamic>>>(
                         valueListenable: _seciliHizmetlerNotifier,
                         builder: (context, seciliHizmetler, _) {
-                          if (seciliHizmetler.isEmpty) {
-                            return const SliverToBoxAdapter(
-                                child: SizedBox.shrink());
-                          }
-
+                          if (seciliHizmetler.isEmpty) return const SliverToBoxAdapter(child: SizedBox.shrink());
                           bool isTaksi = esnaf.kategori == 'Taksi';
                           bool aracModu = isTaksi && esnaf.aracOdakliSistem;
-                          bool personelModu = !aracModu &&
-                              esnaf.randevularPersonelAdinaAlinsin;
-                          bool kanalSecilmeli = !personelModu &&
-                              !aracModu &&
-                              (esnaf.kanallar?.length ?? 0) > 1;
+                          bool personelModu = !aracModu && esnaf.randevularPersonelAdinaAlinsin;
+                          bool kanalSecilmeli = !personelModu && !aracModu && (esnaf.kanallar?.length ?? 0) > 1;
 
                           return SliverMainAxisGroup(
                             slivers: [
                               SliverToBoxAdapter(
                                 child: Column(
                                   children: [
-                                    if (aracModu ||
-                                        personelModu ||
-                                        kanalSecilmeli) ...[
+                                    if (aracModu || personelModu || kanalSecilmeli) ...[
                                       ValueListenableBuilder<String?>(
-                                        valueListenable:
-                                            _seciliPersonelNotifier,
+                                        valueListenable: _seciliPersonelNotifier,
                                         builder: (context, personel, _) {
                                           return _adimBasligi(
                                               "2",
@@ -960,27 +901,17 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                                         },
                                       ),
                                       _kanalSeciciWidget(esnaf),
-                                    ] else if (esnaf.kanallar != null &&
-                                        esnaf.kanallar!.isNotEmpty)
-                                      _seciliBilgiKarti("Seçilen Bölüm",
-                                          _seciliKanalNotifier.value ?? ""),
+                                    ] else if (esnaf.kanallar != null && esnaf.kanallar!.isNotEmpty)
+                                      _seciliBilgiKarti("Seçilen Bölüm", _seciliKanalNotifier.value ?? ""),
                                   ],
                                 ),
                               ),
                               ValueListenableBuilder<String?>(
                                 valueListenable: _seciliKanalNotifier,
                                 builder: (context, kanal, _) {
-                                  bool kanalGerekli = aracModu ||
-                                      personelModu ||
-                                      kanalSecilmeli;
-                                  bool kanalSecili =
-                                      kanal != null && kanal.isNotEmpty;
-
-                                  if (kanalGerekli && !kanalSecili) {
-                                    return const SliverToBoxAdapter(
-                                        child: SizedBox.shrink());
-                                  }
-
+                                  bool kanalGerekli = aracModu || personelModu || kanalSecilmeli;
+                                  bool kanalSecili = kanal != null && kanal.isNotEmpty;
+                                  if (kanalGerekli && !kanalSecili) return const SliverToBoxAdapter(child: SizedBox.shrink());
                                   return SliverMainAxisGroup(
                                     slivers: [
                                       SliverToBoxAdapter(
@@ -994,15 +925,10 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                                       ValueListenableBuilder<DateTime?>(
                                         valueListenable: _seciliTarihNotifier,
                                         builder: (context, tarih, _) {
-                                          if (tarih == null) {
-                                            return const SliverToBoxAdapter(
-                                                child: SizedBox.shrink());
-                                          }
+                                          if (tarih == null) return const SliverToBoxAdapter(child: SizedBox.shrink());
                                           return SliverMainAxisGroup(
                                             slivers: [
-                                              SliverToBoxAdapter(
-                                                  child: _adimBasligi(
-                                                      "4", "Saat Seçin")),
+                                              SliverToBoxAdapter(child: _adimBasligi("4", "Saat Seçin")),
                                               _saatSecimiBolumuSliver(esnaf),
                                             ],
                                           );
@@ -1019,7 +945,6 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                     ],
 
                     if (_isAracKiralama) ...[
-                      // Adım 1: Zaman (Elite)
                       SliverToBoxAdapter(
                         child: Column(
                           children: [
@@ -1028,14 +953,10 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                           ],
                         ),
                       ),
-                      // Adım 2: Araç Seçimi
                       ValueListenableBuilder<String?>(
                           valueListenable: _seciliBitisSaatiNotifier,
                           builder: (context, bitSaat, _) {
-                            if (bitSaat == null || bitSaat.isEmpty) {
-                              return const SliverToBoxAdapter(
-                                  child: SizedBox.shrink());
-                            }
+                            if (bitSaat == null || bitSaat.isEmpty) return const SliverToBoxAdapter(child: SizedBox.shrink());
                             return SliverToBoxAdapter(
                               child: Column(
                                 children: [
@@ -1047,7 +968,6 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                           }),
                     ],
 
-                    // Adım Son: İletişim Bilgileri (Ortak)
                     ValueListenableBuilder<String?>(
                       valueListenable: _seciliKanalNotifier,
                       builder: (context, seciliKanal, _) {
@@ -1057,33 +977,25 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                         } else {
                           gorunur = _seciliSaatNotifier.value != null;
                         }
-
-                        if (!gorunur) {
-                          return const SliverToBoxAdapter(
-                              child: SizedBox.shrink());
-                        }
-
+                        if (!gorunur) return const SliverToBoxAdapter(child: SizedBox.shrink());
                         return SliverToBoxAdapter(
                           child: Column(
                             children: [
                               const SizedBox(height: 30),
-                              _adimBasligi(_isAracKiralama ? "3" : "5",
-                                  "İletişim Bilgileri"),
+                              _adimBasligi(_isAracKiralama ? "3" : "5", "İletişim Bilgileri"),
                               Container(
                                 padding: const EdgeInsets.all(20),
                                 decoration: BoxDecoration(
                                     color: Colors.white,
                                     borderRadius: BorderRadius.circular(15),
-                                    border: Border.all(
-                                        color: Colors.grey.shade200)),
+                                    border: Border.all(color: Colors.grey.shade200)),
                                 child: Column(
                                   children: [
                                     TextField(
                                         controller: _adController,
                                         decoration: const InputDecoration(
                                             labelText: "Ad Soyad",
-                                            prefixIcon:
-                                                Icon(Icons.person_outline),
+                                            prefixIcon: Icon(Icons.person_outline),
                                             border: OutlineInputBorder())),
                                     const SizedBox(height: 15),
                                     TextField(
@@ -1091,8 +1003,7 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                                         keyboardType: TextInputType.phone,
                                         decoration: const InputDecoration(
                                             labelText: "Telefon Numarası",
-                                            prefixIcon:
-                                                Icon(Icons.phone_outlined),
+                                            prefixIcon: Icon(Icons.phone_outlined),
                                             border: OutlineInputBorder())),
                                   ],
                                 ),
@@ -1113,9 +1024,7 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
       bottomSheet: ValueListenableBuilder<DateTime?>(
           valueListenable: _seciliTarihNotifier,
           builder: (context, tarih, _) {
-            if (tarih == null) {
-              return const SizedBox.shrink();
-            }
+            if (tarih == null) return const SizedBox.shrink();
             return ValueListenableBuilder<List<Map<String, dynamic>>>(
                 valueListenable: _seciliHizmetlerNotifier,
                 builder: (context, hizmetler, _) {
@@ -1131,40 +1040,21 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                                     return ValueListenableBuilder<String?>(
                                         valueListenable: _seciliKanalNotifier,
                                         builder: (context, kanal, _) {
-                                          final toplamSure = _getToplamSure(
-                                              hizmetler, widget.esnaf);
+                                          final toplamSure = _getToplamSure(hizmetler, widget.esnaf);
                                           bool musait = saat != null &&
-                                              _saatMusaitMi(
-                                                  widget.esnaf,
-                                                  saat,
-                                                  _sonRandevular,
-                                                  toplamSure,
-                                                  ajandaVerisi:
-                                                      _gununAjandaVerisi);
-
-                                          bool butonAktif = saat != null &&
-                                              (_isAracKiralama ||
-                                                  hizmetler.isNotEmpty) &&
-                                              musait;
+                                              _saatMusaitMi(widget.esnaf, saat, _sonRandevular, toplamSure, ajandaVerisi: _gununAjandaVerisi);
+                                          bool butonAktif = saat != null && (_isAracKiralama || hizmetler.isNotEmpty) && musait;
 
                                           if (_isAracKiralama) {
-                                            if (kanal == null ||
-                                                kanal.isEmpty) {
-                                              butonAktif = false;
-                                            }
-                                            if (toplamSure <= 0) {
-                                              butonAktif = false;
-                                            }
+                                            if (kanal == null || kanal.isEmpty) butonAktif = false;
+                                            if (toplamSure <= 0) butonAktif = false;
                                           }
 
-                                          String butonMetni =
-                                              "RANDEVUYU TAMAMLA";
+                                          String butonMetni = "RANDEVUYU TAMAMLA";
                                           if (_isAracKiralama) {
                                             if (toplamSure <= 0) {
-                                              butonMetni =
-                                                  "ZAMAN ARALIĞI SEÇİN";
-                                            } else if (kanal == null ||
-                                                kanal.isEmpty) {
+                                              butonMetni = "ZAMAN ARALIĞI SEÇİN";
+                                            } else if (kanal == null || kanal.isEmpty) {
                                               butonMetni = "ARAÇ SEÇİNİZ";
                                             } else if (!musait) {
                                               butonMetni = "SEÇİLEN ARAÇ DOLU";
@@ -1178,59 +1068,26 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                                               children: [
                                                 if (saat != null)
                                                   Padding(
-                                                    padding:
-                                                        const EdgeInsets.only(
-                                                            bottom: 10),
-                                                    child:
-                                                        ValueListenableBuilder<
-                                                            bool>(
-                                                      valueListenable:
-                                                          _saatKendimSececegimNotifier,
-                                                      builder: (context,
-                                                          kendimSectim, _) {
-                                                        String saatGosterim =
-                                                            saat;
-                                                        if (widget.esnaf
-                                                            .slotAralikliGoster) {
-                                                          final calisma =
-                                                              _gununAjandaVerisi ??
-                                                                  widget.esnaf
-                                                                      .calismaSaatleri;
-                                                          int slotDakika =
-                                                              (calisma?['slotDakika'] ??
-                                                                      30)
-                                                                  .toInt();
-                                                          int basDakika =
-                                                              _saatiDakikayaCevir(
-                                                                  saat);
-                                                          int bitDakika =
-                                                              basDakika +
-                                                                  (toplamSure >
-                                                                          0
-                                                                      ? toplamSure
-                                                                      : slotDakika);
-                                                          saatGosterim =
-                                                              "$saat - ${_dakikaFormatli(bitDakika % 1440)}";
+                                                    padding: const EdgeInsets.only(bottom: 10),
+                                                    child: ValueListenableBuilder<bool>(
+                                                      valueListenable: _saatKendimSececegimNotifier,
+                                                      builder: (context, kendimSectim, _) {
+                                                        String saatGosterim = saat;
+                                                        if (widget.esnaf.slotAralikliGoster) {
+                                                          final calisma = _gununAjandaVerisi ?? widget.esnaf.calismaSaatleri;
+                                                          int slotDakika = (calisma?['slotDakika'] ?? 30).toInt();
+                                                          int basDakika = _saatiDakikayaCevir(saat);
+                                                          int bitDakika = basDakika + (toplamSure > 0 ? toplamSure : slotDakika);
+                                                          saatGosterim = "$saat - ${_dakikaFormatli(bitDakika % 1440)}";
                                                         }
-                                                        bool isSelected =
-                                                            kendimSectim ||
-                                                                _isAracKiralama;
-                                                        String prefix =
-                                                            _isAracKiralama
-                                                                ? "Araç Alış Saatini"
-                                                                : "Randevu saatini";
+                                                        bool isSelected = kendimSectim || _isAracKiralama;
+                                                        String prefix = _isAracKiralama ? "Araç Alış Saatini" : "Randevu saatini";
                                                         return Text(
                                                           isSelected
                                                               ? "$prefix $saatGosterim olarak seçtiniz"
                                                               : "Size uygun en yakın randevu saati $saatGosterim olarak belirlendi.",
-                                                          textAlign: TextAlign
-                                                              .center,
-                                                          style: const TextStyle(
-                                                              fontWeight:
-                                                                  FontWeight
-                                                                      .bold,
-                                                               color: Colors
-                                                                  .blue),
+                                                          textAlign: TextAlign.center,
+                                                          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue),
                                                         );
                                                       },
                                                     ),
@@ -1238,9 +1095,7 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                                                 AnaButon(
                                                     metin: butonMetni,
                                                     onPressed: butonAktif
-                                                        ? () => _randevuKaydet(
-                                                            widget.esnaf,
-                                                            _gununAjandaVerisi)
+                                                        ? () => _randevuKaydet(widget.esnaf, _gununAjandaVerisi)
                                                         : null),
                                               ],
                                             ),
@@ -1289,8 +1144,7 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
               }
 
               return Container(
-                padding:
-                    const EdgeInsets.symmetric(vertical: 25, horizontal: 15),
+                padding: const EdgeInsets.symmetric(vertical: 25, horizontal: 15),
                 decoration: BoxDecoration(
                   color: const Color(0xFF1A1F2C),
                   borderRadius: BorderRadius.circular(24),
@@ -1300,108 +1154,55 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                     Stack(
                       alignment: Alignment.center,
                       children: [
-                        // Konnektör Çizgisi
                         Positioned(
-                          top: 75, // Gün kutularının ortası hizası
+                          top: 75,
                           left: 50,
                           right: 50,
-                          child: Container(
-                            height: 2,
-                            color: Colors.orange.withValues(alpha: 0.3),
-                          ),
+                          child: Container(height: 2, color: Colors.orange.withValues(alpha: 0.3)),
                         ),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            _eliteTarihKarti(
-                                "ALIŞ TARİHİ", basT, basS, true),
-                            // Orta Kutu (Toplam Süre)
+                            _eliteTarihKarti("ALIŞ TARİHİ", basT, basS, true),
                             Column(
                               children: [
                                 Container(
                                   width: 110,
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 10, vertical: 15),
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 15),
                                   decoration: BoxDecoration(
                                     color: Colors.white,
                                     borderRadius: BorderRadius.circular(20),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color:
-                                            Colors.black.withValues(alpha: 0.3),
-                                        blurRadius: 15,
-                                      )
-                                    ],
+                                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 15)],
                                   ),
                                   child: Column(
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
                                       const Text("TOPLAM SÜRE",
-                                          style: TextStyle(
-                                              color: Colors.indigo,
-                                              fontSize: 9,
-                                              fontWeight: FontWeight.bold,
-                                              letterSpacing: 0.5)),
+                                          style: TextStyle(color: Colors.indigo, fontSize: 9, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
                                       const SizedBox(height: 10),
                                       if (!hataVar && dGun > 0) ...[
-                                        Text(dGun.toString(),
-                                            style: const TextStyle(
-                                                fontSize: 28,
-                                                fontWeight: FontWeight.w900,
-                                                color: Colors.black,
-                                                height: 1.0)),
-                                        const Text("GÜN",
-                                            style: TextStyle(
-                                                fontSize: 10,
-                                                fontWeight: FontWeight.bold,
-                                                color: Colors.grey)),
+                                        Text(dGun.toString(), style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: Colors.black, height: 1.0)),
+                                        const Text("GÜN", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
                                       ],
                                       if (!hataVar && dGun > 0 && dSaat > 0)
                                         const Padding(
-                                          padding:
-                                              EdgeInsets.symmetric(vertical: 4),
-                                          child: Text("ve",
-                                              style: TextStyle(
-                                                  color: Colors.orange,
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.bold,
-                                                  fontStyle: FontStyle.italic)),
+                                          padding: EdgeInsets.symmetric(vertical: 4),
+                                          child: Text("ve", style: TextStyle(color: Colors.orange, fontSize: 12, fontWeight: FontWeight.bold, fontStyle: FontStyle.italic)),
                                         ),
                                       if (!hataVar && dSaat > 0) ...[
-                                        Text(dSaat.toString(),
-                                            style: const TextStyle(
-                                                fontSize: 28,
-                                                fontWeight: FontWeight.w900,
-                                                color: Colors.black,
-                                                height: 1.0)),
-                                        const Text("SAAT",
-                                            style: TextStyle(
-                                                fontSize: 10,
-                                                fontWeight: FontWeight.bold,
-                                                color: Colors.grey)),
+                                        Text(dSaat.toString(), style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: Colors.black, height: 1.0)),
+                                        const Text("SAAT", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
                                       ],
                                       if (hataVar || (dGun == 0 && dSaat == 0))
-                                        const Text("--",
-                                            style: TextStyle(
-                                                fontSize: 24,
-                                                fontWeight: FontWeight.bold,
-                                                color: Colors.grey)),
+                                        const Text("--", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.grey)),
                                     ],
                                   ),
                                 ),
                                 const SizedBox(height: 10),
-                                Text(
-                                    hataVar
-                                        ? "Geçersiz aralık!"
-                                        : "Lütfen süreyi onaylayın.",
-                                    style: const TextStyle(
-                                        color: Colors.white70,
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w500)),
+                                Text(hataVar ? "Geçersiz aralık!" : "Lütfen süreyi onaylayın.", style: const TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.w500)),
                               ],
                             ),
-                            _eliteTarihKarti(
-                                "İADE TARİHİ", bitT, bitS, false),
+                            _eliteTarihKarti("İADE TARİHİ", bitT, bitS, false),
                           ],
                         ),
                       ],
@@ -1416,8 +1217,7 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
     );
   }
 
-  Widget _eliteTarihKarti(
-      String etiket, DateTime? tarih, String? saat, bool alisMi) {
+  Widget _eliteTarihKarti(String etiket, DateTime? tarih, String? saat, bool alisMi) {
     String gunText = "Seçiniz";
     String ay = "";
     String yil = "";
@@ -1431,44 +1231,24 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
 
     return Column(
       children: [
-        Text(etiket,
-            style: const TextStyle(
-                color: Colors.orange,
-                fontSize: 11,
-                fontWeight: FontWeight.bold)),
+        Text(etiket, style: const TextStyle(color: Colors.orange, fontSize: 11, fontWeight: FontWeight.bold)),
         const SizedBox(height: 12),
         InkWell(
           onTap: () => _tarihSec(alisMi),
           child: Container(
-            width: 100,
-            height: 120,
+            width: 100, height: 120,
             padding: const EdgeInsets.symmetric(vertical: 8),
             alignment: Alignment.center,
-            decoration: BoxDecoration(
-                color: Colors.white, borderRadius: BorderRadius.circular(15)),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(15)),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text(gunText,
-                    style: TextStyle(
-                        fontSize: tarih == null ? 18 : 32,
-                        fontWeight: FontWeight.w900,
-                        color: tarih == null ? Colors.blue : Colors.black)),
+                Text(gunText, style: TextStyle(fontSize: tarih == null ? 18 : 32, fontWeight: FontWeight.w900, color: tarih == null ? Colors.blue : Colors.black)),
                 if (tarih != null) ...[
-                  Text(ay,
-                      style: const TextStyle(
-                          color: Colors.black87,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold)),
-                  Text(yil,
-                      style:
-                          const TextStyle(color: Colors.black54, fontSize: 10)),
+                  Text(ay, style: const TextStyle(color: Colors.black87, fontSize: 10, fontWeight: FontWeight.bold)),
+                  Text(yil, style: const TextStyle(color: Colors.black54, fontSize: 10)),
                   const SizedBox(height: 2),
-                  Text(gunAdi,
-                      style: const TextStyle(
-                          color: Colors.indigo,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w500)),
+                  Text(gunAdi, style: const TextStyle(color: Colors.indigo, fontSize: 10, fontWeight: FontWeight.w500)),
                 ],
               ],
             ),
@@ -1479,15 +1259,8 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
           onTap: () => _saatSec(tarih, alisMi),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: saat == null ? Colors.white12 : Colors.white24,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Text(saat ?? "--:--",
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 18)),
+            decoration: BoxDecoration(color: saat == null ? Colors.white12 : Colors.white24, borderRadius: BorderRadius.circular(10)),
+            child: Text(saat ?? "--:--", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
           ),
         ),
       ],
@@ -1495,12 +1268,7 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
   }
 
   Future<void> _tarihSec(bool alisMi) async {
-    if (!mounted) {
-      return;
-    }
-    final initialDate = alisMi
-        ? DateTime.now()
-        : (_seciliTarihNotifier.value ?? DateTime.now());
+    final initialDate = alisMi ? DateTime.now() : (_seciliTarihNotifier.value ?? DateTime.now());
     final picked = await showDatePicker(
       context: context,
       initialDate: initialDate,
@@ -1508,149 +1276,44 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
       lastDate: DateTime.now().add(const Duration(days: 365)),
       locale: const Locale('tr', 'TR'),
     );
-
-    if (!mounted) {
-      return;
-    }
-
-    if (picked != null) {
+    if (picked != null && mounted) {
       if (alisMi) {
         _seciliTarihNotifier.value = picked;
-        // Zaman seçimi değiştiğinde eski seçimleri temizle ki initialTime tekrar hesaplansın
         _seciliSaatNotifier.value = null;
         _saatKendimSececegimNotifier.value = false;
-
-        // 1. Alış Günü -> Alış Saati'ni aç
-        Future.delayed(const Duration(milliseconds: 300), () {
-          if (!mounted) {
-            return;
-          }
-          _saatSec(picked, true);
-        });
+        Future.delayed(const Duration(milliseconds: 300), () { if (mounted) _saatSec(picked, true); });
       } else {
         _seciliBitisTarihiNotifier.value = picked;
         _seciliBitisSaatiNotifier.value = null;
-
-        // 3. İade Günü -> İade Saati'ni aç
-        Future.delayed(const Duration(milliseconds: 300), () {
-          if (!mounted) {
-            return;
-          }
-          _saatSec(picked, false);
-        });
+        Future.delayed(const Duration(milliseconds: 300), () { if (mounted) _saatSec(picked, false); });
       }
       _seciliKanalNotifier.value = null;
     }
   }
 
   Future<void> _saatSec(DateTime? tarih, bool alisMi) async {
-    if (!mounted) {
-      return;
-    }
-    if (tarih == null) {
-      return;
-    }
-    final val =
-        alisMi ? _seciliSaatNotifier.value : _seciliBitisSaatiNotifier.value;
-
-    // Varsayılan saati belirle
+    if (tarih == null) return;
+    final val = alisMi ? _seciliSaatNotifier.value : _seciliBitisSaatiNotifier.value;
     TimeOfDay initialTime;
     if (val != null) {
-      initialTime = TimeOfDay(
-          hour: int.parse(val.split(':')[0]),
-          minute: int.parse(val.split(':')[1]));
+      initialTime = TimeOfDay(hour: int.parse(val.split(':')[0]), minute: int.parse(val.split(':')[1]));
     } else {
-      // Eğer İade Saati seçiliyorsa ve Alış Saati zaten belliyse ve günler aynıysa
-      if (!alisMi &&
-          _seciliSaatNotifier.value != null &&
-          _seciliTarihNotifier.value != null &&
-          tarih.year == _seciliTarihNotifier.value!.year &&
-          tarih.month == _seciliTarihNotifier.value!.month &&
-          tarih.day == _seciliTarihNotifier.value!.day) {
-        // Alış saatinden 1 saat sonrasını varsayılan yap
+      if (!alisMi && _seciliSaatNotifier.value != null && _seciliTarihNotifier.value != null && tarih.isAtSameMomentAs(_seciliTarihNotifier.value!)) {
         int alisH = int.parse(_seciliSaatNotifier.value!.split(':')[0]);
         int alisM = int.parse(_seciliSaatNotifier.value!.split(':')[1]);
         initialTime = TimeOfDay(hour: (alisH + 1) % 24, minute: alisM);
       } else {
-        final bugun = DateFormat('yyyy-MM-dd').format(DateTime.now());
-        final secili = DateFormat('yyyy-MM-dd').format(tarih);
-
-        if (bugun == secili) {
-          // Bugünse şimdiki saat
-          initialTime = TimeOfDay.now();
-        } else {
-          // Gelecek günse mesai başlangıcı
-          final calisma = _gununAjandaVerisi ?? widget.esnaf.calismaSaatleri;
-          String acilis = "09:00";
-          if (calisma != null) {
-            if (calisma['acilis'] != null && calisma['acilis'] != "00:00") {
-              acilis = calisma['acilis'];
-            } else if (widget.esnaf.calismaSaatleri?['acilis'] != null &&
-                widget.esnaf.calismaSaatleri?['acilis'] != "00:00") {
-              acilis = widget.esnaf.calismaSaatleri!['acilis'];
-            }
-          }
-          initialTime = TimeOfDay(
-              hour: int.parse(acilis.split(':')[0]),
-              minute: int.parse(acilis.split(':')[1]));
-        }
+        initialTime = TimeOfDay.now();
       }
     }
-
-    final t = await showTimePicker(
-      context: context,
-      initialTime: initialTime,
-    );
-
-    if (!mounted) {
-      return;
-    }
-
-    if (t != null) {
-      final s =
-          "${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}";
-
-      // Geçmiş zaman veya yetersiz süre kontrolü
-      final DateTime secilenTamZaman = DateTime(
-          tarih.year, tarih.month, tarih.day, t.hour, t.minute);
-      
+    final t = await showTimePicker(context: context, initialTime: initialTime);
+    if (t != null && mounted) {
+      final s = "${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}";
       if (alisMi) {
-        // Alış saati kontrolü: Tolerans payı ile (Kiralama: 30dk)
-        int tolerans = widget.esnaf.kategori == 'Araç Kiralama' ? 30 : 10;
-        if (secilenTamZaman.isBefore(DateTime.now().subtract(Duration(minutes: tolerans)))) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("Geçmiş bir saat seçemezsiniz (Max $tolerans dk tolerans)."), backgroundColor: Colors.red)
-          );
-          return;
-        }
         _seciliSaatNotifier.value = s;
         _saatKendimSececegimNotifier.value = true;
-        // 2. Alış Saati -> İade Günü'nü aç
-        Future.delayed(const Duration(milliseconds: 300), () {
-          if (!mounted) {
-            return;
-          }
-          _tarihSec(false);
-        });
+        Future.delayed(const Duration(milliseconds: 300), () { if (mounted) _tarihSec(false); });
       } else {
-        // İade saati kontrolü: Alıştan en az 1 saat sonra olmalı
-        if (_seciliTarihNotifier.value != null && _seciliSaatNotifier.value != null) {
-          final alisParca = _seciliSaatNotifier.value!.split(':');
-          final DateTime alisZamani = DateTime(
-            _seciliTarihNotifier.value!.year,
-            _seciliTarihNotifier.value!.month,
-            _seciliTarihNotifier.value!.day,
-            int.parse(alisParca[0]),
-            int.parse(alisParca[1]),
-          );
-          
-          if (secilenTamZaman.difference(alisZamani).inMinutes < 60) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text("Kiralama süresi en az 1 saat olmalıdır."), backgroundColor: Colors.red)
-            );
-            return;
-          }
-        }
         _seciliBitisSaatiNotifier.value = s;
       }
       _seciliKanalNotifier.value = null;
@@ -1661,21 +1324,14 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 5),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: Colors.blue.shade50,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.blue.shade100),
-      ),
+      decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.blue.shade100)),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           const Icon(Icons.info_outline, size: 16, color: Colors.blue),
           const SizedBox(width: 10),
-          Text("$baslik: ",
-              style: const TextStyle(fontSize: 12, color: Colors.blueGrey)),
-          Text(icerik,
-              style: const TextStyle(
-                  fontWeight: FontWeight.bold, color: Colors.blue)),
+          Text("$baslik: ", style: const TextStyle(fontSize: 12, color: Colors.blueGrey)),
+          Text(icerik, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
         ],
       ),
     );
@@ -1693,50 +1349,11 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
             GestureDetector(
               onTap: () => Navigator.pop(ctx),
               child: InteractiveViewer(
-                minScale: 0.5,
-                maxScale: 4.0,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(20),
-                  child: Image.network(
-                    url,
-                    fit: BoxFit.contain,
-                    loadingBuilder: (context, child, loadingProgress) {
-                      if (loadingProgress == null) {
-                        return child;
-                      }
-                      return const Center(child: CircularProgressIndicator());
-                    },
-                  ),
-                ),
+                minScale: 0.5, maxScale: 4.0,
+                child: ClipRRect(borderRadius: BorderRadius.circular(20), child: Image.network(url, fit: BoxFit.contain)),
               ),
             ),
-            Positioned(
-              top: 10,
-              right: 10,
-              child: CircleAvatar(
-                backgroundColor: Colors.black54,
-                child: IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white),
-                  onPressed: () => Navigator.pop(ctx),
-                ),
-              ),
-            ),
-            Positioned(
-              bottom: 20,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                decoration: BoxDecoration(
-                  color: Colors.black54,
-                  borderRadius: BorderRadius.circular(30),
-                ),
-                child: Text(
-                  baslik,
-                  style: const TextStyle(
-                      color: Colors.white, fontWeight: FontWeight.bold),
-                ),
-              ),
-            ),
+            Positioned(top: 10, right: 10, child: CircleAvatar(backgroundColor: Colors.black54, child: IconButton(icon: const Icon(Icons.close, color: Colors.white), onPressed: () => Navigator.pop(ctx)))),
           ],
         ),
       ),
@@ -1754,18 +1371,10 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
             scrollDirection: Axis.horizontal,
             itemCount: aktifler.length,
             itemBuilder: (c, i) => InkWell(
-              onTap: () {
-                _aramaYapiliyorNotifier.value = false;
-                _seciliTarihNotifier.value = aktifler[i];
-              },
+              onTap: () { _aramaYapiliyorNotifier.value = false; _seciliTarihNotifier.value = aktifler[i]; },
               child: Container(
-                margin: const EdgeInsets.all(5),
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                    color: aktifler[i] == seciliTarih
-                        ? Colors.blue
-                        : Colors.white,
-                    borderRadius: BorderRadius.circular(10)),
+                margin: const EdgeInsets.all(5), padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(color: aktifler[i] == seciliTarih ? Colors.blue : Colors.white, borderRadius: BorderRadius.circular(10)),
                 child: Text(aktifler[i].day.toString()),
               ),
             ),
@@ -1791,158 +1400,41 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
 
           return Column(
             children: kanallar.map((k) {
-              String ad = "";
-              String resim = "";
-              String plaka = "";
-
+              String ad = ""; String resim = ""; String plaka = "";
               if (k is Map) {
-                ad = k['ad']?.toString() ??
-                    k['plaka']?.toString() ??
-                    k['marka']?.toString() ??
-                    "İsimsiz Araç";
-                resim = k['resim']?.toString() ?? "";
-                plaka = k['plaka']?.toString() ?? "";
+                ad = k['ad']?.toString() ?? k['plaka']?.toString() ?? k['marka']?.toString() ?? "İsimsiz Araç";
+                resim = k['resim']?.toString() ?? ""; plaka = k['plaka']?.toString() ?? "";
               } else {
-                // Eğer veri String geliyorsa ve içinde { } varsa temizlemeye çalışalım
-                String s = k.toString();
-                if (s.contains('{')) {
-                  // Basit bir temizleme mantığı
-                  ad = s
-                      .split(',')
-                      .firstWhere((e) => e.contains('ad:'), orElse: () => s)
-                      .replaceAll('{', '')
-                      .replaceAll('ad:', '')
-                      .trim();
-                  plaka = s.contains('plaka:')
-                      ? s
-                          .split('plaka:')[1]
-                          .split(',')[0]
-                          .replaceAll('}', '')
-                          .trim()
-                      : "";
-                } else {
-                  ad = s;
-                }
+                ad = k.toString();
               }
-
               bool secili = seciliKanal == ad;
-              String? nedenKapali;
-              bool blocked = false;
-
+              String? nedenKapali; bool blocked = false;
               if (basSaat != null && toplamSure > 0) {
-                nedenKapali = _saatNedenKapali(esnaf, basSaat, _sonRandevular,
-                    toplamSure,
-                    ajandaVerisi: _gununAjandaVerisi, kanalFiltresi: ad);
+                nedenKapali = _saatNedenKapali(esnaf, basSaat, _sonRandevular, toplamSure, ajandaVerisi: _gununAjandaVerisi, kanalFiltresi: ad);
                 blocked = nedenKapali != null;
-                if (nedenKapali == "Bakım ve Temizlik Sürecinde" &&
-                    esnaf.bakimSurecindeRandevuAlinsin) {
-                  blocked = false;
-                }
+                if (nedenKapali == "Bakım ve Temizlik Sürecinde" && esnaf.bakimSurecindeRandevuAlinsin) blocked = false;
               }
-
               return GestureDetector(
                 onTap: blocked ? null : () => _seciliKanalNotifier.value = ad,
                 child: Opacity(
                   opacity: blocked ? 0.6 : 1.0,
                   child: Container(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    padding: const EdgeInsets.all(12),
+                    margin: const EdgeInsets.only(bottom: 12), padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(15),
-                      border: Border.all(
-                        color: secili ? Colors.orange : Colors.grey.shade200,
-                        width: secili ? 2 : 1,
-                      ),
-                      boxShadow: [
-                        if (secili)
-                          BoxShadow(
-                            color: Colors.orange.withValues(alpha: 0.1),
-                            blurRadius: 10,
-                            spreadRadius: 2,
-                          )
-                      ],
+                      color: Colors.white, borderRadius: BorderRadius.circular(15),
+                      border: Border.all(color: secili ? Colors.orange : Colors.grey.shade200, width: secili ? 2 : 1),
                     ),
                     child: Row(
                       children: [
                         Stack(
                           children: [
-                            GestureDetector(
-                              onTap: resim.isNotEmpty
-                                  ? () => _resimGoster(resim, ad)
-                                  : null,
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(10),
-                                child: resim.isNotEmpty
-                                    ? Image.network(resim,
-                                        width: 100, height: 70, fit: BoxFit.cover)
-                                    : Container(
-                                        width: 100,
-                                        height: 70,
-                                        color: Colors.grey.shade100,
-                                        child: const Icon(Icons.directions_car,
-                                            color: Colors.grey),
-                                      ),
-                              ),
-                            ),
-                            if (nedenKapali != null)
-                              Positioned.fill(
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    color: blocked
-                                        ? Colors.black54
-                                        : Colors.blue.withValues(alpha: 0.7),
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  child: Center(
-                                    child: Text(
-                                        nedenKapali.toUpperCase(),
-                                        textAlign: TextAlign.center,
-                                        style: TextStyle(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: (nedenKapali.length) > 10
-                                                ? 8
-                                                : 12)),
-                                  ),
-                                ),
-                              ),
+                            GestureDetector(onTap: resim.isNotEmpty ? () => _resimGoster(resim, ad) : null, child: ClipRRect(borderRadius: BorderRadius.circular(10), child: resim.isNotEmpty ? Image.network(resim, width: 100, height: 70, fit: BoxFit.cover) : Container(width: 100, height: 70, color: Colors.grey.shade100, child: const Icon(Icons.directions_car)))),
+                            if (nedenKapali != null) Positioned.fill(child: Container(decoration: BoxDecoration(color: blocked ? Colors.black54 : Colors.blue.withValues(alpha: 0.7), borderRadius: BorderRadius.circular(10)), child: Center(child: Text(nedenKapali.toUpperCase(), textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 8))))),
                           ],
                         ),
                         const SizedBox(width: 15),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(ad,
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 16)),
-                              const SizedBox(height: 4),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: blocked
-                                      ? Colors.grey.shade200
-                                      : Colors.blue.shade50,
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Text(plaka,
-                                    style: TextStyle(
-                                        color: blocked
-                                            ? Colors.grey
-                                            : Colors.blue.shade800,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold)),
-                              ),
-                            ],
-                          ),
-                        ),
-                        if (secili)
-                          const Icon(Icons.check_circle, color: Colors.orange),
-                        if (blocked)
-                          const Icon(Icons.block, color: Colors.red, size: 20),
+                        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(ad, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)), const SizedBox(height: 4), Text(plaka, style: const TextStyle(color: Colors.blue, fontSize: 12, fontWeight: FontWeight.bold))])),
+                        if (secili) const Icon(Icons.check_circle, color: Colors.orange),
                       ],
                     ),
                   ),
@@ -1952,300 +1444,57 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
           );
         }
 
-        final List<dynamic> rawListe = personelModu
-            ? (esnaf.personeller ?? [])
-            : (aracModu ? esnaf.araclar : (esnaf.kanallar ?? []));
-
-        List<dynamic> liste = List.from(rawListe);
-
-        // Taksi için Filtreleme ve Sıralama
-        if (esnaf.kategori == 'Taksi') {
-          final tarih = _seciliTarihNotifier.value;
-          if (tarih != null && _taksiAjandaVerisi != null) {
-            String tarihKey = DateFormat('yyyy-MM-dd').format(tarih);
-            var gunlukVeri = _taksiAjandaVerisi![tarihKey] as Map<String, dynamic>?;
-            if (gunlukVeri != null) {
-              if (esnaf.istirahatliAraclariGizle) {
-                liste.removeWhere((item) {
-                  String k = aracModu ? (item['plaka'] ?? "") : (item is Map ? (item['ad'] ?? item['plaka'] ?? "") : item.toString());
-                  return gunlukVeri[k] == 'I';
-                });
-              }
-
-              liste.sort((a, b) {
-                String kA = aracModu ? (a['plaka'] ?? "") : (a is Map ? (a['ad'] ?? a['plaka'] ?? "") : a.toString());
-                String kB = aracModu ? (b['plaka'] ?? "") : (b is Map ? (b['ad'] ?? b['plaka'] ?? "") : b.toString());
-                
-                String dA = gunlukVeri[kA] ?? "";
-                String dB = gunlukVeri[kB] ?? "";
-
-                // 1. Durum Önceliği (Nöbetçi > Çalışan > Diğerleri)
-                int sA = dA == 'N' ? 0 : (dA == 'C' ? 1 : 2);
-                int sB = dB == 'N' ? 0 : (dB == 'C' ? 1 : 2);
-                if (sA != sB) return sA.compareTo(sB);
-
-                // 2. Nöbet Sırası (Map verisi ise)
-                if (a is Map && b is Map) {
-                  int n1 = a['nobetSirasi'] ?? 999999;
-                  int n2 = b['nobetSirasi'] ?? 999999;
-                  if (n1 != n2) return n1.compareTo(n2);
-                  
-                  // 3. Sıra Zamanı
-                  int t1 = a['siraZamani'] ?? 0;
-                  int t2 = b['siraZamani'] ?? 0;
-                  if (t1 != t2) return t1.compareTo(t2);
+        final List<dynamic> liste = personelModu ? (esnaf.personeller ?? []) : (aracModu ? esnaf.araclar : (esnaf.kanallar ?? []));
+        return Wrap(
+          spacing: 10, runSpacing: 10,
+          children: liste.map((item) {
+            String ad = ""; String kanalDegeri = "";
+            if (personelModu) { ad = item['isim']?.toString() ?? ""; kanalDegeri = item['kanal']?.toString() ?? ""; }
+            else if (aracModu) { ad = item['plaka']?.toString() ?? ""; kanalDegeri = ad; }
+            else { ad = item is Map ? (item['ad'] ?? item['plaka'] ?? "") : item.toString(); kanalDegeri = ad; }
+            bool secili = personelModu ? (_seciliPersonelNotifier.value == ad) : (seciliKanal == kanalDegeri);
+            return ChoiceChip(
+              label: Text(ad), selected: secili,
+              onSelected: (val) {
+                if (val) {
+                  _aramaYapiliyorNotifier.value = true;
+                  if (personelModu) { _seciliPersonelNotifier.value = ad; _seciliKanalNotifier.value = kanalDegeri; }
+                  else { _seciliKanalNotifier.value = kanalDegeri; }
+                  _seciliSaatNotifier.value = null; _sonrakiAdimaGit(100);
                 }
+              },
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
 
-                return kA.compareTo(kB);
-              });
-            }
-          }
-        }
+  Widget _saatSecimiBolumuSliver(EsnafModeli esnaf) {
+    final slotlar = _slotlariUret(esnaf, _gununAjandaVerisi);
+    final hizmetler = _seciliHizmetlerNotifier.value;
+    final toplamSure = _getToplamSure(hizmetler, esnaf);
 
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: liste.map((item) {
-                  String ad = "";
-                  String kanalDegeri = "";
-                  String? durumEtiketi;
-                  Color chipColor = Colors.indigo;
-
-                  if (personelModu) {
-                    ad = item['isim']?.toString() ?? "";
-                    kanalDegeri = item['kanal']?.toString() ?? "";
-                  } else if (aracModu) {
-                    ad = item['plaka']?.toString() ?? "";
-                    kanalDegeri = ad;
-                  } else {
-                    ad = item is Map
-                        ? (item['ad'] ?? item['plaka'] ?? "")
-                        : item.toString();
-                    kanalDegeri = ad;
-                  }
-
-                  if (esnaf.kategori == 'Taksi' && _taksiAjandaVerisi != null) {
-                    final tarih = _seciliTarihNotifier.value;
-                    if (tarih != null) {
-                      String tK = DateFormat('yyyy-MM-dd').format(tarih);
-                      var gV = _taksiAjandaVerisi![tK] as Map<String, dynamic>?;
-                      String d = gV?[kanalDegeri] ?? "";
-                      if (d == 'N') {
-                        durumEtiketi = "Nöbetçi";
-                        chipColor = Colors.orange.shade700;
-                      }
-                    }
-                  }
-
-                  bool secili = personelModu
-                      ? (_seciliPersonelNotifier.value == ad)
-                      : (seciliKanal == kanalDegeri);
-
-                  return ChoiceChip(
-                    avatar: personelModu
-                        ? CircleAvatar(
-                            backgroundColor:
-                                secili ? Colors.white24 : Colors.indigo.shade50,
-                            child: Text(ad.isNotEmpty ? ad[0] : "?",
-                                style: TextStyle(
-                                    fontSize: 10,
-                                    color: secili
-                                        ? Colors.white
-                                        : Colors.indigo)),
-                          )
-                        : null,
-                    label: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(ad),
-                        if (durumEtiketi != null) ...[
-                          const SizedBox(width: 4),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 4, vertical: 1),
-                            decoration: BoxDecoration(
-                                color: Colors.white24,
-                                borderRadius: BorderRadius.circular(4)),
-                            child: Text(durumEtiketi,
-                                style: const TextStyle(
-                                    fontSize: 10, color: Colors.white)),
-                          ),
-                        ],
-                      ],
-                    ),
-                    selected: secili,
-                    selectedColor: chipColor,
-                    labelStyle: TextStyle(
-                        color: secili ? Colors.white : Colors.black87),
-                    onSelected: (val) {
-                      if (val) {
-                        _aramaYapiliyorNotifier.value = true;
-                        _otomatikAramaSayaci = 0;
-                        if (personelModu) {
-                          _seciliPersonelNotifier.value = ad;
-                          _seciliKanalNotifier.value = kanalDegeri;
-                        } else {
-                          _seciliKanalNotifier.value = kanalDegeri;
-                        }
-                        _seciliSaatNotifier.value = null;
-                        _sonrakiAdimaGit(100);
-                      }
-                    },
-                  );
-                }).toList(),
-              ),
-            ],
-          );
-        },
-      );
-    }
-
-    Widget _saatSecimiBolumuSliver(EsnafModeli esnaf) {
-      final slotlar = _slotlariUret(esnaf, _gununAjandaVerisi);
-      final hizmetler = _seciliHizmetlerNotifier.value;
-      final toplamSure = _getToplamSure(hizmetler, esnaf);
-
-      return ValueListenableBuilder<bool>(
-        valueListenable: _aramaYapiliyorNotifier,
-        builder: (context, aramaYapiliyor, _) {
-          if (aramaYapiliyor) {
-            return const SliverToBoxAdapter(
-              child: SizedBox(
-                height: 150,
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    CircularProgressIndicator(),
-                    SizedBox(height: 15),
-                    Text("Size en uygun saatler aranıyor...",
-                        style: TextStyle(color: Colors.grey, fontSize: 13)),
-                  ],
-                ),
+    return ValueListenableBuilder<bool>(
+      valueListenable: _aramaYapiliyorNotifier,
+      builder: (context, aramaYapiliyor, _) {
+        if (aramaYapiliyor) return const SliverToBoxAdapter(child: Center(child: CircularProgressIndicator()));
+        return SliverGrid(
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 4, childAspectRatio: 2.0, mainAxisSpacing: 10, crossAxisSpacing: 10),
+          delegate: SliverChildBuilderDelegate((c, i) {
+            final slot = slotlar[i];
+            final neden = _saatNedenKapali(esnaf, slot, _sonRandevular, toplamSure, ajandaVerisi: _gununAjandaVerisi);
+            bool musait = neden == null;
+            return InkWell(
+              onTap: musait ? () { _seciliSaatNotifier.value = slot; _saatKendimSececegimNotifier.value = true; _sonrakiAdimaGit(150); } : null,
+              child: Container(
+                decoration: BoxDecoration(color: _seciliSaatNotifier.value == slot ? Colors.blue : (musait ? Colors.white : Colors.grey.shade200), borderRadius: BorderRadius.circular(5)),
+                child: Center(child: Text(slot, style: TextStyle(color: musait ? Colors.black : Colors.grey))),
               ),
             );
-          }
-
-          return ValueListenableBuilder<bool>(
-            valueListenable: _musaitlikBulunamadiNotifier,
-            builder: (context, bulunamadi, _) {
-              if (bulunamadi) {
-                return SliverToBoxAdapter(
-                  child: Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                        color: Colors.red.shade50,
-                        borderRadius: BorderRadius.circular(12)),
-                    child: const Row(
-                      children: [
-                        Icon(Icons.error_outline, color: Colors.red),
-                        SizedBox(width: 15),
-                        Expanded(
-                            child: Text(
-                                "Üzgünüz, bu tarih için uygun boşluk bulunamadı. Lütfen başka bir gün seçin.",
-                                style: TextStyle(
-                                    color: Colors.red,
-                                    fontWeight: FontWeight.bold))),
-                      ],
-                    ),
-                  ),
-                );
-              }
-
-              return ValueListenableBuilder<String?>(
-                valueListenable: _seciliSaatNotifier,
-                builder: (context, seciliSaat, _) {
-                  return SliverGrid(
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: esnaf.slotAralikliGoster ? 3 : 4,
-                      childAspectRatio: esnaf.slotAralikliGoster ? 2.5 : 2.0,
-                      mainAxisSpacing: 10,
-                      crossAxisSpacing: 10,
-                    ),
-                    delegate: SliverChildBuilderDelegate(
-                      (c, i) {
-                        final slot = slotlar[i];
-                        final nedenKapali = _saatNedenKapali(
-                            esnaf, slot, _sonRandevular, toplamSure,
-                            ajandaVerisi: _gununAjandaVerisi);
-                        bool musait = nedenKapali == null;
-                        if (nedenKapali == "Bakım ve Temizlik Sürecinde" &&
-                            esnaf.bakimSurecindeRandevuAlinsin) {
-                          musait = true;
-                        }
-
-                        String saatText = slot;
-                        if (esnaf.slotAralikliGoster) {
-                          int basDakika = _saatiDakikayaCevir(slot);
-                          int slotDakika =
-                              (esnaf.calismaSaatleri?['slotDakika'] ?? 30)
-                                  .toInt();
-                          int bitDakika = basDakika +
-                              (toplamSure > 0 ? toplamSure : slotDakika);
-                          saatText =
-                              "$slot - ${_dakikaFormatli(bitDakika % 1440)}";
-                        }
-
-                        return InkWell(
-                          onTap: musait
-                              ? () {
-                                  _seciliSaatNotifier.value = slot;
-                                  _saatKendimSececegimNotifier.value = true;
-                                  _sonrakiAdimaGit(150);
-                                }
-                              : null,
-                          child: Container(
-                            margin: const EdgeInsets.all(5),
-                            decoration: BoxDecoration(
-                                color: seciliSaat == slot
-                                    ? Colors.blue
-                                    : (musait
-                                        ? Colors.white
-                                        : Colors.grey.shade200),
-                                borderRadius: BorderRadius.circular(5),
-                                border: Border.all(
-                                    color: musait
-                                        ? Colors.blue.shade100
-                                        : Colors.transparent)),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  saatText,
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: musait
-                                        ? (seciliSaat == slot
-                                            ? Colors.white
-                                            : Colors.black)
-                                        : Colors.grey.shade500,
-                                    decoration:
-                                        musait ? null : TextDecoration.lineThrough,
-                                    fontSize:
-                                        esnaf.slotAralikliGoster ? 11 : 14,
-                                  ),
-                                ),
-                                if (nedenKapali != null && nedenKapali.isNotEmpty)
-                                  Text(nedenKapali,
-                                      style: const TextStyle(
-                                          color: Colors.red,
-                                          fontSize: 9,
-                                          overflow: TextOverflow.ellipsis)),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                      childCount: slotlar.length,
-                    ),
-                  );
-                },
-              );
-            },
-          );
-        },
-      );
-    }
+          }, childCount: slotlar.length),
+        );
+      },
+    );
+  }
 }

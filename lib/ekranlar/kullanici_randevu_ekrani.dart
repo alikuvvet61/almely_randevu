@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../servisler/firestore_servisi.dart';
 import '../modeller/randevu_modeli.dart';
+import '../modeller/esnaf_modeli.dart';
 
 class KullaniciRandevuEkrani extends StatefulWidget {
   final String telefon;
@@ -14,14 +15,12 @@ class KullaniciRandevuEkrani extends StatefulWidget {
 
 class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
   final FirestoreServisi _firestoreServisi = FirestoreServisi();
-  // Tüm ekranın tek bir merkezden saniye takibi yapması için
   final ValueNotifier<DateTime> _suAnkiZaman = ValueNotifier(DateTime.now());
   Timer? _merkeziTimer;
 
   @override
   void initState() {
     super.initState();
-    // Sadece 1 tane merkezi timer çalıştırıyoruz.
     _merkeziTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted && _merkeziTimer != null && _merkeziTimer!.isActive) {
         _suAnkiZaman.value = DateTime.now();
@@ -158,20 +157,26 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
                 
                 const SizedBox(height: 16),
                 if (!gecmisMi && r.durum != 'İptal Edildi' && r.durum != 'Reddedildi')
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: () => _randevuIptalDialog(context, r),
-                      icon: const Icon(Icons.cancel_outlined),
-                      label: const Text("Randevuyu İptal Et"),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: Colors.red,
-                        elevation: 0,
-                        side: const BorderSide(color: Colors.red),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  Column(
+                    children: [
+                      _akilliTakipButonu(context, r),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: () => _randevuIptalDialog(context, r),
+                          icon: const Icon(Icons.cancel_outlined),
+                          label: const Text("Randevuyu İptal Et"),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.white,
+                            foregroundColor: Colors.red,
+                            elevation: 0,
+                            side: const BorderSide(color: Colors.red),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                        ),
                       ),
-                    ),
+                    ],
                   ),
               ],
             ),
@@ -181,7 +186,6 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
     );
   }
 
-  // Bu widget saniyede bir merkezi zamanı dinleyerek güncellenir
   Widget _kalanSureWidget(DateTime randevuZamani) {
     return ValueListenableBuilder<DateTime>(
       valueListenable: _suAnkiZaman,
@@ -275,6 +279,67 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
     } catch (e) {
       return r.tarih;
     }
+  }
+
+  Widget _akilliTakipButonu(BuildContext context, RandevuModeli r) {
+    if (!r.akilliTakipAktif) return const SizedBox.shrink();
+
+    return StreamBuilder<EsnafModeli>(
+      stream: _firestoreServisi.esnafGetir(r.esnafId),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return const SizedBox.shrink();
+        final esnaf = snapshot.data!;
+
+        return FutureBuilder<bool>(
+          future: _firestoreServisi.randevuUzatmaMusaitMi(r, 60),
+          builder: (context, musaitlik) {
+            final bool musait = musaitlik.data ?? false;
+
+            return SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: musait ? () => _uzatmaOnayDialog(context, r, esnaf) : null,
+                icon: Icon(musait ? Icons.auto_awesome : Icons.block, size: 18),
+                label: Text(musait 
+                  ? "Süreyi 1 Saat Uzat (${esnaf.saatlikUzatmaUcreti.toStringAsFixed(0)} TL)" 
+                  : "Uzatma Müsait Değil"),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: musait ? Colors.green : Colors.grey.shade300,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _uzatmaOnayDialog(BuildContext context, RandevuModeli r, EsnafModeli esnaf) {
+    showDialog(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text("Süre Uzatma Onayı"),
+        content: Text("Aracınız şu an müsait! \n\n${esnaf.saatlikUzatmaUcreti.toStringAsFixed(0)} TL karşılığında kiralama sürenizi 1 saat daha uzatmak istiyor musunuz?"),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c), child: const Text("Vazgeç")),
+          ElevatedButton(
+            onPressed: () async {
+              await _firestoreServisi.randevuUzat(r.id, 60);
+              if (context.mounted) {
+                Navigator.pop(c);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("Süreniz 1 saat başarıyla uzatıldı!"), backgroundColor: Colors.green)
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
+            child: const Text("Onayla ve Uzat"),
+          ),
+        ],
+      ),
+    );
   }
 
   void _randevuIptalDialog(BuildContext context, RandevuModeli r) {

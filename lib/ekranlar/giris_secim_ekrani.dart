@@ -6,6 +6,7 @@ import '../servisler/versiyon_servisi.dart';
 import '../servisler/bildirim_servisi.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../servisler/onesignal_servisi.dart';
+import 'kullanici_randevu_ekrani.dart';
 
 class GirisSecimSayfasi extends StatefulWidget {
   const GirisSecimSayfasi({super.key});
@@ -18,27 +19,44 @@ class _GirisSecimSayfasiState extends State<GirisSecimSayfasi> {
   @override
   void initState() {
     super.initState();
-    // Uygulama açıldığında versiyon kontrolü ve bildirim izni yap
+    // Uygulama açıldığında süreçleri başlat
     WidgetsBinding.instance.addPostFrameCallback((_) {
       VersiyonServisi.versiyonKontrol(context);
       _bildirimIzniIste();
+      _garantiliDeepLinkKontrol();
     });
   }
 
   Future<void> _bildirimIzniIste() async {
-    // Android 13+ için doğrudan izin talebi
     if (await Permission.notification.isDenied) {
       await Permission.notification.request();
     }
-    
-    // Android 13+ SCHEDULE_EXACT_ALARM izni kontrolü
     if (await Permission.scheduleExactAlarm.isDenied) {
       await Permission.scheduleExactAlarm.request();
     }
+    // Paralel başlatma
+    BildirimServisi.initialize();
+    OneSignalServisi.initialize(context: context);
+  }
 
-    // FCM, OneSignal ve yerel bildirimleri de initialize edelim
-    await BildirimServisi.initialize();
-    await OneSignalServisi.initialize();
+  void _garantiliDeepLinkKontrol() {
+    // KRİTİK: Uygulama tamamen çizilene kadar 2.5 saniye bekle (Navigasyon takılmasını önler)
+    Future.delayed(const Duration(milliseconds: 2500), () {
+      if (!mounted) return;
+      
+      final data = OneSignalServisi.sonTiklananVeri;
+      if (data != null && data['action'] == 'uzatma_ekrani' && data['tel'] != null) {
+        String tel = data['tel'].toString();
+        OneSignalServisi.sonTiklananVeri = null; // Tüketilen veriyi temizle
+
+        debugPrint("FİNAL DEEP LINK: Uzatma ekranına yönlendiriliyor... Tel: $tel");
+        
+        // Sarsılmaz Navigasyon: NavigatorState üzerinden doğrudan push yapıyoruz
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (c) => KullaniciRandevuEkrani(telefon: tel))
+        );
+      }
+    });
   }
 
   @override
