@@ -20,6 +20,7 @@ class RandevuModeli {
   final DateTime? olusturulmaTarihi;
   final bool akilliTakipAktif;
   final DateTime? bildirimZamani;
+  final int uzatmaSuresi; // Yapılan toplam uzatma süresi (dakika)
 
   RandevuModeli({
     required this.id,
@@ -41,6 +42,7 @@ class RandevuModeli {
     this.olusturulmaTarihi,
     this.akilliTakipAktif = false,
     this.bildirimZamani,
+    this.uzatmaSuresi = 0,
   });
 
   factory RandevuModeli.fromFirestore(DocumentSnapshot doc) {
@@ -72,6 +74,7 @@ class RandevuModeli {
       bildirimZamani: data['bildirimZamani'] != null 
           ? (data['bildirimZamani'] as Timestamp).toDate() 
           : null,
+      uzatmaSuresi: data['uzatmaSuresi'] ?? 0,
     );
   }
 
@@ -99,6 +102,7 @@ class RandevuModeli {
       'bildirimZamani': bildirimZamani != null 
           ? Timestamp.fromDate(bildirimZamani!) 
           : null,
+      'uzatmaSuresi': uzatmaSuresi,
     };
   }
 

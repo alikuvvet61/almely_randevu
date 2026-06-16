@@ -5,7 +5,6 @@ import '../modeller/esnaf_modeli.dart';
 import '../modeller/randevu_modeli.dart';
 import '../servisler/firestore_servisi.dart';
 import '../servisler/bildirim_servisi.dart';
-import '../servisler/onesignal_servisi.dart';
 import '../widgets/ana_buton.dart';
 
 class RandevuEkrani extends StatefulWidget {
@@ -1409,10 +1408,20 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
               }
               bool secili = seciliKanal == ad;
               String? nedenKapali; bool blocked = false;
+              String iadeBilgisi = "";
+
               if (basSaat != null && toplamSure > 0) {
                 nedenKapali = _saatNedenKapali(esnaf, basSaat, _sonRandevular, toplamSure, ajandaVerisi: _gununAjandaVerisi, kanalFiltresi: ad);
                 blocked = nedenKapali != null;
                 if (nedenKapali == "Bakım ve Temizlik Sürecinde" && esnaf.bakimSurecindeRandevuAlinsin) blocked = false;
+
+                // [YENİ] İade saatini hesapla
+                if (blocked) {
+                  final iadeZamani = _getAracIadeZamani(ad, basSaat, toplamSure);
+                  if (iadeZamani != null) {
+                    iadeBilgisi = "İade: ${DateFormat('dd MMM HH:mm', 'tr_TR').format(iadeZamani)}";
+                  }
+                }
               }
               return GestureDetector(
                 onTap: blocked ? null : () => _seciliKanalNotifier.value = ad,
@@ -1433,7 +1442,21 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                           ],
                         ),
                         const SizedBox(width: 15),
-                        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(ad, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)), const SizedBox(height: 4), Text(plaka, style: const TextStyle(color: Colors.blue, fontSize: 12, fontWeight: FontWeight.bold))])),
+                        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text(ad, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)), 
+                          const SizedBox(height: 4), 
+                          Row(
+                            children: [
+                              Text(plaka, style: const TextStyle(color: Colors.blue, fontSize: 12, fontWeight: FontWeight.bold)),
+                              if (iadeBilgisi.isNotEmpty) ...[
+                                const SizedBox(width: 10),
+                                const Icon(Icons.access_time, size: 12, color: Colors.red),
+                                const SizedBox(width: 4),
+                                Text(iadeBilgisi, style: const TextStyle(color: Colors.red, fontSize: 11, fontWeight: FontWeight.bold)),
+                              ],
+                            ],
+                          )
+                        ])),
                         if (secili) const Icon(Icons.check_circle, color: Colors.orange),
                       ],
                     ),
@@ -1496,5 +1519,36 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
         );
       },
     );
+  }
+
+  // [YENİ] Dolu aracın iade zamanını hesaplayan yardımcı fonksiyon
+  DateTime? _getAracIadeZamani(String plaka, String basSaat, int toplamSure) {
+    try {
+      final tarih = _seciliTarihNotifier.value;
+      if (tarih == null) return null;
+
+      final slotParcalar = basSaat.split(':');
+      DateTime sBaslangic = DateTime(tarih.year, tarih.month, tarih.day,
+          int.parse(slotParcalar[0]), int.parse(slotParcalar[1]));
+      DateTime sBitis = sBaslangic.add(Duration(minutes: toplamSure));
+
+      for (var r in _sonRandevular) {
+        if (r.randevuKanali != plaka) continue;
+        if (r.durum != 'Onaylandı' && r.durum != 'Onay bekliyor') continue;
+
+        final rSaParcalar = r.saat.split(':');
+        DateTime rBas = DateTime(r.tarih.year, r.tarih.month, r.tarih.day,
+            int.parse(rSaParcalar[0]), int.parse(rSaParcalar[1]));
+        DateTime rBit = rBas.add(Duration(minutes: r.sure));
+
+        // Eğer seçili zaman dilimi ile bu randevu çakışıyorsa, iade saati bu randevunun bitişidir
+        if (sBaslangic.isBefore(rBit) && sBitis.isAfter(rBas)) {
+          return rBit;
+        }
+      }
+    } catch (e) {
+      debugPrint("İade saati hesaplama hatası: $e");
+    }
+    return null;
   }
 }

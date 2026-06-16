@@ -36,7 +36,7 @@ class _GirisSecimSayfasiState extends State<GirisSecimSayfasi> {
     }
     // Paralel başlatma
     BildirimServisi.initialize();
-    OneSignalServisi.initialize(context: context);
+    if (mounted) OneSignalServisi.initialize(context: context);
   }
 
   void _garantiliDeepLinkKontrol() {

@@ -155,6 +155,10 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
                 if (r.calisanPersonel != null && !r.randevuKanali!.contains(RegExp(r'[0-9]{2}\s[A-Z]+\s[0-9]+')))
                   _bilgiSatiri(Icons.person, "Personel: ${r.calisanPersonel}"),
                 
+                const Divider(height: 32),
+                // BİTİŞ ZAMANI VE UZATMA BİLGİSİ
+                _bitisVeUzatmaBilgisi(r),
+                
                 const SizedBox(height: 16),
                 if (!gecmisMi && r.durum != 'İptal Edildi' && r.durum != 'Reddedildi')
                   Column(
@@ -281,6 +285,64 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
     }
   }
 
+  Widget _bitisVeUzatmaBilgisi(RandevuModeli r) {
+    final baslangic = _randevuZamaniHesapla(r);
+    final bitis = baslangic.add(Duration(minutes: r.sure));
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.timer_off, size: 16, color: Colors.redAccent),
+            const SizedBox(width: 12),
+            Text(
+              "İade Zamanı: ${DateFormat('dd MMMM HH:mm', 'tr_TR').format(bitis)}",
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+            ),
+          ],
+        ),
+        if (r.uzatmaSuresi > 0) ...[
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.green.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.green.withValues(alpha: 0.2)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: const BoxDecoration(color: Colors.green, shape: BoxShape.circle),
+                  child: const Icon(Icons.more_time, size: 16, color: Colors.white),
+                ),
+                const SizedBox(width: 15),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "+${r.uzatmaSuresi ~/ 60} Saat Ek Süre Tanımlandı",
+                        style: const TextStyle(color: Colors.green, fontWeight: FontWeight.w900, fontSize: 13),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        "${DateFormat('HH:mm').format(bitis.subtract(Duration(minutes: r.uzatmaSuresi)))} ile ${DateFormat('HH:mm').format(bitis)} arası",
+                        style: TextStyle(color: Colors.green.shade800, fontSize: 12, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
   Widget _akilliTakipButonu(BuildContext context, RandevuModeli r) {
     if (!r.akilliTakipAktif) return const SizedBox.shrink();
 
@@ -290,18 +352,19 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
         if (!snapshot.hasData) return const SizedBox.shrink();
         final esnaf = snapshot.data!;
 
-        return FutureBuilder<bool>(
-          future: _firestoreServisi.randevuUzatmaMusaitMi(r, 60),
+        return FutureBuilder<int>(
+          future: _firestoreServisi.randevuMaksimumUzatmaDk(r),
           builder: (context, musaitlik) {
-            final bool musait = musaitlik.data ?? false;
+            final int maksDk = musaitlik.data ?? 0;
+            final bool musait = maksDk >= 60; // En az 1 saat boşluk olmalı
 
             return SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
-                onPressed: musait ? () => _uzatmaOnayDialog(context, r, esnaf) : null,
+                onPressed: musait ? () => _uzatmaSecenekleriDialog(context, r, esnaf, maksDk) : null,
                 icon: Icon(musait ? Icons.auto_awesome : Icons.block, size: 18),
                 label: Text(musait 
-                  ? "Süreyi 1 Saat Uzat (${esnaf.saatlikUzatmaUcreti.toStringAsFixed(0)} TL)" 
+                  ? "Süreyi Uzat (Saatlik ${esnaf.saatlikUzatmaUcreti.toStringAsFixed(0)} TL)" 
                   : "Uzatma Müsait Değil"),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: musait ? Colors.green : Colors.grey.shade300,
@@ -316,28 +379,77 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
     );
   }
 
-  void _uzatmaOnayDialog(BuildContext context, RandevuModeli r, EsnafModeli esnaf) {
-    showDialog(
+  void _uzatmaSecenekleriDialog(BuildContext context, RandevuModeli r, EsnafModeli esnaf, int maksDk) {
+    // Maksimum kaç saat uzatılabilir?
+    int maksSaat = maksDk ~/ 60;
+    if (maksSaat > 12) maksSaat = 12; // Güvenlik için maks 12 saat gösterelim
+
+    showModalBottomSheet(
       context: context,
-      builder: (c) => AlertDialog(
-        title: const Text("Süre Uzatma Onayı"),
-        content: Text("Aracınız şu an müsait! \n\n${esnaf.saatlikUzatmaUcreti.toStringAsFixed(0)} TL karşılığında kiralama sürenizi 1 saat daha uzatmak istiyor musunuz?"),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(c), child: const Text("Vazgeç")),
-          ElevatedButton(
-            onPressed: () async {
-              await _firestoreServisi.randevuUzat(r.id, 60);
-              if (context.mounted) {
-                Navigator.pop(c);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Süreniz 1 saat başarıyla uzatıldı!"), backgroundColor: Colors.green)
-                );
-              }
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
-            child: const Text("Onayla ve Uzat"),
-          ),
-        ],
+      isScrollControlled: true, // [YENİ] Web ve büyük listeler için kaydırma kilidini açar
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (c) => Container(
+        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.7), // Ekranın %70'ini kaplasın
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text("Ne kadar uzatmak istersiniz?", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 10),
+            Text("Aracınız şu an müsait. İstediğiniz süreyi seçebilirsiniz.", style: TextStyle(color: Colors.grey.shade600)),
+            const SizedBox(height: 20),
+            Expanded( // Flexible yerine Expanded ve scroll kilidi çözümü
+              child: ListView.builder(
+                shrinkWrap: true,
+                physics: const AlwaysScrollableScrollPhysics(), // [KRİTİK] Kaydırmayı zorunlu kılar
+                itemCount: maksSaat,
+                itemBuilder: (ctx, index) {
+                  int saat = index + 1;
+                  double ucret = saat * esnaf.saatlikUzatmaUcreti;
+                  return ListTile(
+                    leading: const Icon(Icons.timer, color: Colors.blue),
+                    title: Text("$saat Saat Uzat"),
+                    trailing: Text("${ucret.toStringAsFixed(0)} TL", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
+                    onTap: () {
+                      // [YENİ] Onay Mekanizması
+                      showDialog(
+                        context: context,
+                        builder: (confirmCtx) => AlertDialog(
+                          title: const Text("Uzatma Onayı"),
+                          content: Text("$saat Saat uzatma işlemini ${ucret.toStringAsFixed(0)} TL karşılığında onaylıyor musunuz?"),
+                          actions: [
+                            TextButton(onPressed: () => Navigator.pop(confirmCtx), child: const Text("Vazgeç")),
+                            ElevatedButton(
+                              style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
+                              onPressed: () async {
+                                Navigator.pop(confirmCtx); // Onay kutusunu kapat
+                                Navigator.pop(c); // BottomSheet'i kapat
+                                
+                                await _firestoreServisi.randevuUzat(r.id, saat * 60);
+                                
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text("Süreniz $saat saat başarıyla uzatıldı! Bir sonraki hatırlatma kuruldu."),
+                                      backgroundColor: Colors.green,
+                                      duration: const Duration(seconds: 4),
+                                    )
+                                  );
+                                }
+                              },
+                              child: const Text("Onayla ve Uzat"),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
