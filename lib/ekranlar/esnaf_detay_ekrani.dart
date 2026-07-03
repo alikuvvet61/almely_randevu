@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
+import 'package:almely_randevu/servisler/bildirim_servisi.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -11,7 +12,6 @@ import 'package:almely_randevu/modeller/esnaf_modeli.dart';
 import 'package:almely_randevu/modeller/randevu_modeli.dart';
 import 'package:almely_randevu/servisler/firestore_servisi.dart';
 import 'package:almely_randevu/servisler/konum_servisi.dart';
-import 'package:almely_randevu/servisler/bildirim_servisi.dart';
 import 'package:almely_randevu/widgets/ana_buton.dart';
 import 'package:almely_randevu/ekranlar/randevu_ekrani.dart';
 import 'package:almely_randevu/ekranlar/tum_yorumlar_ekrani.dart';
@@ -45,6 +45,12 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
   @override
   void initState() {
     super.initState();
+    
+    // [YENİ] Web ve Mobil'de bu dükkanın canlı bildirim dinleyicisini başlatalım
+    if (widget.kullaniciTel != null) {
+      BildirimServisi.bildirimDinle(widget.kullaniciTel!, context: context);
+    }
+
     _guncelEsnaf = widget.esnaf;
     _ilkKameraPozisyonu = CameraPosition(
       target: LatLng(_guncelEsnaf.konum.latitude, _guncelEsnaf.konum.longitude),
@@ -942,13 +948,18 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
                 metin: "Hemen Randevu Al",
                 onPressed: () {
                   bool ajandaVarMi = false;
-                  final bugunStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
-                  if (_guncelEsnaf.aktifGunler != null && _guncelEsnaf.aktifGunler!.isNotEmpty) {
-                    for (var gunStr in _guncelEsnaf.aktifGunler!) {
-                      String tarihKismi = gunStr.toString().split('_')[0];
-                      if (tarihKismi.compareTo(bugunStr) >= 0) {
-                        ajandaVarMi = true;
-                        break;
+                  // [CANLI YAPI] Eğer esnaf 'Ben ayarlayacağım' demediyse ajanda var sayılır (Canlı oluşturulur)
+                  if (!_guncelEsnaf.ajandayiKendimAyarlayacagim) {
+                    ajandaVarMi = true;
+                  } else {
+                    final bugunStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
+                    if (_guncelEsnaf.aktifGunler != null && _guncelEsnaf.aktifGunler!.isNotEmpty) {
+                      for (var gunStr in _guncelEsnaf.aktifGunler!) {
+                        String tarihKismi = gunStr.toString().split('_')[0];
+                        if (tarihKismi.compareTo(bugunStr) >= 0) {
+                          ajandaVarMi = true;
+                          break;
+                        }
                       }
                     }
                   }

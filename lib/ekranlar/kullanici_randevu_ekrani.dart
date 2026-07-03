@@ -1,13 +1,22 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'giris_secim_ekrani.dart';
+import '../servisler/bildirim_servisi.dart';
+import '../servisler/onesignal_servisi.dart';
 import '../servisler/firestore_servisi.dart';
 import '../modeller/randevu_modeli.dart';
 import '../modeller/esnaf_modeli.dart';
 
 class KullaniciRandevuEkrani extends StatefulWidget {
   final String telefon;
-  const KullaniciRandevuEkrani({super.key, required this.telefon});
+  final String? seciliRandevuId; // [YENİ] Bildirimden gelen ID
+
+  const KullaniciRandevuEkrani({
+    super.key, 
+    required this.telefon, 
+    this.seciliRandevuId, // [YENİ]
+  });
 
   @override
   State<KullaniciRandevuEkrani> createState() => _KullaniciRandevuEkraniState();
@@ -21,6 +30,10 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
   @override
   void initState() {
     super.initState();
+
+    // [YENİ] Web ve Mobil'de canlı bildirim dinleyiciyi mühürleyelim
+    BildirimServisi.bildirimDinle(widget.telefon, context: context);
+
     _merkeziTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted && _merkeziTimer != null && _merkeziTimer!.isActive) {
         _suAnkiZaman.value = DateTime.now();
@@ -44,14 +57,22 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
         appBar: AppBar(
           title: const Text("Randevularım"),
           centerTitle: true,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.logout, color: Colors.redAccent),
+              onPressed: () => _cikisYap(context),
+              tooltip: "Çıkış Yap",
+            ),
+            const SizedBox(width: 8),
+          ],
           bottom: const TabBar(
-            tabs: [
-              Tab(text: "Yaklaşanlar"),
-              Tab(text: "Geçmiş"),
-            ],
-            indicatorColor: Colors.blue,
-            labelStyle: TextStyle(fontWeight: FontWeight.bold),
-          ),
+             tabs: [
+               Tab(text: "Mevcut"),
+               Tab(text: "Geçmiş"),
+             ],
+             indicatorColor: Colors.blue,
+             labelStyle: TextStyle(fontWeight: FontWeight.bold),
+           ),
         ),
         body: StreamBuilder<List<RandevuModeli>>(
           stream: _firestoreServisi.kullaniciRandevulariniGetir(widget.telefon),
@@ -62,24 +83,36 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
             final tumRandevular = snapshot.data ?? [];
             final simdi = DateTime.now();
 
-            List<RandevuModeli> yaklasanlar = [];
+            List<RandevuModeli> mevcutler = [];
             List<RandevuModeli> gecmisler = [];
 
             for (var r in tumRandevular) {
-              DateTime rZaman = _randevuZamaniHesapla(r);
-              if (rZaman.isAfter(simdi.subtract(const Duration(hours: 1)))) {
-                yaklasanlar.add(r);
+              // Randevunun başlangıç saatini hesapla
+              DateTime rBas = _randevuZamaniHesapla(r);
+
+              // Araç kiralama ise iADE saatini hesapla, değilse başlangıç saatini kullan
+              DateTime referansZaman;
+              if (r.randevuKanali != null && r.randevuKanali!.isNotEmpty) {
+                // Araç kiralama randevusu: iADE saatine göre filtrele
+                referansZaman = rBas.add(Duration(minutes: r.sure));
+              } else {
+                // Diğer hizmetler: başlangıç saatine göre filtrele
+                referansZaman = rBas;
+              }
+
+              if (referansZaman.isAfter(simdi)) {
+                mevcutler.add(r);
               } else {
                 gecmisler.add(r);
               }
             }
 
-            yaklasanlar.sort((a, b) => _randevuZamaniHesapla(a).compareTo(_randevuZamaniHesapla(b)));
+            mevcutler.sort((a, b) => _randevuZamaniHesapla(b).compareTo(_randevuZamaniHesapla(a)));
             gecmisler.sort((a, b) => _randevuZamaniHesapla(b).compareTo(_randevuZamaniHesapla(a)));
 
             return TabBarView(
               children: [
-                _randevuListesi(context, yaklasanlar, false),
+                _randevuListesi(context, mevcutler, false),
                 _randevuListesi(context, gecmisler, true),
               ],
             );
@@ -97,7 +130,7 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
           children: [
             Icon(gecmisMi ? Icons.history : Icons.calendar_today_outlined, size: 80, color: Colors.grey.withValues(alpha: 0.3)),
             const SizedBox(height: 20),
-            Text(gecmisMi ? "Geçmiş randevunuz bulunmuyor." : "Yaklaşan randevunuz bulunmuyor.", style: TextStyle(color: Colors.grey.shade600, fontSize: 16)),
+            Text(gecmisMi ? "Geçmiş randevunuz bulunmuyor." : "Mevcut randevunuz bulunmuyor.", style: TextStyle(color: Colors.grey.shade600, fontSize: 16)),
           ],
         ),
       );
@@ -106,16 +139,23 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
     return ListView.builder(
       padding: const EdgeInsets.all(16),
       itemCount: liste.length,
-      itemBuilder: (context, i) => _randevuKarti(context, liste[i], gecmisMi),
+      itemBuilder: (context, i) {
+        final r = liste[i];
+        // [KRİTİK] Eğer bildirimden gelen ID bu randevu ise, kartı açık başlat
+        bool baslangictaAcik = widget.seciliRandevuId != null && r.id == widget.seciliRandevuId;
+        
+        return _randevuKarti(context, r, gecmisMi, baslangictaAcik: baslangictaAcik);
+      },
     );
   }
 
-  Widget _randevuKarti(BuildContext context, RandevuModeli r, bool gecmisMi) {
+  Widget _randevuKarti(BuildContext context, RandevuModeli r, bool gecmisMi, {bool baslangictaAcik = false}) {
     return Card(
       elevation: 2,
       margin: const EdgeInsets.only(bottom: 16),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: ExpansionTile(
+        initiallyExpanded: baslangictaAcik, // [YENİ] Bildirimden gelindiyse otomatik aç
         tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         leading: Container(
           padding: const EdgeInsets.all(10),
@@ -126,21 +166,68 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const SizedBox(height: 4),
+            const SizedBox(height: 6),
+            // Randevu Zamanı
             Row(
               children: [
+                const Icon(Icons.event, size: 14, color: Colors.redAccent),
+                const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    "${DateFormat('dd MMMM yyyy', 'tr_TR').format(r.tarih)} - ${r.saat}",
-                    style: TextStyle(color: Colors.grey.shade700, fontSize: 13, fontWeight: FontWeight.w500),
+                    "Randevu Zamanı: ${DateFormat('dd MMMM yyyy HH:mm', 'tr_TR').format(_randevuZamaniHesapla(r))}",
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.black87),
                   ),
                 ),
-                if (!gecmisMi && r.durum != 'İptal Edildi')
-                  _kalanSureWidget(_randevuZamaniHesapla(r)),
               ],
             ),
+            const SizedBox(height: 6),
+            // Onaylanma Zamanı + Badge
+            Row(
+              children: [
+                const Icon(Icons.check_circle_outline, size: 14, color: Colors.redAccent),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    "Onaylanma Zamanı: ${r.guncellemeTarihi != null ? DateFormat('dd MMMM yyyy HH:mm', 'tr_TR').format(r.guncellemeTarihi!) : '-'}",
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.black87),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _durumRozeti(r.durum),
+              ],
+            ),
+            // Rededilme Zamanı (sadece rededilmişse görünsün)
+            if (r.durum == 'Reddedildi')
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Row(
+                  children: [
+                    const Icon(Icons.cancel, size: 14, color: Colors.red),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        "Rededilme Zamanı: ${r.reddedilmeTarihi != null ? DateFormat('dd MMMM yyyy HH:mm', 'tr_TR').format(r.reddedilmeTarihi!) : '-'}",
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.black87),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            // Rededilme Nedeni
+            if (r.durum == 'Reddedildi' && r.iptalNedeni != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4, left: 22),
+                child: Text(
+                  "Neden: ${r.iptalNedeni}",
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade700, fontStyle: FontStyle.italic),
+                ),
+              ),
             const SizedBox(height: 4),
-            _durumRozeti(r.durum),
+            if (!gecmisMi && r.durum != 'İptal Edildi')
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: _kalanSureWidget(_randevuZamaniHesapla(r)),
+              ),
           ],
         ),
         children: [
@@ -149,14 +236,15 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
             padding: const EdgeInsets.all(16),
             child: Column(
               children: [
-                _bilgiSatiri(Icons.content_cut, "Hizmet: ${r.hizmetAdi}"),
+                // Hizmet ve Araç bilgileri (başlık stili iade ile uyumlu)
+                _bilgiSatiri(Icons.content_cut, "Hizmet: ${r.hizmetAdi}", bold: true),
                 if (r.randevuKanali != null)
-                  _bilgiSatiri(Icons.layers, r.randevuKanali!.contains(RegExp(r'[0-9]{2}\s[A-Z]+\s[0-9]+')) ? "Araç: ${r.randevuKanali}" : "Bölüm: ${r.randevuKanali}"),
-                if (r.calisanPersonel != null && !r.randevuKanali!.contains(RegExp(r'[0-9]{2}\s[A-Z]+\s[0-9]+')))
-                  _bilgiSatiri(Icons.person, "Personel: ${r.calisanPersonel}"),
-                
+                  _bilgiSatiri(Icons.layers, r.randevuKanali!.contains(RegExp(r'[0-9]{2}\s[A-Z]+\s[0-9]+')) ? "Araç: ${r.randevuKanali}" : "Bölüm: ${r.randevuKanali}", bold: true),
+                if (r.calisanPersonel != null && (r.randevuKanali == null || !r.randevuKanali!.contains(RegExp(r'[0-9]{2}\s[A-Z]+\s[0-9]+'))))
+                  _bilgiSatiri(Icons.person, "Personel: ${r.calisanPersonel}", bold: true),
+
                 const Divider(height: 32),
-                // BİTİŞ ZAMANI VE UZATMA BİLGİSİ
+                // BİTİŞ ZAMANI VE UZATMA BİLGİSİ (İade zamanı gösterir)
                 _bitisVeUzatmaBilgisi(r),
                 
                 const SizedBox(height: 16),
@@ -246,14 +334,14 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
     );
   }
 
-  Widget _bilgiSatiri(IconData ikon, String metin) {
+  Widget _bilgiSatiri(IconData ikon, String metin, {bool bold = false}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
           Icon(ikon, size: 16, color: Colors.grey.shade600),
           const SizedBox(width: 12),
-          Expanded(child: Text(metin, style: const TextStyle(fontSize: 14))),
+          Expanded(child: Text(metin, style: TextStyle(fontSize: 14, fontWeight: bold ? FontWeight.bold : FontWeight.normal))),
         ],
       ),
     );
@@ -282,6 +370,35 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
       return DateTime(r.tarih.year, r.tarih.month, r.tarih.day, int.parse(parcalar[0]), int.parse(parcalar[1]));
     } catch (e) {
       return r.tarih;
+    }
+  }
+
+  void _cikisYap(BuildContext context) async {
+    final devamEt = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Çıkış Yap"),
+        content: const Text("Hesabınızdan çıkış yapılacak ve bildirim alımı durdurulacaktır. Devam etmek istiyor musunuz?"),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Vazgeç")),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+            child: const Text("Evet, Çıkış Yap"),
+          ),
+        ],
+      ),
+    );
+
+    if (devamEt == true) {
+      BildirimServisi.servisiDurdur();
+      await OneSignalServisi.oturumuKapat();
+      
+      if (!context.mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (c) => const GirisSecimSayfasi()),
+        (route) => false,
+      );
     }
   }
 

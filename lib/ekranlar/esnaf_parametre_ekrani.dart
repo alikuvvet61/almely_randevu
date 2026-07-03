@@ -118,6 +118,52 @@ class _EsnafParametreEkraniState extends State<EsnafParametreEkrani> {
                 onChanged: (v) => _guncelle({'ayniGunRandevuEngelle': v}),
               ),
             ),
+            _parametreKart(
+              baslik: "Ajanda Yönetim Sistemi",
+              altBaslik: "İşaretli olursa ajanda defterini manuel hazırlamanız gerekir. İşaretsiz olursa 'Tam Otomatik/Canlı' yapı aktif olur ve ajanda hazır değil uyarısı almazsınız.",
+              icon: Icons.auto_mode_rounded,
+              icerik: SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text("Randevu Ajandasını ben ayarlayacağım", style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                value: _esnaf!.ajandayiKendimAyarlayacagim,
+                onChanged: (v) async {
+                  setState(() {
+                    _esnaf = _esnaf!.copyWith(ajandayiKendimAyarlayacagim: v);
+                  });
+                  await _guncelle({'ajandayiKendimAyarlayacagim': v});
+                },
+              ),
+            ),
+            if (!_esnaf!.ajandayiKendimAyarlayacagim)
+              _parametreKart(
+                baslik: "Randevu Penceresi (Gelecek Günler)",
+                altBaslik: "Müşterilerin bugünden itibaren en fazla kaç gün ilerisi için randevu oluşturabileceğini belirleyin.",
+                icon: Icons.date_range_rounded,
+                icerik: Row(
+                  children: [
+                    Expanded(
+                      child: Slider(
+                        value: _esnaf!.maksimumRandevuGunu.toDouble(),
+                        min: 1,
+                        max: 365,
+                        divisions: 364,
+                        label: "${_esnaf!.maksimumRandevuGunu} Gün",
+                        onChanged: (v) {
+                          setState(() {
+                            _esnaf = _esnaf!.copyWith(maksimumRandevuGunu: v.toInt());
+                          });
+                        },
+                        onChangeEnd: (v) => _guncelle({'maksimumRandevuGunu': v.toInt()}),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(8)),
+                      child: Text("${_esnaf!.maksimumRandevuGunu} Gün", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
+                    ),
+                  ],
+                ),
+              ),
             if (_esnaf!.kategori != 'Araç Kiralama')
               _parametreKart(
                 baslik: "Slot Görünüm Modu",
@@ -324,6 +370,40 @@ class _EsnafParametreEkraniState extends State<EsnafParametreEkrani> {
                 ],
               ),
             ),
+          _parametreKart(
+            baslik: "Minimum Randevu Süresi",
+            altBaslik: "Müşteriler en az ne kadarlık randevu alabilir? Bu sürenin altındaki seçimler engellenir.",
+            icon: Icons.hourglass_bottom_rounded,
+            icerik: Row(
+              children: [
+                Expanded(
+                  child: Slider(
+                    value: _esnaf!.minimumRandevuSuresi.toDouble(),
+                    min: 15,
+                    max: 300,
+                    divisions: 19, // 15 dk aralıklar: (300-15)/15 = 19
+                    label: "${_esnaf!.minimumRandevuSuresi} dk",
+                    onChanged: (v) {
+                      setState(() {
+                        _esnaf = _esnaf!.copyWith(minimumRandevuSuresi: v.toInt());
+                      });
+                    },
+                    onChangeEnd: (v) => _guncelle({'minimumRandevuSuresi': v.toInt()}),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(color: Colors.orange.shade50, borderRadius: BorderRadius.circular(8)),
+                  child: Text(
+                    _esnaf!.minimumRandevuSuresi >= 60 
+                      ? "${_esnaf!.minimumRandevuSuresi ~/ 60} Sa ${_esnaf!.minimumRandevuSuresi % 60 > 0 ? '${_esnaf!.minimumRandevuSuresi % 60} dk' : ''}"
+                      : "${_esnaf!.minimumRandevuSuresi} dk",
+                    style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.orange),
+                  ),
+                ),
+              ],
+            ),
+          ),
           if (_esnaf!.kategori != 'Taksi' && _esnaf!.kategori != 'Araç Kiralama')
             _parametreKart(
               baslik: "Personel Odaklı Sistem",

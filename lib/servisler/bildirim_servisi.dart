@@ -1,235 +1,143 @@
-import 'dart:async';
-import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart'; // kIsWeb için gerekli
-import 'package:timezone/data/latest_all.dart' as tz;
-import 'package:timezone/timezone.dart' as tz;
-import 'package:flutter_timezone/flutter_timezone.dart';
-import 'package:permission_handler/permission_handler.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
-
-@pragma('vm:entry-point')
-Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  debugPrint("ARKA PLAN BİLDİRİMİ GELDİ: ${message.messageId}");
-}
+import 'dart:async';
+import 'onesignal_servisi.dart';
+import '../modeller/randevu_modeli.dart';
+import '../modeller/esnaf_modeli.dart';
 
 class BildirimServisi {
-  static FirebaseMessaging get _fcm => FirebaseMessaging.instance;
-  static final FlutterLocalNotificationsPlugin _localNotifications =
-      FlutterLocalNotificationsPlugin();
+  static final FirebaseFirestore _db = FirebaseFirestore.instance;
+  static final Set<String> _syncedIds = {}; 
+  static StreamSubscription? _randevuAboneligi; // Mevcut aboneliği takip etmek için
 
-  static Future<void> initialize() async {
-    if (kIsWeb) return;
-
-    // 1. Timezone ayarlarını yap
-    tz.initializeTimeZones();
-    final timeZoneName = await FlutterTimezone.getLocalTimezone();
-    tz.setLocalLocation(tz.getLocation(timeZoneName.toString()));
-
-    // 2. Bildirim izinlerini iste
-    NotificationSettings settings = await _fcm.requestPermission(
-      alert: true,
-      badge: true,
-      sound: true,
-      provisional: false,
-    );
-
-    if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-      debugPrint('Bildirim izni verildi.');
-    }
-
-    // 3. Arka plan mesaj dinleyicisini kaydet
-    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
-
-    // 4. Yerel bildirimleri ayarla
-    const AndroidInitializationSettings initializationSettingsAndroid =
-        AndroidInitializationSettings('@mipmap/ic_launcher');
-        
-    const InitializationSettings initializationSettings = InitializationSettings(
-      android: initializationSettingsAndroid,
-    );
-    
-    // V18+ DÜZELTMESİ: İsimlendirilmiş parametre kullanımı
-    await _localNotifications.initialize(settings: initializationSettings);
-
-    // Kanalları oluştur (V3 - Kesinlik ve Görünürlük için)
-    const AndroidNotificationChannel smartTrackChannel = AndroidNotificationChannel(
-      'akilli_takip_kanali_v3',
-      'KRİTİK UYARILAR',
-      description: 'Kiralama süresi bitimine yakın kritik uyarılar.',
-      importance: Importance.max,
-      playSound: true,
-      enableVibration: true,
-    );
-
-    await _localNotifications
-        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-        ?.createNotificationChannel(smartTrackChannel);
-
-    // 5. Ön planda bildirim yakalama
-    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      RemoteNotification? notification = message.notification;
-      if (notification != null) {
-        _localNotifications.show(
-          id: notification.hashCode,
-          title: "ÖN PLAN: ${notification.title}",
-          body: notification.body,
-          notificationDetails: const NotificationDetails(
-            android: AndroidNotificationDetails(
-              'akilli_takip_kanali_v3',
-              'KRİTİK UYARILAR',
-              importance: Importance.max,
-              priority: Priority.high,
-              showWhen: true,
-            ),
-          ),
-        );
-      }
-    });
+  static Future<void> initialize({BuildContext? context}) async {
+    await OneSignalServisi.initialize(context: context);
   }
 
-  static Future<void> tokenKaydet(String telefon, {BuildContext? context}) async {
-    if (kIsWeb) return;
-    try {
-      String? token = await _fcm.getToken();
-      if (token != null) {
-        await FirebaseFirestore.instance.collection('kullanici_tokenlar').doc(telefon).set({
-          'token': token,
-          'sonGuncelleme': FieldValue.serverTimestamp(),
-          'cihaz': kIsWeb ? "Web" : "Mobil",
-        });
-        
-        if (context != null && context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text("BİLDİRİM KİMLİĞİ KAYDEDİLDİ: Bildirim almaya hazırsınız."),
-              backgroundColor: Colors.green,
-              duration: Duration(seconds: 3),
-              behavior: SnackBarBehavior.floating,
-            )
-          );
-        }
-      }
-    } catch (e) {
-      debugPrint("Token Hatası: $e");
-      if (context != null && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("KİMLİK HATASI: $e"), backgroundColor: Colors.red)
-        );
-      }
-    }
+  static Future<void> tokenKaydet(String telefon, {String? role, BuildContext? context}) async {
+    await OneSignalServisi.kullaniciyiKaydet(telefon, role: role, context: context);
   }
 
   static Future<void> bildirimGonder({
+    required String baslik,
+    required String icerik,
     required String kullaniciTel,
-    required String baslik,
-    required String icerik,
-  }) async {
-    await FirebaseFirestore.instance.collection('bildirimler').add({
-      'aliciTel': kullaniciTel,
-      'baslik': baslik,
-      'icerik': icerik,
-      'okundu': false,
-      'tarih': FieldValue.serverTimestamp(),
-    });
-  }
-
-  // HATA TESPİT SİSTEMİ: Bildirim kurulurken hata olursa kullanıcıya bildir
-  static Future<void> saatliBildirimKur({
-    required int id,
-    required String baslik,
-    required String icerik,
-    required DateTime zaman,
     BuildContext? context,
   }) async {
-    if (kIsWeb) return;
-    
-    if (zaman.isBefore(DateTime.now())) {
-      String msg = "HATA: Bildirim zamanı geçmişte (${DateFormat('HH:mm').format(zaman)}).";
-      if (context != null && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: Colors.red));
-      }
-      return;
-    }
-
-    try {
-      AndroidScheduleMode scheduleMode = AndroidScheduleMode.exactAllowWhileIdle;
-      
-      if (await Permission.scheduleExactAlarm.isDenied) {
-        debugPrint("UYARI: Tam zamanlı alarm izni yok, yaklaşık mod kullanılıyor.");
-        scheduleMode = AndroidScheduleMode.inexactAllowWhileIdle;
-      }
-
-      // V18+ DÜZELTMESİ: zonedSchedule parametreleri isimlendirilmiş hale getirildi
-      await _localNotifications.zonedSchedule(
-        id: id,
-        title: baslik,
-        body: icerik,
-        scheduledDate: tz.TZDateTime.from(zaman, tz.local),
-        notificationDetails: const NotificationDetails(
-          android: AndroidNotificationDetails(
-            'akilli_takip_kanali_v3',
-            'KRİTİK UYARILAR',
-            importance: Importance.max,
-            priority: Priority.max,
-            fullScreenIntent: true,
-            category: AndroidNotificationCategory.alarm,
-            visibility: NotificationVisibility.public,
-          ),
-        ),
-        androidScheduleMode: scheduleMode,
-      );
-      debugPrint("BAŞARILI: Bildirim kuruldu: $zaman");
-    } catch (e) {
-      String msg = "BİLDİRİM KURULAMADI: $e";
-      if (context != null && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: Colors.red, duration: const Duration(seconds: 8)));
-      }
-    }
+    await OneSignalServisi.bildirimGonderAnlik(
+      baslik: baslik,
+      icerik: icerik,
+      telefon: kullaniciTel,
+      context: context,
+    );
   }
 
-  static Future<void> syncAkilliTakipBildirimleri(String telefon, BuildContext context) async {
-    if (kIsWeb) return;
+  static String _numaraTemizle(String tel) {
+    String temiz = tel.replaceAll(RegExp(r'[^0-9]'), '');
+    if (temiz.length > 10) temiz = temiz.substring(temiz.length - 10);
+    return temiz;
+  }
 
+  static Future<void> syncAkilliTakipBildirimleri(String telefon, BuildContext? context, {bool esnafMi = false, String? esnafId}) async {
     try {
-      final snapshot = await FirebaseFirestore.instance
-          .collection('randevular')
-          .where('kullaniciTel', isEqualTo: telefon)
-          .where('akilliTakipAktif', isEqualTo: true)
+      final simdi = DateTime.now();
+      final bugunSifir = DateTime(simdi.year, simdi.month, simdi.day);
+      String temizGirisTel = _numaraTemizle(telefon);
+      
+      _syncedIds.clear();
+
+      // [GÜNCELLEME] "Oturum Mühürleniyor..." mesajı kaldırıldı. İşlem sessiz yapılacak.
+
+      await OneSignalServisi.kullaniciyiKaydet(temizGirisTel);
+      await Future.delayed(const Duration(seconds: 3)); 
+
+      final snap = await _db.collection('randevular')
           .where('durum', isEqualTo: 'Onaylandı')
           .get();
 
-      int count = 0;
-      String alarmZamani = "";
-      for (var doc in snapshot.docs) {
-        final data = doc.data();
-        final Timestamp? bZamanTs = data['bildirimZamani'] as Timestamp?;
+      if (snap.docs.isEmpty) return;
+
+      String? hedefEsnafId = esnafId;
+      int onarilanSayisi = 0;
+
+      for (var doc in snap.docs) {
+        final r = RandevuModeli.fromFirestore(doc);
+
+        if (r.tarih.isBefore(bugunSifir)) continue;
+
+        if (esnafMi) {
+          if (r.esnafId != hedefEsnafId) continue;
+        } else {
+          if (_numaraTemizle(r.kullaniciTel) != temizGirisTel) continue;
+        }
+
+        final baslangic = DateTime(r.tarih.year, r.tarih.month, r.tarih.day,
+            int.parse(r.saat.split(':')[0]), int.parse(r.saat.split(':')[1]));
+        final bitis = baslangic.add(Duration(minutes: r.sure));
+        final String bitisSaatiString = DateFormat('HH:mm').format(bitis);
+
+        final esDoc = await _db.collection('esnaflar').doc(r.esnafId).get();
+        if (!esDoc.exists) continue;
+        final esnaf = EsnafModeli.fromFirestore(esDoc);
+
+        if (!esnaf.akilliTakipModu) continue;
+
+        // [OTOMATİK ONARMA]: Eğer bildirim planı eksikse ve kullanıcı şu an telefondan girdiyse planla
         
-        if (bZamanTs != null) {
-          final DateTime bZaman = bZamanTs.toDate();
-          if (bZaman.isAfter(DateTime.now())) {
-            // Her kurma işleminden önce context hala geçerli mi kontrol et
-            if (context.mounted) {
-              await saatliBildirimKur(
-                id: doc.id.hashCode.remainder(100000),
-                baslik: "Kiralama Süreniz Doluyor",
-                icerik: "Aktif araç kiralamanızın süresi yakında doluyor.",
-                zaman: bZaman,
-                context: context,
+        // 1. ESNAF İÇİN ONARMA (Eğer esnaf giriş yaptıysa)
+        if (esnafMi && r.gecikmeBildirimId == null) {
+           final DateTime gecikmeZamani = bitis.add(const Duration(minutes: 1));
+           if (gecikmeZamani.isAfter(simdi)) {
+              String? id = await OneSignalServisi.bildirimPlanla(
+                baslik: "🔴 KRİTİK GECİKME ALARMI",
+                icerik: "${r.randevuKanali} plakalı aracın iade saati ($bitisSaatiString) geçti!",
+                zaman: gecikmeZamani,
+                telefon: esnaf.telefon,
+                randevuId: r.id,
+                ekVeri: {
+                  'action': 'kritik_gecikme',
+                  'tel': esnaf.telefon,
+                  'randevuId': r.id,
+                },
               );
-              alarmZamani = DateFormat('HH:mm').format(bZaman);
-              count++;
-            }
-          }
+              if (id != null && id != "ALICI_YOK") {
+                await doc.reference.update({'gecikmeBildirimId': id});
+                onarilanSayisi++;
+              }
+           }
+        }
+
+        // 2. MÜŞTERİ İÇİN ONARMA (Eğer müşteri giriş yaptıysa)
+        if (!esnafMi && r.uzatmaBildirimId == null) {
+           final DateTime uzatmaZamani = bitis.subtract(Duration(minutes: esnaf.akilliTakipSuresi));
+           if (uzatmaZamani.isAfter(simdi)) {
+              String? id = await OneSignalServisi.bildirimPlanla(
+                baslik: "Kiralama Süreniz Doluyor",
+                icerik: "${r.randevuKanali} için süreniz bitmek üzere.Uzatmak ister misiniz?",
+                zaman: uzatmaZamani,
+                telefon: r.kullaniciTel,
+                randevuId: r.id,
+                ekVeri: {
+                  'action': 'uzatma_ekrani',
+                  'tel': r.kullaniciTel,
+                  'randevuId': r.id,
+                },
+              );
+              if (id != null && id != "ALICI_YOK") {
+                await doc.reference.update({'uzatmaBildirimId': id});
+                onarilanSayisi++;
+              }
+           }
         }
       }
-      if (count > 0 && context.mounted) {
+
+      if (onarilanSayisi > 0 && context != null && context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text("$count bildirim telefonunuza kuruldu. Saat: $alarmZamani"), 
-            backgroundColor: Colors.green,
+            content: Text("Eksik Bildirimler Tamamlandı: $onarilanSayisi Adet ✅"),
+            backgroundColor: Colors.green.shade800,
+            duration: const Duration(seconds: 4),
             behavior: SnackBarBehavior.floating,
           )
         );
@@ -239,45 +147,42 @@ class BildirimServisi {
     }
   }
 
+  static String? _mevcutDinlenenTel; // Hangi numaranın dinlendiğini takip et
+
   static void bildirimDinle(String telefon, {BuildContext? context}) {
-    if (kIsWeb) return;
-    FirebaseFirestore.instance
-        .collection('bildirimler')
-        .where('aliciTel', isEqualTo: telefon)
-        .where('okundu', isEqualTo: false)
-        .snapshots()
-        .listen((snapshot) {
-      for (var change in snapshot.docChanges) {
-        if (change.type == DocumentChangeType.added) {
-          var data = change.doc.data();
-          if (data != null) {
-            _localNotifications.show(
-              id: change.doc.id.hashCode,
-              title: data['baslik'] ?? 'Yeni Bildirim',
-              body: data['icerik'] ?? '',
-              notificationDetails: const NotificationDetails(
-                android: AndroidNotificationDetails(
-                  'akilli_takip_kanali_v3',
-                  'KRİTİK UYARILAR',
-                  importance: Importance.max,
-                  priority: Priority.high,
-                  showWhen: true,
-                ),
-              ),
-            );
-            
+    String temizTel = _numaraTemizle(telefon);
+    
+    // [YENİ] Eğer aynı numara zaten dinleniyorsa, boşuna yeni dinleyici açma
+    if (_mevcutDinlenenTel == temizTel && _randevuAboneligi != null) {
+      debugPrint("ℹ️  BildirimServisi: $temizTel zaten dinleniyor, işlem atlandı.");
+      return;
+    }
+
+    // Farklı bir numara geldiyse veya dinleyici yoksa eskisini temizle ve başlat
+    _randevuAboneligi?.cancel();
+    _mevcutDinlenenTel = temizTel;
+
+    debugPrint("🎧 BildirimServisi: $temizTel için dinleyici başlatılıyor...");
+    _randevuAboneligi = _db.collection('randevular')
+      .where('kullaniciTel', isEqualTo: temizTel)
+      .snapshots()
+      .listen((snap) {
+        for (var change in snap.docChanges) {
+          if (change.type == DocumentChangeType.modified) {
+            final data = change.doc.data() as Map<String, dynamic>;
             if (context != null && context.mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text("BİLDİRİM GELDİ: ${data['baslik']}"),
-                  backgroundColor: Colors.indigo,
-                ),
+                SnackBar(content: Text("Randevu Durumu Güncellendi: ${data['durum']}"), backgroundColor: Colors.blueAccent)
               );
             }
-            change.doc.reference.update({'okundu': true});
           }
         }
-      }
-    });
+      });
+  }
+
+  static void servisiDurdur() {
+    _randevuAboneligi?.cancel();
+    _randevuAboneligi = null;
+    _mevcutDinlenenTel = null;
   }
 }

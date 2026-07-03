@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../servisler/onesignal_servisi.dart';
-import 'ana_ekran.dart';
 import '../servisler/bildirim_servisi.dart';
+import 'ana_ekran.dart';
 
 class KullaniciGirisSayfasi extends StatefulWidget {
   const KullaniciGirisSayfasi({super.key});
@@ -14,7 +14,7 @@ class _KullaniciGirisSayfasiState extends State<KullaniciGirisSayfasi> {
   final TextEditingController _telController = TextEditingController();
   bool _loading = false;
 
-  void _girisYap() {
+  void _girisYap() async {
     String tel = _telController.text.trim();
     if (tel.length < 10) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -25,18 +25,26 @@ class _KullaniciGirisSayfasiState extends State<KullaniciGirisSayfasi> {
 
     setState(() => _loading = true);
     
-    // TEŞHİS: Bildirim ayarlarını yap ve kullanıcıya teyit ver
-    BildirimServisi.tokenKaydet(tel, context: context);
+    // [YENİ] Bildirim dinleyicisini mühürleyelim (Web ve Mobil için)
     BildirimServisi.bildirimDinle(tel, context: context);
-    OneSignalServisi.kullaniciyiKaydet(tel);
+
+    // TEŞHİS: Bildirim ayarlarını yap ve kullanıcıya teyit ver
+    BildirimServisi.tokenKaydet(tel, role: 'kullanici', context: context);
+
+    // OneSignal kaydını bekle
+    await OneSignalServisi.kullaniciyiKaydet(tel);
     
-    Future.delayed(const Duration(milliseconds: 500), () {
-      if (!mounted) return;
+    if (!mounted) return;
+    
+    // SnackBar'ın fark edilmesi için kısa bir gecikme
+    await Future.delayed(const Duration(milliseconds: 1500));
+    
+    if (mounted) {
       Navigator.pushReplacement(
         context, 
         MaterialPageRoute(builder: (c) => AnaEkran(kullaniciTel: tel))
       );
-    });
+    }
   }
 
   @override

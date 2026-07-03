@@ -37,6 +37,9 @@ class EsnafModeli {
   final bool akilliTakipModu; // Kiralama bitimine yakın bildirim ve otomatik uzatma sistemi
   final int akilliTakipSuresi; // Kiralama bitimine kaç dakika kala bildirim gitsin?
   final double saatlikUzatmaUcreti; // Akıllı takip modunda 2 saatlik uzatma için saatlik ücret
+  final bool ajandayiKendimAyarlayacagim; // Randevu ajandasını manuel mi yönetecek? (Manuel vs Canlı Yapı)
+  final int maksimumRandevuGunu; // Müşterinin kaç gün ileriye randevu alabileceği
+  final int minimumRandevuSuresi; // Randevu alırken seçilebilecek minimum süre (dakika)
 
   final double puan; // Ortalama Puan
   final int yorumSayisi; // Toplam Yorum Sayısı
@@ -77,6 +80,9 @@ class EsnafModeli {
     this.akilliTakipModu = false,
     this.akilliTakipSuresi = 120,
     this.saatlikUzatmaUcreti = 0.0,
+    this.minimumRandevuSuresi = 60, // Varsayılan 1 saat (60 dk)
+    this.ajandayiKendimAyarlayacagim = true, // Varsayılan olarak mevcut esnaflar için manuel kalsın
+    this.maksimumRandevuGunu = 30, // Varsayılan 30 gün
     this.puan = 0.0,
     this.yorumSayisi = 0,
   });
@@ -127,6 +133,9 @@ class EsnafModeli {
       akilliTakipModu: data['akilliTakipModu'] ?? false,
       akilliTakipSuresi: data['akilliTakipSuresi'] ?? 120,
       saatlikUzatmaUcreti: (data['saatlikUzatmaUcreti'] ?? 0.0).toDouble(),
+      minimumRandevuSuresi: data['minimumRandevuSuresi'] ?? 60,
+      ajandayiKendimAyarlayacagim: data['ajandayiKendimAyarlayacagim'] ?? true,
+      maksimumRandevuGunu: data['maksimumRandevuGunu'] ?? 30,
       puan: (data['puan'] ?? 0.0).toDouble(),
       yorumSayisi: data['yorumSayisi'] ?? 0,
     );
@@ -168,6 +177,9 @@ class EsnafModeli {
       'akilliTakipModu': akilliTakipModu,
       'akilliTakipSuresi': akilliTakipSuresi,
       'saatlikUzatmaUcreti': saatlikUzatmaUcreti,
+      'minimumRandevuSuresi': minimumRandevuSuresi,
+      'ajandayiKendimAyarlayacagim': ajandayiKendimAyarlayacagim,
+      'maksimumRandevuGunu': maksimumRandevuGunu,
       'puan': puan,
       'yorumSayisi': yorumSayisi,
     };
@@ -209,6 +221,9 @@ class EsnafModeli {
     bool? akilliTakipModu,
     int? akilliTakipSuresi,
     double? saatlikUzatmaUcreti,
+    int? minimumRandevuSuresi,
+    bool? ajandayiKendimAyarlayacagim,
+    int? maksimumRandevuGunu,
     double? puan,
     int? yorumSayisi,
   }) {
@@ -248,6 +263,9 @@ class EsnafModeli {
       akilliTakipModu: akilliTakipModu ?? this.akilliTakipModu,
       akilliTakipSuresi: akilliTakipSuresi ?? this.akilliTakipSuresi,
       saatlikUzatmaUcreti: saatlikUzatmaUcreti ?? this.saatlikUzatmaUcreti,
+      minimumRandevuSuresi: minimumRandevuSuresi ?? this.minimumRandevuSuresi,
+      ajandayiKendimAyarlayacagim: ajandayiKendimAyarlayacagim ?? this.ajandayiKendimAyarlayacagim,
+      maksimumRandevuGunu: maksimumRandevuGunu ?? this.maksimumRandevuGunu,
       puan: puan ?? this.puan,
       yorumSayisi: yorumSayisi ?? this.yorumSayisi,
     );

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../modeller/esnaf_modeli.dart';
 import '../servisler/firestore_servisi.dart';
+import '../servisler/onesignal_servisi.dart';
+import '../servisler/bildirim_servisi.dart';
 import 'esnaf_paneli.dart'; // Panelin olduğu dosya yolu
 
 class EsnafGirisEkrani extends StatefulWidget {
@@ -34,6 +36,15 @@ class _EsnafGirisEkraniState extends State<EsnafGirisEkrani> {
       setState(() => _loading = false);
 
       if (esnaf != null) {
+        // [YENİ] Bildirim dinleyicisini web ve mobil için başlatalım
+        BildirimServisi.bildirimDinle(tel, context: context);
+
+        // [KRİTİK] Esnafı OneSignal'e telefon numarasıyla kaydet
+        // Bu sayede "Kritik Gecikme" bildirimlerini alabilecek
+        await OneSignalServisi.kullaniciyiKaydet(tel, role: 'esnaf');
+
+        if (!mounted) return;
+
         // BAŞARILI: Esnaf bulundu, panele gönder
         // Eğer giriş yapılan numara dükkan numarası değilse, şoför olarak işaretle
         String? soforTel = (esnaf.telefon != tel) ? tel : null;

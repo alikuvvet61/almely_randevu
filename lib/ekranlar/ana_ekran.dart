@@ -3,9 +3,11 @@ import 'package:geolocator/geolocator.dart';
 import 'dart:async';
 import '../servisler/firestore_servisi.dart';
 import '../servisler/bildirim_servisi.dart';
+import '../servisler/onesignal_servisi.dart';
 import '../modeller/esnaf_modeli.dart';
 import 'esnaf_detay_ekrani.dart';
 import 'kullanici_randevu_ekrani.dart';
+import 'giris_secim_ekrani.dart';
 
 class AnaEkran extends StatefulWidget {
   final String? kullaniciTel;
@@ -27,9 +29,18 @@ class _AnaEkranState extends State<AnaEkran> {
     _determinePosition();
     _favoriAboneligiBaslat();
     
-    // Akıllı Takip Bildirimlerini Senkronize Et (Web'den alınan randevular için)
+    // [YENİ] Akıllı Takip Bildirimlerini Senkronize Et (Sıralı İşlem: Önce mühürleme biter, sonra onarma başlar)
     if (widget.kullaniciTel != null) {
-       BildirimServisi.syncAkilliTakipBildirimleri(widget.kullaniciTel!, context);
+       OneSignalServisi.kullaniciyiKaydet(widget.kullaniciTel!, role: 'kullanici').then((_) {
+         Future.delayed(const Duration(seconds: 4), () {
+           if (mounted) {
+             BildirimServisi.syncAkilliTakipBildirimleri(widget.kullaniciTel!, context);
+           }
+         });
+       });
+
+       // [YENİ] Web ve Mobil ana ekranda da canlı bildirim dinleyiciyi aktif tutalım
+       BildirimServisi.bildirimDinle(widget.kullaniciTel!, context: context);
     }
   }
 
@@ -63,6 +74,34 @@ class _AnaEkranState extends State<AnaEkran> {
       case 'Psikolog': return Icons.psychology;
       case 'Özel Ders': return Icons.school;
       default: return Icons.business;
+    }
+  }
+
+  void _cikisYap(BuildContext context) async {
+    final devamEt = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Çıkış Yap"),
+        content: const Text("Hesabınızdan çıkış yapılacak ve bildirim alımı durdurulacaktır. Devam etmek istiyor musunuz?"),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Vazgeç")),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+            child: const Text("Evet, Çıkış Yap"),
+          ),
+        ],
+      ),
+    );
+
+    if (devamEt == true) {
+      BildirimServisi.servisiDurdur();
+      await OneSignalServisi.oturumuKapat();
+      if (!context.mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (c) => const GirisSecimSayfasi()),
+        (route) => false,
+      );
     }
   }
 
@@ -169,7 +208,7 @@ class _AnaEkranState extends State<AnaEkran> {
               Container(width: 40, height: 5, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10))),
               const SizedBox(height: 15),
               Text("$katAd Esnafları", style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-              
+
               // SIRALAMA SEÇENEKLERİ
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
@@ -183,8 +222,8 @@ class _AnaEkranState extends State<AnaEkran> {
                         Padding(
                           padding: const EdgeInsets.only(right: 8.0),
                           child: _siralamaChip(
-                            label: "Mesafe", 
-                            icon: Icons.near_me, 
+                            label: "Mesafe",
+                            icon: Icons.near_me,
                             secili: siralamaKriteri == 'mesafe',
                             onTap: () => setModalState(() => siralamaKriteri = 'mesafe')
                           ),
@@ -192,15 +231,15 @@ class _AnaEkranState extends State<AnaEkran> {
                       Padding(
                         padding: const EdgeInsets.only(right: 8.0),
                         child: _siralamaChip(
-                          label: "Puan", 
-                          icon: Icons.star, 
+                          label: "Puan",
+                          icon: Icons.star,
                           secili: siralamaKriteri == 'puan',
                           onTap: () => setModalState(() => siralamaKriteri = 'puan')
                         ),
                       ),
                       _siralamaChip(
-                        label: "İsim", 
-                        icon: Icons.sort_by_alpha, 
+                        label: "İsim",
+                        icon: Icons.sort_by_alpha,
                         secili: siralamaKriteri == 'isim',
                         onTap: () => setModalState(() => siralamaKriteri = 'isim')
                       ),
@@ -233,7 +272,7 @@ class _AnaEkranState extends State<AnaEkran> {
                   ),
                 ),
               const Divider(height: 1),
-              
+
               Expanded(
                 child: StreamBuilder<List<EsnafModeli>>(
                   stream: firestoreServisi.kategoriyeGoreGetir(katAd),
@@ -263,7 +302,7 @@ class _AnaEkranState extends State<AnaEkran> {
                       } else if (siralamaKriteri == 'puan') {
                         return esnafB.puan.compareTo(esnafA.puan);
                       }
-                      
+
                       // İsim sıralaması veya Fallback
                       return esnafA.isletmeAdi.toLowerCase().compareTo(esnafB.isletmeAdi.toLowerCase());
                     });
@@ -359,164 +398,175 @@ class _AnaEkranState extends State<AnaEkran> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text("AlmEly - Trabzon"),
-        centerTitle: true,
-        actions: [
-          if (widget.kullaniciTel != null)
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text("AlmEly - Trabzon"),
+          centerTitle: true,
+          actions: [
             IconButton(
-              icon: const Icon(Icons.calendar_month, color: Colors.blue),
-              tooltip: "Randevularım",
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (c) => KullaniciRandevuEkrani(telefon: widget.kullaniciTel!))
-              ),
+              icon: const Icon(Icons.logout, color: Colors.redAccent),
+              onPressed: () => _cikisYap(context),
+              tooltip: "Çıkış Yap",
             ),
-        ],
-      ),
-      body: CustomScrollView(
-        slivers: [
-          if (widget.kullaniciTel != null)
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
-                child: InkWell(
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (c) => KullaniciRandevuEkrani(telefon: widget.kullaniciTel!))
-                  ),
-                  child: Container(
-                    padding: const EdgeInsets.all(15),
-                    decoration: BoxDecoration(
-                      color: Colors.blue.shade50,
-                      borderRadius: BorderRadius.circular(15),
-                      border: Border.all(color: Colors.blue.shade100),
+            if (widget.kullaniciTel != null)
+              IconButton(
+                icon: const Icon(Icons.calendar_month, color: Colors.blue),
+                tooltip: "Randevularım",
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (c) => KullaniciRandevuEkrani(telefon: widget.kullaniciTel!))
+                ),
+              ),
+          ],
+        ),
+        body: CustomScrollView(
+          slivers: [
+            if (widget.kullaniciTel != null)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
+                  child: InkWell(
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (c) => KullaniciRandevuEkrani(telefon: widget.kullaniciTel!))
                     ),
-                    child: const Row(
-                      children: [
-                        Icon(Icons.calendar_today, color: Colors.blue),
-                        SizedBox(width: 15),
-                        Expanded(
-                          child: Text(
-                            "Randevularım",
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.blue),
+                    child: Container(
+                      padding: const EdgeInsets.all(15),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.shade50,
+                        borderRadius: BorderRadius.circular(15),
+                        border: Border.all(color: Colors.blue.shade100),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.calendar_today, color: Colors.blue),
+                          SizedBox(width: 15),
+                          Expanded(
+                            child: Text(
+                              "Randevularım",
+                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.blue),
+                            ),
                           ),
-                        ),
-                        Icon(Icons.arrow_forward_ios, size: 16, color: Colors.blue),
-                      ],
+                          Icon(Icons.arrow_forward_ios, size: 16, color: Colors.blue),
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-          StreamBuilder<List<Map<String, dynamic>>>(
-            stream: firestoreServisi.kategorileriGetir(),
-            builder: (context, snapshot) {
-              List<Map<String, dynamic>> kats = snapshot.data ?? [];
-              
-              // Veri henüz yoksa ve bağlantı bekleniyorsa loading göster
-              if (snapshot.connectionState == ConnectionState.waiting && kats.isEmpty) {
-                return const SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: Center(child: CircularProgressIndicator()),
-                );
-              }
-              
-              // Veri boşsa (gerçekten veri yoksa) uyarı göster
-              if (kats.isEmpty) {
-                return const SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: Center(child: Text("Henüz kategori eklenmemiş.")),
-                );
-              }
+            StreamBuilder<List<Map<String, dynamic>>>(
+              stream: firestoreServisi.kategorileriGetir(),
+              builder: (context, snapshot) {
+                List<Map<String, dynamic>> kats = snapshot.data ?? [];
 
-              // Favorilere göre sırala
-              if (widget.kullaniciTel != null) {
-                kats.sort((a, b) {
-                  bool aFav = _favoriKategoriler.contains(a['id']);
-                  bool bFav = _favoriKategoriler.contains(b['id']);
-                  if (aFav && !bFav) return -1;
-                  if (!aFav && bFav) return 1;
-                  return 0;
-                });
-              }
+                // Veri henüz yoksa ve bağlantı bekleniyorsa loading göster
+                if (snapshot.connectionState == ConnectionState.waiting && kats.isEmpty) {
+                  return const SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: Center(child: CircularProgressIndicator()),
+                  );
+                }
 
-              return SliverPadding(
-                padding: const EdgeInsets.all(15),
-                sliver: SliverGrid(
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 12,
-                    childAspectRatio: 1.1,
-                  ),
-                  delegate: SliverChildBuilderDelegate(
-                    (context, i) {
-                      final kat = kats[i];
-                      final id = kat['id'] as String;
-                      final ad = kat['ad'] as String;
-                      final ikonKod = kat['ikon'] as int?;
-                      final renkKod = kat['renk'] as int?;
-                      final bool isFav = _favoriKategoriler.contains(id);
-                      
-                      return InkWell(
-                        onTap: () => _esnafListesiAc(context, ad),
-                        borderRadius: BorderRadius.circular(15),
-                        child: Card(
-                          elevation: 4,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                          color: _getKategoriRenk(ad, renkKod),
-                          child: Stack(
-                            children: [
-                              Center(
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    _buildKategoriIcon(ad, ikonKod),
-                                    const SizedBox(height: 10),
-                                    Text(
-                                      ad,
-                                      textAlign: TextAlign.center,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 16,
+                // Veri boşsa (gerçekten veri yoksa) uyarı göster
+                if (kats.isEmpty) {
+                  return const SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: Center(child: Text("Henüz kategori eklenmemiş.")),
+                  );
+                }
+
+                // Favorilere göre sırala
+                if (widget.kullaniciTel != null) {
+                  kats.sort((a, b) {
+                    bool aFav = _favoriKategoriler.contains(a['id']);
+                    bool bFav = _favoriKategoriler.contains(b['id']);
+                    if (aFav && !bFav) return -1;
+                    if (!aFav && bFav) return 1;
+                    return 0;
+                  });
+                }
+
+                return SliverPadding(
+                  padding: const EdgeInsets.all(15),
+                  sliver: SliverGrid(
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      crossAxisSpacing: 12,
+                      mainAxisSpacing: 12,
+                      childAspectRatio: 1.1,
+                    ),
+                    delegate: SliverChildBuilderDelegate(
+                      (context, i) {
+                        final kat = kats[i];
+                        final id = kat['id'] as String;
+                        final ad = kat['ad'] as String;
+                        final ikonKod = kat['ikon'] as int?;
+                        final renkKod = kat['renk'] as int?;
+                        final bool isFav = _favoriKategoriler.contains(id);
+
+                        return InkWell(
+                          onTap: () => _esnafListesiAc(context, ad),
+                          borderRadius: BorderRadius.circular(15),
+                          child: Card(
+                            elevation: 4,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                            color: _getKategoriRenk(ad, renkKod),
+                            child: Stack(
+                              children: [
+                                Center(
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      _buildKategoriIcon(ad, ikonKod),
+                                      const SizedBox(height: 10),
+                                      Text(
+                                        ad,
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 16,
+                                        ),
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
-                              ),
-                              if (widget.kullaniciTel != null)
-                                Positioned(
-                                  top: 5,
-                                  right: 5,
-                                  child: GestureDetector(
-                                    onTap: () {
-                                      firestoreServisi.favoriGuncelle(widget.kullaniciTel!, id, !isFav);
-                                    },
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(8.0),
-                                      child: Icon(
-                                        isFav ? Icons.favorite : Icons.favorite_border,
-                                        color: isFav ? Colors.red : Colors.white70,
-                                        size: 24,
+                                if (widget.kullaniciTel != null)
+                                  Positioned(
+                                    top: 5,
+                                    right: 5,
+                                    child: GestureDetector(
+                                      onTap: () {
+                                        firestoreServisi.favoriGuncelle(widget.kullaniciTel!, id, !isFav);
+                                      },
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(8.0),
+                                        child: Icon(
+                                          isFav ? Icons.favorite : Icons.favorite_border,
+                                          color: isFav ? Colors.red : Colors.white70,
+                                          size: 24,
+                                        ),
                                       ),
                                     ),
                                   ),
-                                ),
-                            ],
+                              ],
+                            ),
                           ),
-                        ),
-                      );
-                    },
-                    childCount: kats.length,
+                        );
+                      },
+                      childCount: kats.length,
+                    ),
                   ),
-                ),
-              );
-            }
-          ),
-        ],
+                );
+              }
+            ),
+          ],
+        ),
       ),
     );
   }

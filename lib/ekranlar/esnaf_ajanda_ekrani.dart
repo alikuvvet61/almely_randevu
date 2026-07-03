@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:almely_randevu/servisler/bildirim_servisi.dart';
 import 'package:almely_randevu/servisler/firestore_servisi.dart';
 import 'package:almely_randevu/modeller/randevu_modeli.dart';
 import 'package:almely_randevu/modeller/esnaf_modeli.dart';
@@ -79,6 +80,9 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
 
 
     _ajandaStreamGuncelle();
+    
+    // [YENİ] Esnaf için her sayfada canlı bildirim dinleyiciyi mühürleyelim
+    BildirimServisi.bildirimDinle(widget.esnaf.telefon, context: context);
   }
 
   @override

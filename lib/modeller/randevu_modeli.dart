@@ -9,18 +9,22 @@ class RandevuModeli {
   final String kullaniciTel;
   final DateTime tarih;
   final String saat;
-  final int sure; // Randevunun süresi (dakika)
-  final String hizmetAdi; // Seçilen hizmet
-  final String durum; // 'Beklemede', 'Onaylandı', 'Reddedildi', 'İptal Edildi'
-  final String? randevuKanali; // Örn: Koltuk 1, Oda 2
-  final String? calisanPersonel; // Örn: Ahmet Yılmaz
+  final int sure; 
+  final String hizmetAdi; 
+  final String durum; 
+  final String? randevuKanali; 
+  final String? calisanPersonel; 
   final String? iptalNedeni;
-  final String? seriId; // Periyodik randevular için grup ID
+  final String? seriId; 
   final bool puanlandi;
   final DateTime? olusturulmaTarihi;
+  final DateTime? guncellemeTarihi;
+  final DateTime? reddedilmeTarihi;
   final bool akilliTakipAktif;
   final DateTime? bildirimZamani;
-  final int uzatmaSuresi; // Yapılan toplam uzatma süresi (dakika)
+  final int uzatmaSuresi; 
+  final String? gecikmeBildirimId; 
+  final String? uzatmaBildirimId; 
 
   RandevuModeli({
     required this.id,
@@ -40,9 +44,13 @@ class RandevuModeli {
     this.seriId,
     this.puanlandi = false,
     this.olusturulmaTarihi,
+    this.guncellemeTarihi,
+    this.reddedilmeTarihi,
     this.akilliTakipAktif = false,
     this.bildirimZamani,
     this.uzatmaSuresi = 0,
+    this.gecikmeBildirimId,
+    this.uzatmaBildirimId,
   });
 
   factory RandevuModeli.fromFirestore(DocumentSnapshot doc) {
@@ -70,11 +78,19 @@ class RandevuModeli {
       olusturulmaTarihi: data['olusturulmaTarihi'] != null 
           ? (data['olusturulmaTarihi'] as Timestamp).toDate() 
           : null,
+      guncellemeTarihi: data['guncellemeTarihi'] != null
+          ? (data['guncellemeTarihi'] as Timestamp).toDate()
+          : null,
+      reddedilmeTarihi: data['reddedilmeTarihi'] != null
+          ? (data['reddedilmeTarihi'] as Timestamp).toDate()
+          : null,
       akilliTakipAktif: data['akilliTakipAktif'] ?? false,
       bildirimZamani: data['bildirimZamani'] != null 
           ? (data['bildirimZamani'] as Timestamp).toDate() 
           : null,
       uzatmaSuresi: data['uzatmaSuresi'] ?? 0,
+      gecikmeBildirimId: data['gecikmeBildirimId'],
+      uzatmaBildirimId: data['uzatmaBildirimId'],
     );
   }
 
@@ -102,7 +118,11 @@ class RandevuModeli {
       'bildirimZamani': bildirimZamani != null 
           ? Timestamp.fromDate(bildirimZamani!) 
           : null,
+      'guncellemeTarihi': guncellemeTarihi != null ? Timestamp.fromDate(guncellemeTarihi!) : null,
+      'reddedilmeTarihi': reddedilmeTarihi != null ? Timestamp.fromDate(reddedilmeTarihi!) : null,
       'uzatmaSuresi': uzatmaSuresi,
+      'gecikmeBildirimId': gecikmeBildirimId,
+      'uzatmaBildirimId': uzatmaBildirimId,
     };
   }
 
@@ -124,8 +144,13 @@ class RandevuModeli {
     String? seriId,
     bool? puanlandi,
     DateTime? olusturulmaTarihi,
+    DateTime? guncellemeTarihi,
+    DateTime? reddedilmeTarihi,
     bool? akilliTakipAktif,
     DateTime? bildirimZamani,
+    int? uzatmaSuresi,
+    String? gecikmeBildirimId,
+    String? uzatmaBildirimId,
   }) {
     return RandevuModeli(
       id: id ?? this.id,
@@ -145,8 +170,13 @@ class RandevuModeli {
       seriId: seriId ?? this.seriId,
       puanlandi: puanlandi ?? this.puanlandi,
       olusturulmaTarihi: olusturulmaTarihi ?? this.olusturulmaTarihi,
+      guncellemeTarihi: guncellemeTarihi ?? this.guncellemeTarihi,
+      reddedilmeTarihi: reddedilmeTarihi ?? this.reddedilmeTarihi,
       akilliTakipAktif: akilliTakipAktif ?? this.akilliTakipAktif,
       bildirimZamani: bildirimZamani ?? this.bildirimZamani,
+      uzatmaSuresi: uzatmaSuresi ?? this.uzatmaSuresi,
+      gecikmeBildirimId: gecikmeBildirimId ?? this.gecikmeBildirimId,
+      uzatmaBildirimId: uzatmaBildirimId ?? this.uzatmaBildirimId,
     );
   }
 }

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'dart:async';
 import 'kullanici_giris_ekrani.dart';
 import 'esnaf_giris_ekrani.dart';
 import 'admin_giris_ekrani.dart';
@@ -7,6 +9,7 @@ import '../servisler/bildirim_servisi.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../servisler/onesignal_servisi.dart';
 import 'kullanici_randevu_ekrani.dart';
+import '../main.dart'; // navigatorKey için
 
 class GirisSecimSayfasi extends StatefulWidget {
   const GirisSecimSayfasi({super.key});
@@ -24,7 +27,16 @@ class _GirisSecimSayfasiState extends State<GirisSecimSayfasi> {
       VersiyonServisi.versiyonKontrol(context);
       _bildirimIzniIste();
       _garantiliDeepLinkKontrol();
+      _aktifKullaniciyiKontrolEt();
     });
+  }
+
+  void _aktifKullaniciyiKontrolEt() async {
+    // [YENİ] Web'de ve Mobil'de mühürlü numarayı takip edelim
+    // Eğer bir numara OneSignal üzerinden kaydedilmişse, dinleyiciyi ana ekranda da başlatalım
+    if (kIsWeb) {
+       // Web tarafında mühürlü cihazı takip ediyoruz
+    }
   }
 
   Future<void> _bildirimIzniIste() async {
@@ -35,25 +47,29 @@ class _GirisSecimSayfasiState extends State<GirisSecimSayfasi> {
       await Permission.scheduleExactAlarm.request();
     }
     // Paralel başlatma
-    BildirimServisi.initialize();
-    if (mounted) OneSignalServisi.initialize(context: context);
+    await BildirimServisi.initialize();
+    if (mounted) await OneSignalServisi.initialize();
   }
 
   void _garantiliDeepLinkKontrol() {
-    // KRİTİK: Uygulama tamamen çizilene kadar 2.5 saniye bekle (Navigasyon takılmasını önler)
-    Future.delayed(const Duration(milliseconds: 2500), () {
-      if (!mounted) return;
+    // [HIZLANDIRMA] Bekleme süresini optimize ediyoruz
+    Timer.periodic(const Duration(milliseconds: 500), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
       
       final data = OneSignalServisi.sonTiklananVeri;
       if (data != null && data['action'] == 'uzatma_ekrani' && data['tel'] != null) {
         String tel = data['tel'].toString();
-        OneSignalServisi.sonTiklananVeri = null; // Tüketilen veriyi temizle
+        String? rId = data['randevuId']?.toString();
+        OneSignalServisi.sonTiklananVeri = null; // Tüketilen veriyi hemen temizle
 
-        debugPrint("FİNAL DEEP LINK: Uzatma ekranına yönlendiriliyor... Tel: $tel");
+        debugPrint("YÖNLENDİRME BAŞLATILIYOR: Hedef Tel: $tel, Randevu ID: $rId");
         
-        // Sarsılmaz Navigasyon: NavigatorState üzerinden doğrudan push yapıyoruz
-        Navigator.of(context).push(
-          MaterialPageRoute(builder: (c) => KullaniciRandevuEkrani(telefon: tel))
+        // --- AKILLI YÖNLENDİRME ---
+        navigatorKey.currentState?.push(
+          MaterialPageRoute(builder: (c) => KullaniciRandevuEkrani(telefon: tel, seciliRandevuId: rId))
         );
       }
     });

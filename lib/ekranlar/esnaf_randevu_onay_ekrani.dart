@@ -1,3 +1,4 @@
+import 'package:almely_randevu/servisler/bildirim_servisi.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:almely_randevu/servisler/firestore_servisi.dart';
@@ -16,11 +17,24 @@ class EsnafRandevuYonetimEkrani extends StatefulWidget {
 class _EsnafRandevuYonetimEkraniState extends State<EsnafRandevuYonetimEkrani> {
   final FirestoreServisi _firestoreServisi = FirestoreServisi();
   EsnafModeli? _esnaf;
+  bool _gecmisTarihleriBelirtildi = false;
 
   @override
   void initState() {
     super.initState();
     _esnaf = widget.esnaf;
+
+    // [YENİ] Esnaf için bu sayfada da canlı bildirim dinleyiciyi mühürleyelim
+    if (_esnaf != null) {
+      BildirimServisi.bildirimDinle(_esnaf!.telefon, context: context);
+    } else {
+       _esnafYukle().then((_) {
+         if (mounted && _esnaf != null) {
+           BildirimServisi.bildirimDinle(_esnaf!.telefon, context: context);
+         }
+       });
+    }
+
     if (_esnaf == null) {
       _esnafYukle();
     }
@@ -81,8 +95,12 @@ class _EsnafRandevuYonetimEkraniState extends State<EsnafRandevuYonetimEkrani> {
           liste = hepsi.where((r) => r.durum == durumFiltresi).toList();
         }
 
-        // Tarihe göre sırala (Yeni en üstte)
-        liste.sort((a, b) => b.tarih.compareTo(a.tarih));
+        // Tarihe göre sırala ve saate göre (Eski en üstte, saat artan sırada)
+        liste.sort((a, b) {
+          int cmp = a.tarih.compareTo(b.tarih);
+          if (cmp != 0) return cmp;
+          return a.saat.compareTo(b.saat);
+        });
 
         if (liste.isEmpty) {
           return Center(
@@ -106,18 +124,73 @@ class _EsnafRandevuYonetimEkraniState extends State<EsnafRandevuYonetimEkrani> {
           );
         }
 
-        // Randevu listesini tarihe göre sıralayalım (en yakın tarihli en üstte)
-        liste.sort((a, b) {
-          int cmp = a.tarih.compareTo(b.tarih);
-          if (cmp != 0) return cmp;
-          return a.saat.compareTo(b.saat);
-        });
+        // "Red/İptal" tabında checkbox ve filtreleme
+        bool isRedIptalTab = durumFiltresi == 'Red/İptal';
+        
+        // Checkbox kapalıysa ve "Red/İptal" tab'ı ise, geçmiş randevuları gizle
+        List<RandevuModeli> filtreliListe = liste;
+        if (isRedIptalTab && !_gecmisTarihleriBelirtildi) {
+          final simdi = DateTime.now();
+          filtreliListe = liste.where((r) {
+            try {
+              final saatParcalar = r.saat.split(':');
+              final randevuTamZaman = DateTime(
+                r.tarih.year,
+                r.tarih.month,
+                r.tarih.day,
+                int.parse(saatParcalar[0]),
+                int.parse(saatParcalar[1]),
+              );
+              return randevuTamZaman.isAfter(simdi);
+            } catch (e) {
+              return true;
+            }
+          }).toList();
+        }
+
+        // Red/İptal tab'ında checkbox göster
+        if (isRedIptalTab) {
+          return Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Row(
+                  children: [
+                    Checkbox(
+                      value: _gecmisTarihleriBelirtildi,
+                      onChanged: (value) {
+                        setState(() {
+                          _gecmisTarihleriBelirtildi = value ?? false;
+                        });
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    const Text(
+                      "Geçmiş randevuları da göster",
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: ListView.builder(
+                  padding: const EdgeInsets.all(12),
+                  itemCount: filtreliListe.length,
+                  itemBuilder: (context, i) {
+                    final r = filtreliListe[i];
+                    return _randevuKarti(r);
+                  },
+                ),
+              ),
+            ],
+          );
+        }
 
         return ListView.builder(
           padding: const EdgeInsets.all(12),
-          itemCount: liste.length,
+          itemCount: filtreliListe.length,
           itemBuilder: (context, i) {
-            final r = liste[i];
+            final r = filtreliListe[i];
             return _randevuKarti(r);
           },
         );
@@ -327,9 +400,8 @@ class _EsnafRandevuYonetimEkraniState extends State<EsnafRandevuYonetimEkrani> {
                         Expanded(
                           child: ElevatedButton.icon(
                             onPressed: () async {
-                              final messenger = ScaffoldMessenger.of(context);
-                              
                               if (sureDoldu) {
+                                if (!mounted) return;
                                 bool? devamEt = await showDialog<bool>(
                                   context: context,
                                   builder: (ctx) => AlertDialog(
@@ -349,21 +421,40 @@ class _EsnafRandevuYonetimEkraniState extends State<EsnafRandevuYonetimEkrani> {
                                 if (devamEt != true) return;
                               }
 
+                              if (!mounted) return;
+                              // Context'i asenkron işlemden önce alalım
+                              final scaffoldMessenger = ScaffoldMessenger.of(context);
                               String tarihFormat = DateFormat('dd.MM.yyyy').format(r.tarih);
-                              await _firestoreServisi.randevuDurumGuncelle(
+                              
+                              final res = await _firestoreServisi.randevuDurumGuncelle(
                                 r.id, 
                                 'Onaylandı',
                                 aliciTel: r.kullaniciTel,
                                 esnafAdi: r.esnafAdi,
-                                tarihSaat: "$tarihFormat ${r.saat}"
+                                tarihSaat: "$tarihFormat ${r.saat}",
+                                context: null,
                               );
+
                               if (mounted) {
-                                messenger.showSnackBar(
+                                String msg = "Randevu onaylandı";
+                                Color bgColor = Colors.green;
+                                
+                                if (res['alarmKuruldu'] == true) {
+                                  msg += " ve Gecikme Alarmı ${res['alarmSaati']} için kuruldu.";
+                                  bgColor = Colors.blue.shade800;
+                                } else if (res['hata'] == "ALICI_YOK") {
+                                  msg = "Randevu onaylandı ancak BİLDİRİM KURULAMADI! 🔴\nBildirimlerin oluşması için Telefonunuzdan Esnaf Ekranına birkez giriş yapmalısınız.";
+                                  bgColor = Colors.red.shade900;
+                                }
+                                
+                                scaffoldMessenger.clearSnackBars();
+                                scaffoldMessenger.showSnackBar(
                                   SnackBar(
-                                    content: const Text("Randevu onaylandı"),
+                                    content: Text(msg),
                                     behavior: SnackBarBehavior.floating,
-                                    backgroundColor: Colors.green,
+                                    backgroundColor: bgColor,
                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                    duration: const Duration(seconds: 8), // Mesajın okunması için süreyi uzattım
                                   )
                                 );
                               }
@@ -495,7 +586,7 @@ class _EsnafRandevuYonetimEkraniState extends State<EsnafRandevuYonetimEkrani> {
                           final navigator = Navigator.of(c);
                           String tarihFormat = DateFormat('dd.MM.yyyy').format(r.tarih);
                           await _firestoreServisi.randevuDurumGuncelle(
-                            r.id, 
+                            r.id,
                             'İptal Edildi',
                             iptalNedeni: nedenler[index],
                             aliciTel: r.kullaniciTel,
