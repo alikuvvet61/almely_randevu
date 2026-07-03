@@ -547,38 +547,44 @@ class FirestoreServisi {
 
     // [YENİ REDESIGN] Müşteri randevu alır almaz bildirim planla
     if (randevu.akilliTakipAktif && randevu.bildirimZamani != null) {
-      try {
-        final esnaf = await esnafGetirDoc(randevu.esnafId);
-        if (esnaf != null && esnaf.akilliTakipModu) {
-          final String? uzatmaId = await OneSignalServisi.bildirimPlanla(
-            baslik: "Kiralama Süreniz Doluyor",
-            icerik: "${randevu.randevuKanali} için kiralama süreniz ${esnaf.akilliTakipSuresi} dakika sonra bitiyor. Uzatmak ister misiniz?",
-            zaman: randevu.bildirimZamani!,
-            telefon: randevu.kullaniciTel,
-            tagKey: 'telefon',
-            randevuId: docRef.id,
-            ekVeri: {
-              'action': 'uzatma_ekrani',
-              'tel': randevu.kullaniciTel,
-              'randevuId': docRef.id,
-            },
-          );
-
-          if (uzatmaId != null && uzatmaId != "ALICI_YOK") {
-            await docRef.update({
-              'uzatmaBildirimId': uzatmaId,
-              'uzatmaZamaniTs': randevu.bildirimZamani,
-              'uzatmaZamaniStr': DateFormat('yyyy-MM-dd HH:mm:ss').format(randevu.bildirimZamani!),
-            });
-          } else if (uzatmaId == "ALICI_YOK") {
-            sonucHata = "ALICI_YOK";
-          }
-        }
-      } catch (e) {
-        debugPrint('❌ Randevu ekleme sırasında bildirim planlama hatası: $e');
-      }
+      // [KESİN ÇÖZÜM] Bildirim planlamayı tamamen arka plana atıyoruz (await yok)
+      // Bu sayede kullanıcı randevu kaydedilir edilmez başarı mesajını görecek.
+      _planlaArkaPlanda(randevu, docRef.id);
     }
     return sonucHata;
+  }
+
+  // Bildirim planlamayı arka planda sessizce yapan yardımcı fonksiyon
+  Future<void> _planlaArkaPlanda(RandevuModeli randevu, String docId) async {
+    try {
+      final esnaf = await esnafGetirDoc(randevu.esnafId);
+      if (esnaf != null && esnaf.akilliTakipModu) {
+        final String? uzatmaId = await OneSignalServisi.bildirimPlanla(
+          baslik: "Kiralama Süreniz Doluyor",
+          icerik: "${randevu.randevuKanali} için kiralama süreniz ${esnaf.akilliTakipSuresi} dakika sonra bitiyor. Uzatmak ister misiniz?",
+          zaman: randevu.bildirimZamani!,
+          telefon: randevu.kullaniciTel,
+          tagKey: 'telefon',
+          randevuId: docId,
+          ekVeri: {
+            'action': 'uzatma_ekrani',
+            'tel': randevu.kullaniciTel,
+            'randevuId': docId,
+          },
+        );
+
+        if (uzatmaId != null && uzatmaId != "ALICI_YOK") {
+          await _randevularRef.doc(docId).update({
+            'uzatmaBildirimId': uzatmaId,
+            'uzatmaZamaniTs': randevu.bildirimZamani,
+            'uzatmaZamaniStr': DateFormat('yyyy-MM-dd HH:mm:ss').format(randevu.bildirimZamani!),
+          });
+          debugPrint('✅ Arka Plan: Bildirim başarıyla planlandı: $uzatmaId');
+        }
+      }
+    } catch (e) {
+      debugPrint('❌ Arka Plan Bildirim Hatası: $e');
+    }
   }
   
   Future<bool> randevuCakisiyorMu({

@@ -203,10 +203,10 @@ class OneSignalServisi {
           if (errors.contains("All included players are not subscribed")) {
              debugPrint("❌ OneSignal Hata: Bu numaraya bağlı aktif cihaz bulunamadı!");
              
-             // [AKILLI SABIR]: Alıcı yoksa 5 saniye bekle ve bir kez daha dene (Senkronizasyon gecikmesi için)
+             // [AKILLI SABIR]: Alıcı yoksa 2 saniye bekle ve bir kez daha dene (Senkronizasyon gecikmesi için)
              if (retryCount < 1) {
-               debugPrint("🔄 Alıcı henüz senkronize olmamış olabilir, 5s sonra tekrar deneniyor...");
-               await Future.delayed(const Duration(seconds: 5));
+               debugPrint("🔄 Alıcı henüz senkronize olmamış olabilir, 2s sonra tekrar deneniyor...");
+               await Future.delayed(const Duration(seconds: 2));
                return await bildirimPlanla(
                  baslik: baslik,
                  icerik: icerik,
