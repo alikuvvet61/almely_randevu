@@ -126,34 +126,37 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
     final hizmetler = _seciliHizmetlerNotifier.value;
     final toplamSure = _getToplamSure(hizmetler, esnaf);
     final seciliTarih = _seciliTarihNotifier.value;
+
+    if (seciliTarih == null) return;
+
     final simdi = DateTime.now();
+    final bugunStr = DateFormat('yyyy-MM-dd').format(simdi);
+    final hedefStr = DateFormat('yyyy-MM-dd').format(seciliTarih);
+    final simdiDakika = simdi.hour * 60 + simdi.minute;
 
     for (var s in slotlar) {
-      // Geçmiş saat kontrolü: Eğer bugün seçiliyse, geçmiş saatleri atla
-      if (seciliTarih != null) {
-        final bugunYilAyGun = DateFormat('yyyy-MM-dd').format(simdi);
-        final hedefYilAyGun = DateFormat('yyyy-MM-dd').format(seciliTarih);
-        
-        if (hedefYilAyGun == bugunYilAyGun) {
-          final simdiDk = simdi.hour * 60 + simdi.minute;
-          final sParcalar = s.split(':');
-          final slotDk = int.parse(sParcalar[0]) * 60 + int.parse(sParcalar[1]);
-          
-          // Halı Saha / Slot görünümü varsa başlamış olan slotu da atla
-          if (slotDk <= simdiDk) {
-            continue;
-          }
+      // Eğer bugün ise geçmiş saatleri atla
+      if (bugunStr == hedefStr) {
+        final sDk = _saatiDakikayaCevir(s);
+        // Halı saha gibi slotlu yerlerde başlamış saatleri (örn: 11:16 iken 11:00 slotunu) asla seçme
+        if (sDk <= simdiDakika) {
+          continue;
         }
       }
 
       if (_saatMusaitMi(esnaf, s, _sonRandevular, toplamSure,
           ajandaVerisi: _gununAjandaVerisi)) {
-        _seciliSaatNotifier.value = s;
-        _saatKendimSececegimNotifier.value = false; // Otomatik seçim yapıldığını belirt
+        // [KRİTİK] UI güncellemesini zorla tetiklemek için önce null yapıp sonra değeri set ediyoruz
+        _seciliSaatNotifier.value = null; 
+        Future.microtask(() {
+          _seciliSaatNotifier.value = s;
+          _saatKendimSececegimNotifier.value = false;
+        });
         _aramaYapiliyorNotifier.value = false;
         return;
       }
     }
+    
     _seciliSaatNotifier.value = null;
 
     if (_aramaYapiliyorNotifier.value && _otomatikAramaSayaci < 7) {
@@ -540,17 +543,17 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
         int.parse(slotParcalar[0]), int.parse(slotParcalar[1]));
 
     final simdi = DateTime.now();
-    final bugun = DateTime(simdi.year, simdi.month, simdi.day);
-    final seciliGun = DateTime(tarih.year, tarih.month, tarih.day);
+    final bugunStr = DateFormat('yyyy-MM-dd').format(simdi);
+    final seciliGunStr = DateFormat('yyyy-MM-dd').format(tarih);
 
-    if (seciliGun.isAtSameMomentAs(bugun)) {
+    if (seciliGunStr == bugunStr) {
       // [GÜNCELLEME] Halı Saha gibi slot aralıklı gösterilen yerlerde 
       // bulunduğumuz saati (başlamış olan slotu) dikkate almamalıyız.
       int tolerans = esnaf.slotAralikliGoster ? 0 : (esnaf.kategori == 'Araç Kiralama' ? 30 : 10);
       if (sBaslangic.isBefore(simdi.subtract(Duration(minutes: tolerans)))) {
         return "Geçmiş saat";
       }
-    } else if (seciliGun.isBefore(bugun)) {
+    } else if (tarih.isBefore(DateTime(simdi.year, simdi.month, simdi.day))) {
       return "Geçmiş tarih";
     }
 
