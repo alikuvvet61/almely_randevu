@@ -130,28 +130,25 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
     if (seciliTarih == null) return;
 
     final simdi = DateTime.now();
-    final bugunStr = DateFormat('yyyy-MM-dd').format(simdi);
-    final hedefStr = DateFormat('yyyy-MM-dd').format(seciliTarih);
-    final simdiDakika = simdi.hour * 60 + simdi.minute;
+    final bool bugunMu = seciliTarih.year == simdi.year && 
+                         seciliTarih.month == simdi.month && 
+                         seciliTarih.day == simdi.day;
+    final int simdiDk = simdi.hour * 60 + simdi.minute;
 
     for (var s in slotlar) {
       // Eğer bugün ise geçmiş saatleri atla
-      if (bugunStr == hedefStr) {
-        final sDk = _saatiDakikayaCevir(s);
+      if (bugunMu) {
+        final int slotDk = _saatiDakikayaCevir(s);
         // Halı saha gibi slotlu yerlerde başlamış saatleri (örn: 11:16 iken 11:00 slotunu) asla seçme
-        if (sDk <= simdiDakika) {
+        if (slotDk <= simdiDk) {
           continue;
         }
       }
 
       if (_saatMusaitMi(esnaf, s, _sonRandevular, toplamSure,
           ajandaVerisi: _gununAjandaVerisi)) {
-        // [KRİTİK] UI güncellemesini zorla tetiklemek için önce null yapıp sonra değeri set ediyoruz
-        _seciliSaatNotifier.value = null; 
-        Future.microtask(() {
-          _seciliSaatNotifier.value = s;
-          _saatKendimSececegimNotifier.value = false;
-        });
+        _seciliSaatNotifier.value = s;
+        _saatKendimSececegimNotifier.value = false;
         _aramaYapiliyorNotifier.value = false;
         return;
       }
@@ -543,10 +540,11 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
         int.parse(slotParcalar[0]), int.parse(slotParcalar[1]));
 
     final simdi = DateTime.now();
-    final bugunStr = DateFormat('yyyy-MM-dd').format(simdi);
-    final seciliGunStr = DateFormat('yyyy-MM-dd').format(tarih);
+    final bool bugunMu = tarih.year == simdi.year && 
+                         tarih.month == simdi.month && 
+                         tarih.day == simdi.day;
 
-    if (seciliGunStr == bugunStr) {
+    if (bugunMu) {
       // [GÜNCELLEME] Halı Saha gibi slot aralıklı gösterilen yerlerde 
       // bulunduğumuz saati (başlamış olan slotu) dikkate almamalıyız.
       int tolerans = esnaf.slotAralikliGoster ? 0 : (esnaf.kategori == 'Araç Kiralama' ? 30 : 10);
