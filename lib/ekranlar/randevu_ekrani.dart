@@ -125,8 +125,26 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
     final slotlar = _slotlariUret(esnaf, _gununAjandaVerisi);
     final hizmetler = _seciliHizmetlerNotifier.value;
     final toplamSure = _getToplamSure(hizmetler, esnaf);
+    final seciliTarih = _seciliTarihNotifier.value;
+    final simdi = DateTime.now();
 
     for (var s in slotlar) {
+      // Geçmiş saat kontrolü: Eğer bugün seçiliyse, geçmiş saatleri atla
+      if (seciliTarih != null) {
+        final bugun = DateTime(simdi.year, simdi.month, simdi.day);
+        final hedef = DateTime(seciliTarih.year, seciliTarih.month, seciliTarih.day);
+        
+        if (hedef.isAtSameMomentAs(bugun)) {
+          final sParcalar = s.split(':');
+          final sZaman = DateTime(simdi.year, simdi.month, simdi.day, int.parse(sParcalar[0]), int.parse(sParcalar[1]));
+          
+          // Halı Saha / Slot görünümü varsa başlamış olan slotu da atla (tolerans yok)
+          if (sZaman.isBefore(simdi)) {
+            continue;
+          }
+        }
+      }
+
       if (_saatMusaitMi(esnaf, s, _sonRandevular, toplamSure,
           ajandaVerisi: _gununAjandaVerisi)) {
         _seciliSaatNotifier.value = s;
