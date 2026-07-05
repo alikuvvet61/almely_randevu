@@ -147,7 +147,8 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
 
       if (_saatMusaitMi(esnaf, s, _sonRandevular, toplamSure,
           ajandaVerisi: _gununAjandaVerisi)) {
-        // [KRİTİK] Değişikliği UI'a anında yansıtmak için bir mikro-gecikme kullanıyoruz
+        // UI güncellemesini garantiye almak için
+        _seciliSaatNotifier.value = null; 
         Future.delayed(const Duration(milliseconds: 50), () {
           if (mounted) {
             _seciliSaatNotifier.value = s;
@@ -387,26 +388,33 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
       }
 
       try {
-        DateTime t = DateFormat('yyyy-MM-dd').parse(s.split('_')[0]);
+        DateTime tRaw = DateFormat('yyyy-MM-dd').parse(s.split('_')[0]);
+        // [KESİN ÇÖZÜM] Tarihi sadece Yıl-Ay-Gün olarak normalize ediyoruz
+        DateTime t = DateTime(tRaw.year, tRaw.month, tRaw.day);
+        
         String gunAdi = DateFormat('EEEE', 'tr_TR').format(t);
         if (gunler.containsKey(gunAdi) && gunler[gunAdi] == false) {
           continue;
         }
 
-        if (t.isAtSameMomentAs(bugun)) {
+        // Bugünü karşılaştırırken saniye farklarını yok say
+        final isToday = t.year == bugun.year && t.month == bugun.month && t.day == bugun.day;
+
+        if (isToday) {
           final calisma = esnaf.calismaSaatleri;
           if (calisma != null) {
             String kapanis = calisma['kapanis'] ?? "18:00";
             if (kapanis != "00:00" && kapanis != "24:00") {
               int kDk = _saatiDakikayaCevir(kapanis);
               int suanDk = DateTime.now().hour * 60 + DateTime.now().minute;
-              // Sadece mesai bitimine 10 dakikadan az kaldıysa bugünü atla
               if (suanDk >= kDk - 10) {
                 continue;
               }
             }
           }
         }
+
+        if (t.isBefore(bugun)) continue;
 
         if (t.isAtSameMomentAs(bugun) || t.isAfter(bugun)) {
           tarihler.add(t);
