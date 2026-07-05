@@ -147,8 +147,13 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
 
       if (_saatMusaitMi(esnaf, s, _sonRandevular, toplamSure,
           ajandaVerisi: _gununAjandaVerisi)) {
-        _seciliSaatNotifier.value = s;
-        _saatKendimSececegimNotifier.value = false;
+        // [KRİTİK] Değişikliği UI'a anında yansıtmak için bir mikro-gecikme kullanıyoruz
+        Future.delayed(const Duration(milliseconds: 50), () {
+          if (mounted) {
+            _seciliSaatNotifier.value = s;
+            _saatKendimSececegimNotifier.value = false;
+          }
+        });
         _aramaYapiliyorNotifier.value = false;
         return;
       }
@@ -345,7 +350,8 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
             if (kapanis != "00:00" && kapanis != "24:00") {
               int kDk = _saatiDakikayaCevir(kapanis);
               int suanDk = DateTime.now().hour * 60 + DateTime.now().minute;
-              if (suanDk >= kDk - 30) continue;
+              // Sadece mesai bitimine 10 dakikadan az kaldıysa bugünü atla
+              if (suanDk >= kDk - 10) continue;
             }
           }
         }
@@ -394,7 +400,8 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
             if (kapanis != "00:00" && kapanis != "24:00") {
               int kDk = _saatiDakikayaCevir(kapanis);
               int suanDk = DateTime.now().hour * 60 + DateTime.now().minute;
-              if (suanDk >= kDk - 30) {
+              // Sadece mesai bitimine 10 dakikadan az kaldıysa bugünü atla
+              if (suanDk >= kDk - 10) {
                 continue;
               }
             }
