@@ -524,7 +524,9 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
     final seciliGun = DateTime(tarih.year, tarih.month, tarih.day);
 
     if (seciliGun.isAtSameMomentAs(bugun)) {
-      int tolerans = esnaf.kategori == 'Araç Kiralama' ? 30 : 10;
+      // [GÜNCELLEME] Halı Saha gibi slot aralıklı gösterilen yerlerde 
+      // bulunduğumuz saati (başlamış olan slotu) dikkate almamalıyız.
+      int tolerans = esnaf.slotAralikliGoster ? 0 : (esnaf.kategori == 'Araç Kiralama' ? 30 : 10);
       if (sBaslangic.isBefore(simdi.subtract(Duration(minutes: tolerans)))) {
         return "Geçmiş saat";
       }
@@ -1569,48 +1571,53 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
       valueListenable: _aramaYapiliyorNotifier,
       builder: (context, aramaYapiliyor, _) {
         if (aramaYapiliyor) return const SliverToBoxAdapter(child: Center(child: CircularProgressIndicator()));
-        return SliverGrid(
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: esnaf.slotAralikliGoster ? 3 : 4,
-              childAspectRatio: 2.0,
-              mainAxisSpacing: 10,
-              crossAxisSpacing: 10),
-          delegate: SliverChildBuilderDelegate((c, i) {
-            final slot = slotlar[i];
+        return ValueListenableBuilder<String?>(
+          valueListenable: _seciliSaatNotifier,
+          builder: (context, seciliSaat, _) {
+            return SliverGrid(
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: esnaf.slotAralikliGoster ? 3 : 4,
+                  childAspectRatio: 2.0,
+                  mainAxisSpacing: 10,
+                  crossAxisSpacing: 10),
+              delegate: SliverChildBuilderDelegate((c, i) {
+                final slot = slotlar[i];
 
-            // Slot metni (Aralıklı gösterim desteği)
-            String slotMetni = slot;
-            if (esnaf.slotAralikliGoster) {
-              final calisma = _gununAjandaVerisi ?? esnaf.calismaSaatleri;
-              int slotDakika = (calisma?['slotDakika'] ?? 30).toInt();
-              int baslangicDakika = _saatiDakikayaCevir(slot);
-              int bitisDakika = baslangicDakika + slotDakika;
-              slotMetni = "$slot - ${_dakikaFormatli(bitisDakika % 1440)}";
-            }
+                // Slot metni (Aralıklı gösterim desteği)
+                String slotMetni = slot;
+                if (esnaf.slotAralikliGoster) {
+                  final calisma = _gununAjandaVerisi ?? esnaf.calismaSaatleri;
+                  int slotDakika = (calisma?['slotDakika'] ?? 30).toInt();
+                  int baslangicDakika = _saatiDakikayaCevir(slot);
+                  int bitisDakika = baslangicDakika + slotDakika;
+                  slotMetni = "$slot - ${_dakikaFormatli(bitisDakika % 1440)}";
+                }
 
-            final neden = _saatNedenKapali(esnaf, slot, _sonRandevular, toplamSure, ajandaVerisi: _gununAjandaVerisi);
-            bool musait = neden == null;
-            return InkWell(
-              onTap: musait
-                  ? () {
-                      _seciliSaatNotifier.value = slot;
-                      _saatKendimSececegimNotifier.value = true;
-                      _sonrakiAdimaGit(150);
-                    }
-                  : null,
-              child: Container(
-                decoration: BoxDecoration(
-                    color: _seciliSaatNotifier.value == slot ? Colors.blue : (musait ? Colors.white : Colors.grey.shade200),
-                    borderRadius: BorderRadius.circular(5)),
-                child: Center(
-                    child: Text(slotMetni,
-                        style: TextStyle(
-                            color: musait ? Colors.black : Colors.grey,
-                            fontSize: esnaf.slotAralikliGoster ? 12 : 14,
-                            fontWeight: esnaf.slotAralikliGoster ? FontWeight.bold : FontWeight.normal))),
-              ),
+                final neden = _saatNedenKapali(esnaf, slot, _sonRandevular, toplamSure, ajandaVerisi: _gununAjandaVerisi);
+                bool musait = neden == null;
+                return InkWell(
+                  onTap: musait
+                      ? () {
+                          _seciliSaatNotifier.value = slot;
+                          _saatKendimSececegimNotifier.value = true;
+                          _sonrakiAdimaGit(150);
+                        }
+                      : null,
+                  child: Container(
+                    decoration: BoxDecoration(
+                        color: seciliSaat == slot ? Colors.blue : (musait ? Colors.white : Colors.grey.shade200),
+                        borderRadius: BorderRadius.circular(5)),
+                    child: Center(
+                        child: Text(slotMetni,
+                            style: TextStyle(
+                                color: musait ? Colors.black : Colors.grey,
+                                fontSize: esnaf.slotAralikliGoster ? 12 : 14,
+                                fontWeight: esnaf.slotAralikliGoster ? FontWeight.bold : FontWeight.normal))),
+                  ),
+                );
+              }, childCount: slotlar.length),
             );
-          }, childCount: slotlar.length),
+          },
         );
       },
     );
