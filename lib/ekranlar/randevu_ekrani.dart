@@ -131,15 +131,16 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
     for (var s in slotlar) {
       // Geçmiş saat kontrolü: Eğer bugün seçiliyse, geçmiş saatleri atla
       if (seciliTarih != null) {
-        final bugun = DateTime(simdi.year, simdi.month, simdi.day);
-        final hedef = DateTime(seciliTarih.year, seciliTarih.month, seciliTarih.day);
+        final bugunYilAyGun = DateFormat('yyyy-MM-dd').format(simdi);
+        final hedefYilAyGun = DateFormat('yyyy-MM-dd').format(seciliTarih);
         
-        if (hedef.isAtSameMomentAs(bugun)) {
+        if (hedefYilAyGun == bugunYilAyGun) {
+          final simdiDk = simdi.hour * 60 + simdi.minute;
           final sParcalar = s.split(':');
-          final sZaman = DateTime(simdi.year, simdi.month, simdi.day, int.parse(sParcalar[0]), int.parse(sParcalar[1]));
+          final slotDk = int.parse(sParcalar[0]) * 60 + int.parse(sParcalar[1]);
           
-          // Halı Saha / Slot görünümü varsa başlamış olan slotu da atla (tolerans yok)
-          if (sZaman.isBefore(simdi)) {
+          // Halı Saha / Slot görünümü varsa başlamış olan slotu da atla
+          if (slotDk <= simdiDk) {
             continue;
           }
         }
@@ -148,6 +149,7 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
       if (_saatMusaitMi(esnaf, s, _sonRandevular, toplamSure,
           ajandaVerisi: _gununAjandaVerisi)) {
         _seciliSaatNotifier.value = s;
+        _saatKendimSececegimNotifier.value = false; // Otomatik seçim yapıldığını belirt
         _aramaYapiliyorNotifier.value = false;
         return;
       }
