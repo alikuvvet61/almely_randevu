@@ -40,6 +40,7 @@ class EsnafPaneli extends StatefulWidget {
 class _EsnafPaneliState extends State<EsnafPaneli> {
   final _firestoreServisi = FirestoreServisi();
   bool _gecmisKiraHareketleriGosterilsin = false;
+  bool _teslimAlinmayanlarGosterilsin = false;
   late TextEditingController _adController;
   late TextEditingController _telController;
   late TextEditingController _whatsappController;
@@ -1305,7 +1306,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
     );
   }
 
-  void _aracKiraHareketleriniGoster(String ad, String? plaka, List<RandevuModeli> randevular) {
+  void _aracKiraHareketleriniGoster(String ad, String? plaka) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1316,145 +1317,193 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
           color: Color(0xFFF8F9FA),
           borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
         ),
-        child: Column(
-          children: [
-            const SizedBox(height: 12),
-            Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
-            const SizedBox(height: 20),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(color: Colors.indigo.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(15)),
-                    child: const Icon(Icons.directions_car, color: Colors.indigo),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(ad, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                        if (plaka != null) Text(plaka, style: const TextStyle(color: Colors.indigo, fontWeight: FontWeight.w600, fontSize: 13)),
-                      ],
-                    ),
-                  ),
-                  IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close)),
-                ],
-              ),
-            ),
-            const Divider(height: 40),
-            Expanded(
-              child: StatefulBuilder(
-                builder: (context, setBottomSheetState) {
-                  final simdi = DateTime.now();
-                  List<RandevuModeli> filtreliRandevular = randevular.where((r) {
-                    try {
-                      final rBas = DateTime(r.tarih.year, r.tarih.month, r.tarih.day, int.parse(r.saat.split(':')[0]), int.parse(r.saat.split(':')[1]));
-                      final rBit = rBas.add(Duration(minutes: r.sure));
-                      
-                      // Geçmiş sayılma kriteri: İade vakti geçmiş olması VEYA durumun bitmiş olması
-                      bool gecmisMi = rBit.isBefore(simdi) || r.durum == 'Tamamlandı' || r.durum == 'İptal Edildi' || r.durum == 'Reddedildi';
-
-                      if (_gecmisKiraHareketleriGosterilsin) {
-                        // İşaretli ise: SADECE geçmiş hareketleri göster
-                        return gecmisMi;
-                      } else {
-                        // İşaretli değilse: SADECE aktif ve gelecekteki (iadesi gelmemiş) hareketleri göster
-                        return !gecmisMi;
-                      }
-                    } catch (e) {
-                      return true;
-                    }
-                  }).toList();
-
-                  return Column(
+        child: StreamBuilder<List<RandevuModeli>>(
+          stream: FirebaseFirestore.instance
+              .collection('randevular')
+              .where('esnafId', isEqualTo: widget.esnaf.id)
+              .snapshots()
+              .map((snap) => snap.docs
+                  .map((doc) => RandevuModeli.fromMap(doc.data(), doc.id))
+                  .where((r) {
+                    String rKanal = (r.randevuKanali ?? "").trim().toLowerCase();
+                    String tAd = ad.toLowerCase();
+                    String tPlaka = (plaka ?? "").toLowerCase();
+                    return rKanal == tAd || rKanal == tPlaka || (tPlaka.isNotEmpty && rKanal.contains(tPlaka));
+                  })
+                  .toList()
+                    ..sort((a, b) {
+                      final aZ = DateTime(a.tarih.year, a.tarih.month, a.tarih.day, int.parse(a.saat.split(':')[0]), int.parse(a.saat.split(':')[1]));
+                      final bZ = DateTime(b.tarih.year, b.tarih.month, b.tarih.day, int.parse(b.saat.split(':')[0]), int.parse(b.saat.split(':')[1]));
+                      return bZ.compareTo(aZ);
+                    })),
+          builder: (context, snapshot) {
+            final randevular = snapshot.data ?? [];
+            return Column(
+              children: [
+                const SizedBox(height: 12),
+                Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+                const SizedBox(height: 20),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Row(
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                        child: Row(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(color: Colors.indigo.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(15)),
+                        child: const Icon(Icons.directions_car, color: Colors.indigo),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Checkbox(
-                              value: _gecmisKiraHareketleriGosterilsin,
-                              onChanged: (value) {
-                                setBottomSheetState(() {
-                                  _gecmisKiraHareketleriGosterilsin = value ?? false;
-                                });
-                              },
-                            ),
-                            const SizedBox(width: 8),
-                            const Text("Geçmiş hareketleri göster", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                            Text(ad, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                            if (plaka != null) Text(plaka, style: const TextStyle(color: Colors.indigo, fontWeight: FontWeight.w600, fontSize: 13)),
                           ],
                         ),
                       ),
-                      Expanded(
-                        child: filtreliRandevular.isEmpty
-                            ? const Center(child: Text("Hareket bulunamadı."))
-                            : ListView.builder(
-                                padding: const EdgeInsets.symmetric(horizontal: 24),
-                                itemCount: filtreliRandevular.length,
-                                itemBuilder: (context, index) {
-                                  final r = filtreliRandevular[index];
-                                  final DateTime rBas = DateTime(r.tarih.year, r.tarih.month, r.tarih.day, int.parse(r.saat.split(':')[0]), int.parse(r.saat.split(':')[1]));
-                                  final DateTime rBit = rBas.add(Duration(minutes: r.sure));
-                                  
-                                  return Container(
-                                    margin: const EdgeInsets.only(bottom: 16),
-                                    padding: const EdgeInsets.all(16),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white,
-                                      borderRadius: BorderRadius.circular(20),
-                                      border: Border.all(color: Colors.grey.shade100),
-                                      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 10)],
-                                    ),
-                                    child: Column(
-                                      children: [
-                                        Row(
-                                          children: [
-                                            CircleAvatar(
-                                              radius: 20,
-                                              backgroundColor: (r.durum == 'Onaylandı' ? Colors.green : (r.durum == 'Reddedildi' || r.durum == 'İptal Edildi' ? Colors.red : Colors.orange)).withValues(alpha: 0.1),
-                                              child: Icon(Icons.person, size: 18, color: r.durum == 'Onaylandı' ? Colors.green : (r.durum == 'Reddedildi' || r.durum == 'İptal Edildi' ? Colors.red : Colors.orange)),
-                                            ),
-                                            const SizedBox(width: 12),
-                                            Expanded(
-                                              child: Column(
-                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                children: [
-                                                  Text(r.kullaniciAd, style: const TextStyle(fontWeight: FontWeight.bold)),
-                                                  Text(r.kullaniciTel, style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
-                                                ],
-                                              ),
-                                            ),
-                                            _durumEtiketi(r.durum),
-                                          ],
-                                        ),
-                                        const Divider(height: 24),
-                                        Row(
-                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                          children: [_zamanBloku("ALIŞ", rBas), const Icon(Icons.arrow_forward, size: 16, color: Colors.grey), _zamanBloku("İADE", rBit)],
-                                        ),
-                                        const SizedBox(height: 16),
-                                        Row(
-                                          children: [
-                                            Expanded(child: OutlinedButton(onPressed: () => _kiraDetayiniGoster(r), child: const Text("TÜM DETAYLAR"))),
-                                            const SizedBox(width: 12),
-                                            CircleAvatar(backgroundColor: Colors.green.shade50, child: IconButton(icon: const Icon(Icons.phone, size: 20, color: Colors.green), onPressed: () => _aramaYap(r.kullaniciTel))),
-                                          ],
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                },
-                              ),
-                      ),
+                      IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close)),
                     ],
-                  );
-                }
-              ),
-            ),
-          ],
+                  ),
+                ),
+                const Divider(height: 40),
+                Expanded(
+                  child: StatefulBuilder(
+                    builder: (context, setBottomSheetState) {
+                      final simdi = DateTime.now();
+                      List<RandevuModeli> filtreliRandevular = randevular.where((r) {
+                        try {
+                          final rBas = DateTime(r.tarih.year, r.tarih.month, r.tarih.day, int.parse(r.saat.split(':')[0]), int.parse(r.saat.split(':')[1]));
+                          final rBit = rBas.add(Duration(minutes: r.sure));
+                          
+                          // Geçmiş sayılma kriteri: İade vakti geçmiş olması VEYA durumun bitmiş olması
+                          bool gecmisMi = rBit.isBefore(simdi) || r.durum == 'Tamamlandı' || r.durum == 'İptal Edildi' || r.durum == 'Reddedildi';
+                          
+                          // Teslim alınmayan kriteri: İade vakti geçmiş olmasına rağmen hala Onaylandı (yani Tamamlandı değil)
+                          bool teslimAlinmadi = r.durum == 'Onaylandı' && rBit.isBefore(simdi);
+
+                          if (_teslimAlinmayanlarGosterilsin) {
+                            return teslimAlinmadi;
+                          }
+
+                          if (_gecmisKiraHareketleriGosterilsin) {
+                            // İşaretli ise: SADECE geçmiş hareketleri göster
+                            return gecmisMi;
+                          } else {
+                            // İşaretli değilse: SADECE aktif ve gelecekteki (iadesi gelmemiş) hareketleri göster
+                            return !gecmisMi;
+                          }
+                        } catch (e) {
+                          return true;
+                        }
+                      }).toList();
+
+                      return Column(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                            child: Column(
+                              children: [
+                                Row(
+                                  children: [
+                                    Checkbox(
+                                      value: _gecmisKiraHareketleriGosterilsin,
+                                      onChanged: (value) {
+                                        setBottomSheetState(() {
+                                          _gecmisKiraHareketleriGosterilsin = value ?? false;
+                                          if (_gecmisKiraHareketleriGosterilsin) _teslimAlinmayanlarGosterilsin = false;
+                                        });
+                                      },
+                                    ),
+                                    const Text("Geçmiş hareketleri göster", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                                  ],
+                                ),
+                                Row(
+                                  children: [
+                                    Checkbox(
+                                      value: _teslimAlinmayanlarGosterilsin,
+                                      onChanged: (value) {
+                                        setBottomSheetState(() {
+                                          _teslimAlinmayanlarGosterilsin = value ?? false;
+                                          if (_teslimAlinmayanlarGosterilsin) _gecmisKiraHareketleriGosterilsin = false;
+                                        });
+                                      },
+                                    ),
+                                    const Text("Sadece teslim alınmayanları göster", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Colors.red)),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          Expanded(
+                            child: filtreliRandevular.isEmpty
+                                ? const Center(child: Text("Hareket bulunamadı."))
+                                : ListView.builder(
+                                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                                    itemCount: filtreliRandevular.length,
+                                    itemBuilder: (context, index) {
+                                      final r = filtreliRandevular[index];
+                                      final DateTime rBas = DateTime(r.tarih.year, r.tarih.month, r.tarih.day, int.parse(r.saat.split(':')[0]), int.parse(r.saat.split(':')[1]));
+                                      final DateTime rBit = rBas.add(Duration(minutes: r.sure));
+                                      
+                                      return Container(
+                                        margin: const EdgeInsets.only(bottom: 16),
+                                        padding: const EdgeInsets.all(16),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius: BorderRadius.circular(20),
+                                          border: Border.all(color: Colors.grey.shade100),
+                                          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 10)],
+                                        ),
+                                        child: Column(
+                                          children: [
+                                            Row(
+                                              children: [
+                                                CircleAvatar(
+                                                  radius: 20,
+                                                  backgroundColor: (r.durum == 'Onaylandı' ? Colors.green : (r.durum == 'Reddedildi' || r.durum == 'İptal Edildi' ? Colors.red : Colors.orange)).withValues(alpha: 0.1),
+                                                  child: Icon(Icons.person, size: 18, color: r.durum == 'Onaylandı' ? Colors.green : (r.durum == 'Reddedildi' || r.durum == 'İptal Edildi' ? Colors.red : Colors.orange)),
+                                                ),
+                                                const SizedBox(width: 12),
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                                    children: [
+                                                      Text(r.kullaniciAd, style: const TextStyle(fontWeight: FontWeight.bold)),
+                                                      Text(r.kullaniciTel, style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+                                                    ],
+                                                  ),
+                                                ),
+                                                _durumEtiketi(r.durum),
+                                              ],
+                                            ),
+                                            const Divider(height: 24),
+                                            Row(
+                                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                              children: [_zamanBloku("ALIŞ", rBas), const Icon(Icons.arrow_forward, size: 16, color: Colors.grey), _zamanBloku("İADE", rBit)],
+                                            ),
+                                            const SizedBox(height: 16),
+                                            Row(
+                                              children: [
+                                                Expanded(child: OutlinedButton(onPressed: () => _kiraDetayiniGoster(r), child: const Text("TÜM DETAYLAR"))),
+                                                const SizedBox(width: 12),
+                                                CircleAvatar(backgroundColor: Colors.green.shade50, child: IconButton(icon: const Icon(Icons.phone, size: 20, color: Colors.green), onPressed: () => _aramaYap(r.kullaniciTel))),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    },
+                                  ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ],
+            );
+          },
         ),
       ),
     );
@@ -1480,17 +1529,24 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
     // Durum Belirleme
     final simdi = DateTime.now();
     final bool suAnAralikta = !simdi.isBefore(rBas) && simdi.isBefore(iadeZamani);
+    final bool iadeGecti = simdi.isAfter(iadeZamani);
     final bool onayli = r.durum == 'Onaylandı';
+    final bool teslimatGecikti = onayli && iadeGecti;
 
     String baslikMetni = "Araç Rezervasyonu";
     IconData baslikIkon = Icons.calendar_today;
     Color temaRengi = Colors.orange;
     String rozetMetni = "ARAÇ REZERVE EDİLMİŞTİR";
 
-    if (onayli && suAnAralikta) {
+    if (teslimatGecikti) {
+      baslikMetni = "TESLİMAT GECİKTİ!";
+      baslikIkon = Icons.priority_high_rounded;
+      temaRengi = Colors.red;
+      rozetMetni = "İADE ZAMANI GEÇTİ!";
+    } else if (onayli && suAnAralikta) {
       baslikMetni = "Aktif Kiralama";
       baslikIkon = Icons.key;
-      temaRengi = Colors.red;
+      temaRengi = Colors.blue;
       rozetMetni = "ARAÇ ŞU AN KİRADADIR";
     } else if (r.durum != 'Onaylandı') {
       rozetMetni = "REZERVASYON (ONAY BEKLİYOR)";
@@ -1605,7 +1661,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                 ],
               ),
               const SizedBox(height: 10),
-              if (onayli && suAnAralikta)
+              if (onayli && (suAnAralikta || iadeGecti))
                 SizedBox(
                   width: double.infinity,
                   child: Padding(
@@ -1613,9 +1669,9 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                     child: ElevatedButton.icon(
                       onPressed: () => _kiraBitirOnay(r),
                       icon: const Icon(Icons.verified_user_rounded, color: Colors.white),
-                      label: const Text("ARACI TESLİM AL", style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.2)),
+                      label: Text(teslimatGecikti ? "GECİKEN ARACI TESLİM AL" : "ARACI TESLİM AL", style: const TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.2)),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green,
+                        backgroundColor: teslimatGecikti ? Colors.red : Colors.green,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 15),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -3127,7 +3183,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                           bool dolu = aktifRandevu != null;
 
                           return InkWell(
-                            onTap: () => _aracKiraHareketleriniGoster(ad, plaka, buAracinRandevulari),
+                            onTap: () => _aracKiraHareketleriniGoster(ad, plaka),
                             child: Container(
                               margin: const EdgeInsets.only(bottom: 12),
                               padding: const EdgeInsets.all(12),

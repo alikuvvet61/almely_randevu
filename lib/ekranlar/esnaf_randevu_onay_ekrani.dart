@@ -440,11 +440,11 @@ class _EsnafRandevuYonetimEkraniState extends State<EsnafRandevuYonetimEkrani> {
                                 Color bgColor = Colors.green;
                                 
                                 if (res['alarmKuruldu'] == true) {
-                                  msg += " ve Gecikme Alarmı ${res['alarmSaati']} için kuruldu.";
+                                  msg += " ve Gecikme Alarmı ${res['alarmSaati']} için kuruldu. ✅";
                                   bgColor = Colors.blue.shade800;
                                 } else if (res['hata'] == "ALICI_YOK") {
-                                  msg = "Randevu onaylandı ancak BİLDİRİM KURULAMADI! 🔴\nBildirimlerin oluşması için Telefonunuzdan Esnaf Ekranına birkez giriş yapmalısınız.";
-                                  bgColor = Colors.red.shade900;
+                                  msg = "Randevu başarıyla onaylandı. ✅\nBilgi: Tarayıcı kullandığınız veya cihaz kaydı eksik olduğu için kendinize Gecikme Alarmı kurulamadı.";
+                                  bgColor = Colors.orange.shade900;
                                 }
                                 
                                 scaffoldMessenger.clearSnackBars();

@@ -254,12 +254,10 @@ class OneSignalServisi {
     try {
       debugPrint("🗑️  OneSignal Bildirim İptal Ediliyor: $notificationId");
 
-      final Map<String, String> headers = {};
-      if (restApiKey.startsWith('os_v2_')) {
-        headers['Authorization'] = 'Basic $restApiKey';
-      } else {
-        headers['Authorization'] = 'Bearer $restApiKey';
-      }
+      final Map<String, String> headers = {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Authorization': 'Basic $restApiKey',
+      };
 
       final response = await http.delete(
         Uri.parse('https://onesignal.com/api/v1/notifications/$notificationId?app_id=$appId'),
