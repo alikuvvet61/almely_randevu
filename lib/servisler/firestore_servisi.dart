@@ -550,88 +550,34 @@ class FirestoreServisi {
       try {
         final esnaf = await esnafGetirDoc(randevu.esnafId);
         if (esnaf != null && esnaf.akilliTakipModu) {
-          // [GÜNCELLEME] Uzatma için yeterli süre var mı kontrol et (Min 30 dk)
-          int maksUzatma = await randevuMaksimumUzatmaDk(randevu);
-          
-          if (maksUzatma >= 30) {
-            final String? uzatmaId = await OneSignalServisi.bildirimPlanla(
-              baslik: "Kiralama Süreniz Doluyor",
-              icerik: "${randevu.randevuKanali} için kiralama süreniz ${esnaf.akilliTakipSuresi} dakika sonra bitiyor. Uzatmak ister misiniz?",
-              zaman: randevu.bildirimZamani!,
-              telefon: randevu.kullaniciTel,
-              tagKey: 'telefon',
-              randevuId: docRef.id,
-              ekVeri: {
-                'action': 'uzatma_ekrani',
-                'tel': randevu.kullaniciTel,
-                'randevuId': docRef.id,
-              },
-            );
+          final String? uzatmaId = await OneSignalServisi.bildirimPlanla(
+            baslik: "Kiralama Süreniz Doluyor",
+            icerik: "${randevu.randevuKanali} için kiralama süreniz ${esnaf.akilliTakipSuresi} dakika sonra bitiyor. Uzatmak ister misiniz?",
+            zaman: randevu.bildirimZamani!,
+            telefon: randevu.kullaniciTel,
+            tagKey: 'telefon',
+            randevuId: docRef.id,
+            ekVeri: {
+              'action': 'uzatma_ekrani',
+              'tel': randevu.kullaniciTel,
+              'randevuId': docRef.id,
+            },
+          );
 
-            if (uzatmaId != null && uzatmaId != "ALICI_YOK") {
-              await docRef.update({
-                'uzatmaBildirimId': uzatmaId,
-                'uzatmaZamaniTs': randevu.bildirimZamani,
-                'uzatmaZamaniStr': DateFormat('yyyy-MM-dd HH:mm:ss').format(randevu.bildirimZamani!),
-              });
-            } else if (uzatmaId == "ALICI_YOK") {
-              sonucHata = "ALICI_YOK";
-            }
-          } else {
-            debugPrint('ℹ️ Uzatma için yeterli süre ($maksUzatma dk) yok, bildirim planlanmadı.');
+          if (uzatmaId != null && uzatmaId != "ALICI_YOK") {
+            await docRef.update({
+              'uzatmaBildirimId': uzatmaId,
+              'uzatmaZamaniTs': randevu.bildirimZamani,
+              'uzatmaZamaniStr': DateFormat('yyyy-MM-dd HH:mm:ss').format(randevu.bildirimZamani!),
+            });
+          } else if (uzatmaId == "ALICI_YOK") {
+            sonucHata = "ALICI_YOK";
           }
         }
       } catch (e) {
         debugPrint('❌ Randevu ekleme sırasında bildirim planlama hatası: $e');
       }
     }
-
-    // [YENİ] Bu yeni randevu, bir önceki randevunun uzatılmasını engelliyorsa önceki bildirimi iptal et
-    try {
-      if (randevu.randevuKanali != null && randevu.randevuKanali!.isNotEmpty) {
-        final parcalar = randevu.saat.split(':');
-        DateTime rBas = DateTime(randevu.tarih.year, randevu.tarih.month, randevu.tarih.day, 
-            int.parse(parcalar[0]), int.parse(parcalar[1]));
-
-        // Aynı araçtaki önceki randevuları bul (Son 1 gün içindeki)
-        final oncekiler = await _randevularRef
-            .where('esnafId', isEqualTo: randevu.esnafId)
-            .where('randevu_kanali', isEqualTo: randevu.randevuKanali)
-            .get();
-
-        for (var doc in oncekiler.docs) {
-          if (doc.id == docRef.id) continue;
-          final data = doc.data() as Map<String, dynamic>;
-          
-          // İptal edilmiş veya tamamlanmış randevuları atla
-          String d = data['durum'] ?? "";
-          if (d == 'Reddedildi' || d == 'İptal Edildi' || d == 'Tamamlandı') continue;
-
-          DateTime oTarih = (data['tarih'] as Timestamp).toDate();
-          final oParcalar = (data['saat'] as String).split(':');
-          DateTime oBas = DateTime(oTarih.year, oTarih.month, oTarih.day, 
-              int.parse(oParcalar[0]), int.parse(oParcalar[1]));
-          int oSure = data['sure'] ?? 30;
-          DateTime oBit = oBas.add(Duration(minutes: oSure));
-
-          // Eğer bu yeni randevu, eskisinden sonra başlıyorsa ve aradaki fark 30 dk'dan az ise
-          if (rBas.isAfter(oBit.subtract(const Duration(minutes: 1)))) {
-            int fark = rBas.difference(oBit).inMinutes;
-            if (fark < 30) {
-              String? bId = data['uzatmaBildirimId'];
-              if (bId != null && bId.isNotEmpty && !bId.contains("İPTAL")) {
-                await OneSignalServisi.bildirimIptalEt(bId);
-                await doc.reference.update({'uzatmaBildirimId': "$bId [BLOKLANDI/İPTAL]"});
-                debugPrint('🚫 Önceki randevunun bildirimi yeni randevu nedeniyle iptal edildi: $bId');
-              }
-            }
-          }
-        }
-      }
-    } catch (e) {
-      debugPrint('❌ Önceki bildirimi iptal etme hatası: $e');
-    }
-
     return sonucHata;
   }
   
@@ -726,7 +672,12 @@ class FirestoreServisi {
 
           debugPrint('📋 Onay Sonrası KRİTİK Bildirim Planlanıyor: randevuId=$id, zaman=$gecikmeAlarmZamani');
 
-          final String? newGecikmeId = await OneSignalServisi.bildirimPlanla(
+          // [PROFESYONEL RETRY]: Hızlı girişlerde OneSignal aboneliğinin tamamlanması için 3 kez deneme yapıyoruz.
+          String? newGecikmeId;
+          int denemeSayisi = 0;
+          
+          while (denemeSayisi < 3) {
+            newGecikmeId = await OneSignalServisi.bildirimPlanla(
               baslik: "🔴 KRİTİK GECİKME ALARMI",
               icerik: "${r.randevuKanali} plakalı aracın iade saati ($bitisSaati) geçti! Henüz teslim almadınız.",
               zaman: gecikmeAlarmZamani,
@@ -738,7 +689,22 @@ class FirestoreServisi {
                 'tel': esnaf.telefon,
                 'randevuId': id,
               },
-          );
+            );
+
+            if (newGecikmeId != null && newGecikmeId != "ALICI_YOK") {
+              // Başarılı kurulum
+              break;
+            }
+
+            if (newGecikmeId == "ALICI_YOK") {
+              denemeSayisi++;
+              debugPrint("🔄 OneSignal aboneliği henüz hazır değil, deneme $denemeSayisi/3 bekleniyor...");
+              await Future.delayed(const Duration(seconds: 1));
+            } else {
+              // Diğer hatalarda (ağ hatası vb.) döngüden çık
+              break;
+            }
+          }
 
           if (newGecikmeId != null && newGecikmeId != "ALICI_YOK") {
             await _randevularRef.doc(id).update({
@@ -751,9 +717,7 @@ class FirestoreServisi {
             sonuc['alarmKuruldu'] = true;
             sonuc['alarmSaati'] = bitisSaati;
           } else if (newGecikmeId == "ALICI_YOK") {
-             // Randevu başarıyla onaylandı, sadece alarm kurulamadı.
-             // Bu durumu bir hata olarak değil, bilgi olarak dönelim.
-             sonuc['basarili'] = true;
+             sonuc['basarili'] = false;
              sonuc['hata'] = "ALICI_YOK";
           }
         }

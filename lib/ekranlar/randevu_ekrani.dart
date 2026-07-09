@@ -125,15 +125,41 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
     final slotlar = _slotlariUret(esnaf, _gununAjandaVerisi);
     final hizmetler = _seciliHizmetlerNotifier.value;
     final toplamSure = _getToplamSure(hizmetler, esnaf);
+    final seciliTarih = _seciliTarihNotifier.value;
+
+    if (seciliTarih == null) return;
+
+    final simdi = DateTime.now();
+    final bool bugunMu = seciliTarih.year == simdi.year && 
+                         seciliTarih.month == simdi.month && 
+                         seciliTarih.day == simdi.day;
+    final int simdiDk = simdi.hour * 60 + simdi.minute;
 
     for (var s in slotlar) {
+      // Eğer bugün ise geçmiş saatleri atla
+      if (bugunMu) {
+        final int slotDk = _saatiDakikayaCevir(s);
+        // Halı saha gibi slotlu yerlerde başlamış saatleri (örn: 11:16 iken 11:00 slotunu) asla seçme
+        if (slotDk <= simdiDk) {
+          continue;
+        }
+      }
+
       if (_saatMusaitMi(esnaf, s, _sonRandevular, toplamSure,
           ajandaVerisi: _gununAjandaVerisi)) {
-        _seciliSaatNotifier.value = s;
+        // UI güncellemesini garantiye almak için
+        _seciliSaatNotifier.value = null; 
+        Future.delayed(const Duration(milliseconds: 50), () {
+          if (mounted) {
+            _seciliSaatNotifier.value = s;
+            _saatKendimSececegimNotifier.value = false;
+          }
+        });
         _aramaYapiliyorNotifier.value = false;
         return;
       }
     }
+    
     _seciliSaatNotifier.value = null;
 
     if (_aramaYapiliyorNotifier.value && _otomatikAramaSayaci < 7) {
@@ -321,19 +347,12 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
         if (i == 0) {
           final calisma = esnaf.calismaSaatleri;
           if (calisma != null) {
-            String acilis = calisma['acilis'] ?? "09:00";
             String kapanis = calisma['kapanis'] ?? "18:00";
-            bool is724 = calisma['is724'] == true || acilis == kapanis;
-
-            if (!is724 && kapanis != "00:00" && kapanis != "24:00") {
+            if (kapanis != "00:00" && kapanis != "24:00") {
               int kDk = _saatiDakikayaCevir(kapanis);
-              int aDk = _saatiDakikayaCevir(acilis);
-
-              // Eğer kapanış açılıştan önceyse, ertesi güne sarkıyor demektir (Örn: 09:00 - 01:00)
-              if (kDk <= aDk) kDk += 1440;
-
               int suanDk = DateTime.now().hour * 60 + DateTime.now().minute;
-              if (suanDk >= kDk - 30) continue;
+              // Sadece mesai bitimine 10 dakikadan az kaldıysa bugünü atla
+              if (suanDk >= kDk - 10) continue;
             }
           }
         }
@@ -369,32 +388,33 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
       }
 
       try {
-        DateTime t = DateFormat('yyyy-MM-dd').parse(s.split('_')[0]);
+        DateTime tRaw = DateFormat('yyyy-MM-dd').parse(s.split('_')[0]);
+        // [KESİN ÇÖZÜM] Tarihi sadece Yıl-Ay-Gün olarak normalize ediyoruz
+        DateTime t = DateTime(tRaw.year, tRaw.month, tRaw.day);
+        
         String gunAdi = DateFormat('EEEE', 'tr_TR').format(t);
         if (gunler.containsKey(gunAdi) && gunler[gunAdi] == false) {
           continue;
         }
 
-        if (t.isAtSameMomentAs(bugun)) {
+        // Bugünü karşılaştırırken saniye farklarını yok say
+        final isToday = t.year == bugun.year && t.month == bugun.month && t.day == bugun.day;
+
+        if (isToday) {
           final calisma = esnaf.calismaSaatleri;
           if (calisma != null) {
-            String acilis = calisma['acilis'] ?? "09:00";
             String kapanis = calisma['kapanis'] ?? "18:00";
-            bool is724 = calisma['is724'] == true || acilis == kapanis;
-
-            if (!is724 && kapanis != "00:00" && kapanis != "24:00") {
+            if (kapanis != "00:00" && kapanis != "24:00") {
               int kDk = _saatiDakikayaCevir(kapanis);
-              int aDk = _saatiDakikayaCevir(acilis);
-
-              if (kDk <= aDk) kDk += 1440;
-
               int suanDk = DateTime.now().hour * 60 + DateTime.now().minute;
-              if (suanDk >= kDk - 30) {
+              if (suanDk >= kDk - 10) {
                 continue;
               }
             }
           }
         }
+
+        if (t.isBefore(bugun)) continue;
 
         if (t.isAtSameMomentAs(bugun) || t.isAfter(bugun)) {
           tarihler.add(t);
@@ -535,15 +555,18 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
         int.parse(slotParcalar[0]), int.parse(slotParcalar[1]));
 
     final simdi = DateTime.now();
-    final bugun = DateTime(simdi.year, simdi.month, simdi.day);
-    final seciliGun = DateTime(tarih.year, tarih.month, tarih.day);
+    final bool bugunMu = tarih.year == simdi.year && 
+                         tarih.month == simdi.month && 
+                         tarih.day == simdi.day;
 
-    if (seciliGun.isAtSameMomentAs(bugun)) {
-      int tolerans = esnaf.kategori == 'Araç Kiralama' ? 30 : 10;
+    if (bugunMu) {
+      // [GÜNCELLEME] Halı Saha gibi slot aralıklı gösterilen yerlerde 
+      // bulunduğumuz saati (başlamış olan slotu) dikkate almamalıyız.
+      int tolerans = esnaf.slotAralikliGoster ? 0 : (esnaf.kategori == 'Araç Kiralama' ? 30 : 10);
       if (sBaslangic.isBefore(simdi.subtract(Duration(minutes: tolerans)))) {
         return "Geçmiş saat";
       }
-    } else if (seciliGun.isBefore(bugun)) {
+    } else if (tarih.isBefore(DateTime(simdi.year, simdi.month, simdi.day))) {
       return "Geçmiş tarih";
     }
 
@@ -635,13 +658,14 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
     final personel = _seciliPersonelNotifier.value;
     final kanal = _seciliKanalNotifier.value;
 
-    if (_adController.text.isEmpty ||
-        _telController.text.isEmpty ||
+    if (_adController.text.trim().isEmpty ||
+        _telController.text.trim().isEmpty ||
         (hizmetler.isEmpty && !_isAracKiralama) ||
         saat == null ||
         tarih == null) {
       ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Lütfen tüm alanları doldurun.")));
+      _islemYapiliyorNotifier.value = false; // [KRİTİK] Hata durumunda butonu tekrar aktif et
       return;
     }
 
@@ -1584,7 +1608,6 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
       valueListenable: _aramaYapiliyorNotifier,
       builder: (context, aramaYapiliyor, _) {
         if (aramaYapiliyor) return const SliverToBoxAdapter(child: Center(child: CircularProgressIndicator()));
-        
         return ValueListenableBuilder<String?>(
           valueListenable: _seciliSaatNotifier,
           builder: (context, seciliSaat, _) {
@@ -1609,8 +1632,6 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
 
                 final neden = _saatNedenKapali(esnaf, slot, _sonRandevular, toplamSure, ajandaVerisi: _gununAjandaVerisi);
                 bool musait = neden == null;
-                bool isSelected = seciliSaat == slot;
-
                 return InkWell(
                   onTap: musait
                       ? () {
@@ -1619,29 +1640,21 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                           _sonrakiAdimaGit(150);
                         }
                       : null,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
+                  child: Container(
                     decoration: BoxDecoration(
-                        color: isSelected ? Colors.blue.shade700 : (musait ? Colors.white : Colors.grey.shade200),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: isSelected ? Colors.blue.shade900 : (musait ? Colors.blue.shade50 : Colors.grey.shade300),
-                          width: isSelected ? 2 : 1,
-                        ),
-                        boxShadow: isSelected ? [BoxShadow(color: Colors.blue.withValues(alpha: 0.3), blurRadius: 8)] : null,
-                    ),
+                        color: seciliSaat == slot ? Colors.blue : (musait ? Colors.white : Colors.grey.shade200),
+                        borderRadius: BorderRadius.circular(5)),
                     child: Center(
                         child: Text(slotMetni,
-                            textAlign: TextAlign.center,
                             style: TextStyle(
-                                color: isSelected ? Colors.white : (musait ? Colors.black87 : Colors.grey),
-                                fontSize: isSelected ? 16 : (esnaf.slotAralikliGoster ? 11 : 13),
-                                fontWeight: (isSelected || esnaf.slotAralikliGoster) ? FontWeight.bold : FontWeight.normal))),
+                                color: musait ? Colors.black : Colors.grey,
+                                fontSize: esnaf.slotAralikliGoster ? 12 : 14,
+                                fontWeight: esnaf.slotAralikliGoster ? FontWeight.bold : FontWeight.normal))),
                   ),
                 );
               }, childCount: slotlar.length),
             );
-          }
+          },
         );
       },
     );

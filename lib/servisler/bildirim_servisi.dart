@@ -47,13 +47,14 @@ class BildirimServisi {
       
       _syncedIds.clear();
 
-      // [GÜNCELLEME] "Oturum Mühürleniyor..." mesajı kaldırıldı. İşlem sessiz yapılacak.
+      // [GÜNCELLEME] OneSignal aboneliğinin oturması için kısa bir güvenli bekleme ekliyoruz.
+      // Chrome'dan alınıp telefona geçildiğinde bu bekleme hayati önem taşır.
+      await Future.delayed(const Duration(seconds: 1));
 
-      await OneSignalServisi.kullaniciyiKaydet(temizGirisTel);
-      await Future.delayed(const Duration(seconds: 3)); 
-
+      // [GÜNCELLEME] Sadece 'Onaylandı' değil, 'Onay bekliyor' durumundaki randevuları da kontrol etmeliyiz.
+      // Çünkü Chrome'dan alınan randevular henüz onaylanmamış olsa bile bildirimlerinin (uzatma) planlanması gerekir.
       final snap = await _db.collection('randevular')
-          .where('durum', isEqualTo: 'Onaylandı')
+          .where('durum', whereIn: ['Onaylandı', 'Onay bekliyor'])
           .get();
 
       if (snap.docs.isEmpty) return;
@@ -66,6 +67,8 @@ class BildirimServisi {
 
         if (r.tarih.isBefore(bugunSifir)) continue;
 
+        // [MANTIK GÜNCELLEMESİ]: Eğer esnaf giriş yaptıysa sadece kendi dükkanındaki randevuları onarır.
+        // Eğer MÜŞTERİ giriş yaptıysa, sadece kendi aldığı randevuları onarır.
         if (esnafMi) {
           if (r.esnafId != hedefEsnafId) continue;
         } else {
@@ -83,10 +86,11 @@ class BildirimServisi {
 
         if (!esnaf.akilliTakipModu) continue;
 
-        // [OTOMATİK ONARMA]: Eğer bildirim planı eksikse ve kullanıcı şu an telefondan girdiyse planla
+        // [OTOMATİK ONARMA]: Eksik bildirimleri planla
         
-        // 1. ESNAF İÇİN ONARMA (Eğer esnaf giriş yaptıysa)
-        if (esnafMi && r.gecikmeBildirimId == null) {
+        // 1. ESNAF İÇİN ONARMA (Kritik Gecikme Bildirimi)
+        // [PROFESYONEL]: Müşteri giriş yaptığında bile esnafın gecikme bildirimini kurabilmeli (Karşılıklı tam koruma)
+        if (r.durum == 'Onaylandı' && r.gecikmeBildirimId == null) {
            final DateTime gecikmeZamani = bitis.add(const Duration(minutes: 1));
            if (gecikmeZamani.isAfter(simdi)) {
               String? id = await OneSignalServisi.bildirimPlanla(
@@ -104,12 +108,18 @@ class BildirimServisi {
               if (id != null && id != "ALICI_YOK") {
                 await doc.reference.update({'gecikmeBildirimId': id});
                 onarilanSayisi++;
+              } else if (id == "ALICI_YOK" && esnafMi) {
+                // Sadece esnaf kendisi girmişse ve abonelik yoksa retry yap (müşteri esnaf için retry yapamaz)
+                Future.delayed(const Duration(seconds: 2), () {
+                  syncAkilliTakipBildirimleri(telefon, context, esnafMi: esnafMi, esnafId: esnafId);
+                });
+                return;
               }
            }
         }
 
-        // 2. MÜŞTERİ İÇİN ONARMA (Eğer müşteri giriş yaptıysa)
-        if (!esnafMi && r.uzatmaBildirimId == null) {
+        // 2. MÜŞTERİ İÇİN ONARMA (Uzatma Bildirimi)
+        if (r.uzatmaBildirimId == null) {
            final DateTime uzatmaZamani = bitis.subtract(Duration(minutes: esnaf.akilliTakipSuresi));
            if (uzatmaZamani.isAfter(simdi)) {
               String? id = await OneSignalServisi.bildirimPlanla(
@@ -127,20 +137,32 @@ class BildirimServisi {
               if (id != null && id != "ALICI_YOK") {
                 await doc.reference.update({'uzatmaBildirimId': id});
                 onarilanSayisi++;
+              } else if (id == "ALICI_YOK" && !esnafMi) {
+                // Sadece müşteri kendisi girmişse ve abonelik yoksa retry yap
+                Future.delayed(const Duration(seconds: 2), () {
+                  syncAkilliTakipBildirimleri(telefon, context, esnafMi: esnafMi, esnafId: esnafId);
+                });
+                return;
               }
            }
         }
       }
 
-      if (onarilanSayisi > 0 && context != null && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("Eksik Bildirimler Tamamlandı: $onarilanSayisi Adet ✅"),
-            backgroundColor: Colors.green.shade800,
-            duration: const Duration(seconds: 4),
-            behavior: SnackBarBehavior.floating,
-          )
-        );
+      if (onarilanSayisi > 0 && context != null) {
+        // [PROFESYONEL MESAJ]: context.mounted kontrolü ve SnackBar'ın her durumda görünmesi için temizleme
+        final messenger = ScaffoldMessenger.maybeOf(context);
+        if (messenger != null) {
+          messenger.clearSnackBars();
+          messenger.showSnackBar(
+            SnackBar(
+              content: const Text("Bildirimleriniz oluştu ✅"),
+              backgroundColor: Colors.green.shade800,
+              duration: const Duration(seconds: 5),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            )
+          );
+        }
       }
     } catch (e) {
       debugPrint("Senkronizasyon Hatası: $e");

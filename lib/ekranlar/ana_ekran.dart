@@ -29,10 +29,10 @@ class _AnaEkranState extends State<AnaEkran> {
     _determinePosition();
     _favoriAboneligiBaslat();
     
-    // [YENİ] Akıllı Takip Bildirimlerini Senkronize Et (Sıralı İşlem: Önce mühürleme biter, sonra onarma başlar)
+    // [OPTİMİZASYON] Gecikme 4 saniyeden 500ms'ye indirildi.
     if (widget.kullaniciTel != null) {
        OneSignalServisi.kullaniciyiKaydet(widget.kullaniciTel!, role: 'kullanici').then((_) {
-         Future.delayed(const Duration(seconds: 4), () {
+         Future.delayed(const Duration(milliseconds: 500), () {
            if (mounted) {
              BildirimServisi.syncAkilliTakipBildirimleri(widget.kullaniciTel!, context);
            }

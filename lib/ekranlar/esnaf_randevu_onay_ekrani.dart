@@ -422,6 +422,28 @@ class _EsnafRandevuYonetimEkraniState extends State<EsnafRandevuYonetimEkrani> {
                               }
 
                               if (!mounted) return;
+                              // [GÖRSEL YÜKLEME]: İşlem bitene kadar kum saati döner
+                              showDialog(
+                                context: context,
+                                barrierDismissible: false,
+                                builder: (ctx) => AlertDialog(
+                                  backgroundColor: Colors.transparent,
+                                  elevation: 0,
+                                  content: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const CircularProgressIndicator(color: Colors.white),
+                                      const SizedBox(height: 20),
+                                      const Text(
+                                        "Randevunuz Onaylanıyor,\nLütfen Bekleyin...",
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+
                               // Context'i asenkron işlemden önce alalım
                               final scaffoldMessenger = ScaffoldMessenger.of(context);
                               String tarihFormat = DateFormat('dd.MM.yyyy').format(r.tarih);
@@ -436,15 +458,17 @@ class _EsnafRandevuYonetimEkraniState extends State<EsnafRandevuYonetimEkrani> {
                               );
 
                               if (mounted) {
+                                Navigator.pop(context); // Kum saatini kapat
+
                                 String msg = "Randevu onaylandı";
                                 Color bgColor = Colors.green;
                                 
                                 if (res['alarmKuruldu'] == true) {
-                                  msg += " ve Gecikme Alarmı ${res['alarmSaati']} için kuruldu. ✅";
+                                  msg += " ve Gecikme Alarmı ${res['alarmSaati']} için kuruldu.";
                                   bgColor = Colors.blue.shade800;
                                 } else if (res['hata'] == "ALICI_YOK") {
-                                  msg = "Randevu başarıyla onaylandı. ✅\nBilgi: Tarayıcı kullandığınız veya cihaz kaydı eksik olduğu için kendinize Gecikme Alarmı kurulamadı.";
-                                  bgColor = Colors.orange.shade900;
+                                  msg = "Randevu onaylandı ancak BİLDİRİM KURULAMADI! 🔴\nBildirimlerin oluşması için Telefonunuzdan Esnaf Ekranına birkez giriş yapmalısınız.";
+                                  bgColor = Colors.red.shade900;
                                 }
                                 
                                 scaffoldMessenger.clearSnackBars();

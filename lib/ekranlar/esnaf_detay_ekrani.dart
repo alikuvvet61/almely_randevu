@@ -945,7 +945,7 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
               ),
             if (!_guncelEsnaf.randevuAlinmasin)
               AnaButon(
-                metin: "Hemen Randevu Al",
+                metin: _guncelEsnaf.kategori == 'Araç Kiralama' ? "Randevu Al/Araç Kirala" : "Hemen Randevu Al",
                 onPressed: () {
                   bool ajandaVarMi = false;
                   // [CANLI YAPI] Eğer esnaf 'Ben ayarlayacağım' demediyse ajanda var sayılır (Canlı oluşturulur)

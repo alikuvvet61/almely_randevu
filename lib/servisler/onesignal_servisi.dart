@@ -77,19 +77,26 @@ class OneSignalServisi {
     try {
       await OneSignal.login(temizTel);
       OneSignal.User.pushSubscription.optIn();
-      // Genel telefon tagı
-      OneSignal.User.addTagWithKey("telefon", temizTel);
-      // Role bazlı ek tag (telefon_esnaf veya telefon_kullanici) — aynı cihaz her iki role de sahip olabilir
+      
+      // [OPTİMİZASYON] Etiketleri toplu olarak (batch) gönderiyoruz
+      Map<String, String> tags = {"telefon": temizTel};
       if (role != null && role.isNotEmpty) {
-        OneSignal.User.addTagWithKey("telefon_$role", temizTel);
+        tags["telefon_$role"] = temizTel;
       }
-      debugPrint("✅ OneSignal: Cihaz mühürlendi: $temizTel (role: $role)");
+      OneSignal.User.addTags(tags);
+      
+      debugPrint("✅ OneSignal: Cihaz mühürlendi (Batch Tags): $temizTel (role: $role)");
     } catch (e) {
       debugPrint("❌ OneSignal Kayıt Hatası: $e (telefon: $temizTel)");
       // Retry: 1 saniye sonra tekrar dene
       await Future.delayed(const Duration(seconds: 1));
       try {
         await OneSignal.login(temizTel);
+        Map<String, String> tags = {"telefon": temizTel};
+        if (role != null && role.isNotEmpty) {
+          tags["telefon_$role"] = temizTel;
+        }
+        OneSignal.User.addTags(tags);
         debugPrint("✅ OneSignal: Retry başarılı: $temizTel");
       } catch (e2) {
         debugPrint("❌ OneSignal Retry Hatası: $e2");
@@ -254,10 +261,12 @@ class OneSignalServisi {
     try {
       debugPrint("🗑️  OneSignal Bildirim İptal Ediliyor: $notificationId");
 
-      final Map<String, String> headers = {
-        'Content-Type': 'application/json; charset=utf-8',
-        'Authorization': 'Basic $restApiKey',
-      };
+      final Map<String, String> headers = {};
+      if (restApiKey.startsWith('os_v2_')) {
+        headers['Authorization'] = 'Basic $restApiKey';
+      } else {
+        headers['Authorization'] = 'Bearer $restApiKey';
+      }
 
       final response = await http.delete(
         Uri.parse('https://onesignal.com/api/v1/notifications/$notificationId?app_id=$appId'),

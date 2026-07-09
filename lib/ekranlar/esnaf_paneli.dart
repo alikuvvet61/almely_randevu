@@ -39,8 +39,7 @@ class EsnafPaneli extends StatefulWidget {
 
 class _EsnafPaneliState extends State<EsnafPaneli> {
   final _firestoreServisi = FirestoreServisi();
-  bool _gecmisKiraHareketleriGosterilsin = false;
-  bool _teslimAlinmayanlarGosterilsin = false;
+  bool _gecmisKiraHareketleriGosterilsin = false; // Varsayılan: Sadece aktifler (teslim edilmeyenler) görünsün
   late TextEditingController _adController;
   late TextEditingController _telController;
   late TextEditingController _whatsappController;
@@ -95,13 +94,9 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
     // [YENİ] Web ve Mobil'de canlı bildirim dinleyiciyi mühürleyelim
     BildirimServisi.bildirimDinle(widget.soforTel ?? widget.esnaf.telefon, context: context);
 
-    // [KRİTİK] Esnafı OneSignal'e aktif giriş yaptığı numara ile kaydet
-    // Sarsılmazlık için iki kez (üst üste) mühürleme isteği gönderiyoruz
-    OneSignalServisi.kullaniciyiKaydet(widget.soforTel ?? widget.esnaf.telefon, role: 'esnaf');
-    
+    // [OPTİMİZASYON] Gereksiz çift çağrı kaldırıldı, gecikme 500ms'ye çekildi.
     OneSignalServisi.kullaniciyiKaydet(widget.soforTel ?? widget.esnaf.telefon, role: 'esnaf').then((_) {
-      // Mühürleme işlemi OneSignal'e gönderildi, onarma kodunu biraz gecikmeli (sıralı) başlatalım
-      Future.delayed(const Duration(seconds: 5), () {
+      Future.delayed(const Duration(milliseconds: 500), () {
         if (mounted) {
           BildirimServisi.syncAkilliTakipBildirimleri(
             widget.soforTel ?? widget.esnaf.telefon, 
@@ -112,7 +107,6 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
         }
       });
     });
-
 
     // TEŞHİS: Bildirim servisini bağla
     BildirimServisi.tokenKaydet(widget.esnaf.telefon, role: 'esnaf', context: context);
@@ -1176,7 +1170,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
         if (widget.esnaf.kategori == 'Araç Kiralama')
           _yonetimKarti(
             icon: Icons.add_task_rounded,
-            baslik: "Randevu Ver",
+            baslik: widget.esnaf.kategori == 'Araç Kiralama' ? "Randevu Ver/Araç Kirala" : "Randevu Ver",
             altBaslik: "Hızlı Kiralama",
             renk: Colors.green.shade800,
             onTap: () {
@@ -1306,7 +1300,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
     );
   }
 
-  void _aracKiraHareketleriniGoster(String ad, String? plaka) {
+  void _aracKiraHareketleriniGoster(String ad, String? plaka, List<RandevuModeli> ilkRandevular) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1318,26 +1312,16 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
           borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
         ),
         child: StreamBuilder<List<RandevuModeli>>(
+          // [CANLI VERI]: Alt pencere artık doğrudan Firestore'u dinliyor, bu sayede 'Kayıt Kapatınca' anında yenilenir.
           stream: FirebaseFirestore.instance
               .collection('randevular')
               .where('esnafId', isEqualTo: widget.esnaf.id)
+              .where('randevu_kanali', isEqualTo: ad)
               .snapshots()
-              .map((snap) => snap.docs
-                  .map((doc) => RandevuModeli.fromMap(doc.data(), doc.id))
-                  .where((r) {
-                    String rKanal = (r.randevuKanali ?? "").trim().toLowerCase();
-                    String tAd = ad.toLowerCase();
-                    String tPlaka = (plaka ?? "").toLowerCase();
-                    return rKanal == tAd || rKanal == tPlaka || (tPlaka.isNotEmpty && rKanal.contains(tPlaka));
-                  })
-                  .toList()
-                    ..sort((a, b) {
-                      final aZ = DateTime(a.tarih.year, a.tarih.month, a.tarih.day, int.parse(a.saat.split(':')[0]), int.parse(a.saat.split(':')[1]));
-                      final bZ = DateTime(b.tarih.year, b.tarih.month, b.tarih.day, int.parse(b.saat.split(':')[0]), int.parse(b.saat.split(':')[1]));
-                      return bZ.compareTo(aZ);
-                    })),
-          builder: (context, snapshot) {
-            final randevular = snapshot.data ?? [];
+              .map((snapshot) => snapshot.docs.map((doc) => RandevuModeli.fromMap(doc.data(), doc.id)).toList()),
+          builder: (context, streamSnapshot) {
+            final guncelRandevular = streamSnapshot.data ?? ilkRandevular;
+
             return Column(
               children: [
                 const SizedBox(height: 12),
@@ -1371,26 +1355,22 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                   child: StatefulBuilder(
                     builder: (context, setBottomSheetState) {
                       final simdi = DateTime.now();
-                      List<RandevuModeli> filtreliRandevular = randevular.where((r) {
+                      List<RandevuModeli> filtreliRandevular = guncelRandevular.where((r) {
                         try {
                           final rBas = DateTime(r.tarih.year, r.tarih.month, r.tarih.day, int.parse(r.saat.split(':')[0]), int.parse(r.saat.split(':')[1]));
                           final rBit = rBas.add(Duration(minutes: r.sure));
                           
-                          // Geçmiş sayılma kriteri: İade vakti geçmiş olması VEYA durumun bitmiş olması
-                          bool gecmisMi = rBit.isBefore(simdi) || r.durum == 'Tamamlandı' || r.durum == 'İptal Edildi' || r.durum == 'Reddedildi';
+                          bool teslimAlindiMi = r.durum == 'Tamamlandı' || r.durum == 'İptal Edildi' || r.durum == 'Reddedildi';
+                          bool zamanGectiMi = rBit.isBefore(simdi);
                           
-                          // Teslim alınmayan kriteri: İade vakti geçmiş olmasına rağmen hala Onaylandı (yani Tamamlandı değil)
-                          bool teslimAlinmadi = r.durum == 'Onaylandı' && rBit.isBefore(simdi);
-
-                          if (_teslimAlinmayanlarGosterilsin) {
-                            return teslimAlinmadi;
+                          bool gecmisMi = teslimAlindiMi || (zamanGectiMi && teslimAlindiMi); 
+                          if (r.durum == 'Onaylandı' && zamanGectiMi) {
+                            gecmisMi = false; 
                           }
 
                           if (_gecmisKiraHareketleriGosterilsin) {
-                            // İşaretli ise: SADECE geçmiş hareketleri göster
-                            return gecmisMi;
+                            return true;
                           } else {
-                            // İşaretli değilse: SADECE aktif ve gelecekteki (iadesi gelmemiş) hareketleri göster
                             return !gecmisMi;
                           }
                         } catch (e) {
@@ -1401,37 +1381,19 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                       return Column(
                         children: [
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-                            child: Column(
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                            child: Row(
                               children: [
-                                Row(
-                                  children: [
-                                    Checkbox(
-                                      value: _gecmisKiraHareketleriGosterilsin,
-                                      onChanged: (value) {
-                                        setBottomSheetState(() {
-                                          _gecmisKiraHareketleriGosterilsin = value ?? false;
-                                          if (_gecmisKiraHareketleriGosterilsin) _teslimAlinmayanlarGosterilsin = false;
-                                        });
-                                      },
-                                    ),
-                                    const Text("Geçmiş hareketleri göster", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-                                  ],
+                                Checkbox(
+                                  value: _gecmisKiraHareketleriGosterilsin,
+                                  onChanged: (value) {
+                                    setBottomSheetState(() {
+                                      _gecmisKiraHareketleriGosterilsin = value ?? false;
+                                    });
+                                  },
                                 ),
-                                Row(
-                                  children: [
-                                    Checkbox(
-                                      value: _teslimAlinmayanlarGosterilsin,
-                                      onChanged: (value) {
-                                        setBottomSheetState(() {
-                                          _teslimAlinmayanlarGosterilsin = value ?? false;
-                                          if (_teslimAlinmayanlarGosterilsin) _gecmisKiraHareketleriGosterilsin = false;
-                                        });
-                                      },
-                                    ),
-                                    const Text("Sadece teslim alınmayanları göster", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Colors.red)),
-                                  ],
-                                ),
+                                const SizedBox(width: 8),
+                                const Text("Geçmiş kayıtları göster", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
                               ],
                             ),
                           ),
@@ -1445,18 +1407,36 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                                       final r = filtreliRandevular[index];
                                       final DateTime rBas = DateTime(r.tarih.year, r.tarih.month, r.tarih.day, int.parse(r.saat.split(':')[0]), int.parse(r.saat.split(':')[1]));
                                       final DateTime rBit = rBas.add(Duration(minutes: r.sure));
+                                      final bool gecikti = r.durum == 'Onaylandı' && DateTime.now().isAfter(rBit);
                                       
                                       return Container(
                                         margin: const EdgeInsets.only(bottom: 16),
                                         padding: const EdgeInsets.all(16),
                                         decoration: BoxDecoration(
-                                          color: Colors.white,
+                                          color: gecikti ? Colors.red.withValues(alpha: 0.05) : Colors.white,
                                           borderRadius: BorderRadius.circular(20),
-                                          border: Border.all(color: Colors.grey.shade100),
+                                          border: Border.all(color: gecikti ? Colors.red.withValues(alpha: 0.3) : Colors.grey.shade100),
                                           boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 10)],
                                         ),
                                         child: Column(
                                           children: [
+                                            if (gecikti)
+                                              Container(
+                                                margin: const EdgeInsets.only(bottom: 12),
+                                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.red,
+                                                  borderRadius: BorderRadius.circular(8),
+                                                ),
+                                                child: const Row(
+                                                  mainAxisSize: MainAxisSize.min,
+                                                  children: [
+                                                    Icon(Icons.warning_amber_rounded, color: Colors.white, size: 16),
+                                                    SizedBox(width: 5),
+                                                    Text("TESLİM ZAMANI GEÇTİ", style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                                                  ],
+                                                ),
+                                              ),
                                             Row(
                                               children: [
                                                 CircleAvatar(
@@ -1498,12 +1478,12 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                           ),
                         ],
                       );
-                    },
+                    }
                   ),
                 ),
               ],
             );
-          },
+          }
         ),
       ),
     );
@@ -1529,24 +1509,17 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
     // Durum Belirleme
     final simdi = DateTime.now();
     final bool suAnAralikta = !simdi.isBefore(rBas) && simdi.isBefore(iadeZamani);
-    final bool iadeGecti = simdi.isAfter(iadeZamani);
     final bool onayli = r.durum == 'Onaylandı';
-    final bool teslimatGecikti = onayli && iadeGecti;
 
     String baslikMetni = "Araç Rezervasyonu";
     IconData baslikIkon = Icons.calendar_today;
     Color temaRengi = Colors.orange;
     String rozetMetni = "ARAÇ REZERVE EDİLMİŞTİR";
 
-    if (teslimatGecikti) {
-      baslikMetni = "TESLİMAT GECİKTİ!";
-      baslikIkon = Icons.priority_high_rounded;
-      temaRengi = Colors.red;
-      rozetMetni = "İADE ZAMANI GEÇTİ!";
-    } else if (onayli && suAnAralikta) {
+    if (onayli && suAnAralikta) {
       baslikMetni = "Aktif Kiralama";
       baslikIkon = Icons.key;
-      temaRengi = Colors.blue;
+      temaRengi = Colors.red;
       rozetMetni = "ARAÇ ŞU AN KİRADADIR";
     } else if (r.durum != 'Onaylandı') {
       rozetMetni = "REZERVASYON (ONAY BEKLİYOR)";
@@ -1661,7 +1634,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                 ],
               ),
               const SizedBox(height: 10),
-              if (onayli && (suAnAralikta || iadeGecti))
+              if (onayli && suAnAralikta)
                 SizedBox(
                   width: double.infinity,
                   child: Padding(
@@ -1669,9 +1642,9 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                     child: ElevatedButton.icon(
                       onPressed: () => _kiraBitirOnay(r),
                       icon: const Icon(Icons.verified_user_rounded, color: Colors.white),
-                      label: Text(teslimatGecikti ? "GECİKEN ARACI TESLİM AL" : "ARACI TESLİM AL", style: const TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.2)),
+                      label: const Text("ARACI TESLİM AL", style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.2)),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: teslimatGecikti ? Colors.red : Colors.green,
+                        backgroundColor: Colors.green,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 15),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -1680,7 +1653,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                     ),
                   ),
                 )
-              else
+              else if (r.durum == 'Onaylandı' || r.durum == 'Onay bekliyor')
                 SizedBox(
                   width: double.infinity,
                   child: Padding(
@@ -1729,10 +1702,22 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
 
   Future<void> _kiraSonlandir(RandevuModeli r) async {
     try {
+      // [YENİ] Planlanmış OneSignal bildirimlerini iptal et
+      if (r.gecikmeBildirimId != null && r.gecikmeBildirimId!.isNotEmpty) {
+        OneSignalServisi.bildirimIptalEt(r.gecikmeBildirimId!);
+      }
+      if (r.uzatmaBildirimId != null && r.uzatmaBildirimId!.isNotEmpty) {
+        OneSignalServisi.bildirimIptalEt(r.uzatmaBildirimId!);
+      }
+
       await FirebaseFirestore.instance
           .collection('randevular')
           .doc(r.id)
-          .update({'durum': 'Tamamlandı'});
+          .update({
+        'durum': 'Tamamlandı',
+        'gecikmeBildirimId': null, // ID'leri temizle
+        'uzatmaBildirimId': null,
+      });
 
       // Müşteriye bildirim gönder
       BildirimServisi.bildirimGonder(
@@ -1740,6 +1725,9 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
         icerik: "Aracı teslim ettiğiniz için teşekkür ederiz. İyi günler dileriz!",
         kullaniciTel: r.kullaniciTel,
       );
+
+      // [YENİ] Ana ekranı yenilemek için setState tetikle
+      if (mounted) setState(() {});
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -3183,7 +3171,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                           bool dolu = aktifRandevu != null;
 
                           return InkWell(
-                            onTap: () => _aracKiraHareketleriniGoster(ad, plaka),
+                            onTap: () => _aracKiraHareketleriniGoster(ad, plaka, buAracinRandevulari),
                             child: Container(
                               margin: const EdgeInsets.only(bottom: 12),
                               padding: const EdgeInsets.all(12),
@@ -3332,7 +3320,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                           );
                         },
                         icon: const Icon(Icons.add_task_rounded, color: Colors.white, size: 24),
-                        label: const Text("Randevu Ver", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
+                        label: Text(widget.esnaf.kategori == 'Araç Kiralama' ? "Randevu Ver/Araç Kirala" : "Randevu Ver", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.blue.shade600,
                           minimumSize: const Size(double.infinity, 60),
@@ -3533,7 +3521,8 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
         try {
           // Bu aracın hemen arkasından gelen başka bir randevu var mı?
           final sonrakiRandevu = hepsi.firstWhere((sr) {
-            if (sr.id == r.id || sr.durum != 'Onaylandı') return false;
+            // [İYİLEŞTİRME] Sadece 'Onaylandı' değil, 'Onay bekliyor' olanlar da çakışma uyarısı tetiklemeli
+            if (sr.id == r.id || (sr.durum != 'Onaylandı' && sr.durum != 'Onay bekliyor')) return false;
             if (sr.randevuKanali != r.randevuKanali) return false;
             
             final srBas = DateTime(sr.tarih.year, sr.tarih.month, sr.tarih.day,
@@ -3711,7 +3700,8 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
       final rBit = rBas.add(Duration(minutes: r.sure));
 
       for (var checkR in hepsi) {
-        if (checkR.randevuKanali != ad || checkR.durum != 'Onaylandı') continue;
+        // [İYİLEŞTİRME] Boş araç aranırken 'Onay bekliyor' durumundaki randevular da araçları meşgul göstermeli
+        if (checkR.randevuKanali != ad || (checkR.durum != 'Onaylandı' && checkR.durum != 'Onay bekliyor')) continue;
         final cBas = DateTime(checkR.tarih.year, checkR.tarih.month, checkR.tarih.day,
             int.parse(checkR.saat.split(':')[0]), int.parse(checkR.saat.split(':')[1]));
         final cBit = cBas.add(Duration(minutes: checkR.sure));

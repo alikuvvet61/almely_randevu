@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../servisler/onesignal_servisi.dart';
 import '../servisler/bildirim_servisi.dart';
 import 'ana_ekran.dart';
 
@@ -28,16 +27,14 @@ class _KullaniciGirisSayfasiState extends State<KullaniciGirisSayfasi> {
     // [YENİ] Bildirim dinleyicisini mühürleyelim (Web ve Mobil için)
     BildirimServisi.bildirimDinle(tel, context: context);
 
-    // TEŞHİS: Bildirim ayarlarını yap ve kullanıcıya teyit ver
-    BildirimServisi.tokenKaydet(tel, role: 'kullanici', context: context);
-
-    // OneSignal kaydını bekle
-    await OneSignalServisi.kullaniciyiKaydet(tel);
+    // [OPTİMİZASYON] Gereksiz çift çağrı ve uzun bekleyiş kaldırıldı.
+    // BildirimServisi.tokenKaydet zaten içerde kullaniciyiKaydet çağırıyor.
+    await BildirimServisi.tokenKaydet(tel, role: 'kullanici', context: context);
     
     if (!mounted) return;
     
-    // SnackBar'ın fark edilmesi için kısa bir gecikme
-    await Future.delayed(const Duration(milliseconds: 1500));
+    // SnackBar'ın fark edilmesi için çok kısa bir gecikme
+    await Future.delayed(const Duration(milliseconds: 500));
     
     if (mounted) {
       Navigator.pushReplacement(
