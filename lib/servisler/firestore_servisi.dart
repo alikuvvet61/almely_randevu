@@ -672,37 +672,56 @@ class FirestoreServisi {
 
           debugPrint('📋 Onay Sonrası KRİTİK Bildirim Planlanıyor: randevuId=$id, zaman=$gecikmeAlarmZamani');
 
+          // [PROFESYONEL]: Sıradaki bekleyen müşteriyi tespit et
+          RandevuModeli? siradaki;
+          try {
+            final bugunSifir = DateTime(r.tarih.year, r.tarih.month, r.tarih.day);
+            final yarinaKadar = bugunSifir.add(const Duration(days: 1));
+            final tumSnap = await _randevularRef
+                .where('esnafId', isEqualTo: r.esnafId)
+                .where('randevu_kanali', isEqualTo: r.randevuKanali)
+                .where('tarih', isGreaterThanOrEqualTo: bugunSifir)
+                .where('tarih', isLessThan: yarinaKadar)
+                .where('durum', whereIn: ['Onaylandı', 'Onay bekliyor'])
+                .get();
+
+            final tumRandevular = tumSnap.docs.map((d) => RandevuModeli.fromFirestore(d)).toList();
+            siradaki = tumRandevular.firstWhere((sr) {
+              final srBas = DateTime(sr.tarih.year, sr.tarih.month, sr.tarih.day,
+                  int.parse(sr.saat.split(':')[0]), int.parse(sr.saat.split(':')[1]));
+              return srBas.isAfter(bitisZamani) && srBas.isBefore(bitisZamani.add(const Duration(hours: 2)));
+            });
+          } catch (_) {}
+
           // [PROFESYONEL RETRY]: Hızlı girişlerde OneSignal aboneliğinin tamamlanması için 3 kez deneme yapıyoruz.
           String? newGecikmeId;
           int denemeSayisi = 0;
           
-          while (denemeSayisi < 3) {
-            newGecikmeId = await OneSignalServisi.bildirimPlanla(
-              baslik: "🔴 KRİTİK GECİKME ALARMI",
-              icerik: "${r.randevuKanali} plakalı aracın iade saati ($bitisSaati) geçti! Henüz teslim almadınız.",
-              zaman: gecikmeAlarmZamani,
-              telefon: esnaf.telefon,
-              tagKey: 'telefon',
-              randevuId: id,
-              ekVeri: {
-                'action': 'kritik_gecikme',
-                'tel': esnaf.telefon,
-                'randevuId': id,
-              },
-            );
+          if (siradaki != null) {
+            while (denemeSayisi < 3) {
+              newGecikmeId = await OneSignalServisi.bildirimPlanla(
+                baslik: "🔴 KRİTİK GECİKME: ${siradaki.kullaniciAd} (${siradaki.saat}) BEKLİYOR!",
+                icerik: "${r.randevuKanali} plakalı aracın iade saati ($bitisSaati) geçti! Lütfen aracı teslim alınız.",
+                zaman: gecikmeAlarmZamani,
+                telefon: esnaf.telefon,
+                tagKey: 'telefon',
+                randevuId: id,
+                ekVeri: {
+                  'action': 'kritik_gecikme',
+                  'tel': esnaf.telefon,
+                  'randevuId': id,
+                },
+              );
 
-            if (newGecikmeId != null && newGecikmeId != "ALICI_YOK") {
-              // Başarılı kurulum
-              break;
-            }
-
-            if (newGecikmeId == "ALICI_YOK") {
-              denemeSayisi++;
-              debugPrint("🔄 OneSignal aboneliği henüz hazır değil, deneme $denemeSayisi/3 bekleniyor...");
-              await Future.delayed(const Duration(seconds: 1));
-            } else {
-              // Diğer hatalarda (ağ hatası vb.) döngüden çık
-              break;
+              if (newGecikmeId != null && newGecikmeId != "ALICI_YOK") {
+                break;
+              }
+              if (newGecikmeId == "ALICI_YOK") {
+                denemeSayisi++;
+                await Future.delayed(const Duration(seconds: 1));
+              } else {
+                break;
+              }
             }
           }
 
@@ -725,7 +744,8 @@ class FirestoreServisi {
         debugPrint("❌ Onay sonrası OneSignal hatası: $e");
         sonuc['basarili'] = false;
       }
-    } else if (yeniDurum == 'Reddedildi' || yeniDurum == 'İptal Edildi' || yeniDurum == 'Tamamlandı') {
+    }
+else if (yeniDurum == 'Reddedildi' || yeniDurum == 'İptal Edildi' || yeniDurum == 'Tamamlandı') {
       // [GÜNCELLEME] Bildirimleri tamamen silmek yerine İPTAL EDİLDİ olarak arşivleyelim
       try {
         final rSnap = await _randevularRef.doc(id).get();

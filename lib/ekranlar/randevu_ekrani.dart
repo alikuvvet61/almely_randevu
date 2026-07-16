@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../modeller/esnaf_modeli.dart';
 import '../modeller/randevu_modeli.dart';
 import '../servisler/firestore_servisi.dart';
+import '../servisler/bildirim_servisi.dart'; // [YENİ] Bildirim kontrolleri için gerekli
 import '../widgets/ana_buton.dart';
 
 class RandevuEkrani extends StatefulWidget {
@@ -741,6 +742,16 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
       final String? resHata = await _firestoreServisi.randevuEkle(yeniRandevu);
       
       _islemYapiliyorNotifier.value = false;
+
+      // [YENİ] Randevu alındıktan hemen sonra arka planda bildirim kontrollerini tetikle
+      // (Böylece dükkana/ekrana girmeden bildirimler saniyeler içinde senkronize olur)
+      if (mounted) {
+        BildirimServisi.syncAkilliTakipBildirimleri(
+          widget.kullaniciTel ?? temizTel, 
+          null, // Diyalog göstermesin (arka planda sessiz çalışsın)
+          esnafMi: false
+        );
+      }
 
       if (!mounted) return;
 

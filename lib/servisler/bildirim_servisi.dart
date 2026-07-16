@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart'; // [YENİ] kIsWeb için gerekli
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'dart:async';
@@ -10,9 +11,74 @@ class BildirimServisi {
   static final FirebaseFirestore _db = FirebaseFirestore.instance;
   static final Set<String> _syncedIds = {}; 
   static StreamSubscription? _randevuAboneligi; // Mevcut aboneliği takip etmek için
+  static bool _isSyncing = false; // Senkronizasyon kilidi
 
   static Future<void> initialize({BuildContext? context}) async {
     await OneSignalServisi.initialize(context: context);
+  }
+
+  /// [YENİ] Giriş kontrolleri ve kullanıcı bilgilendirme
+  static Future<void> girisKontrolleri(String telefon, BuildContext context, {bool esnafMi = false, String? esnafId}) async {
+    // 1. "Hoşgeldiniz..." mesajını ekranın ORTASINDA göster
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 20),
+            Text(
+              esnafMi
+                ? "Hoşgeldiniz\nBildirim kontrolleri yapılıyor.\nLütfen Bekleyiniz."
+                : "Hoşgeldiniz\nBildirimleriniz gözden geçiriliyor.\nLütfen Bekleyiniz.",
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    // 2. Arka planda senkronizasyonu başlat
+    // [HATA AYIKLAMA]: Sonucu açıkça loglayalım
+    debugPrint("🚀 Senkronizasyon Başlatılıyor (Tel: $telefon)...");
+    final sonuc = await syncAkilliTakipBildirimleri(telefon, context, esnafMi: esnafMi, esnafId: esnafId);
+    debugPrint("🏁 Senkronizasyon Bitti. Sonuç: $sonuc");
+
+    // 3. Diyaloğu kapat (context hala mounted ise)
+    if (context.mounted) {
+      Navigator.of(context, rootNavigator: true).pop();
+    }
+
+    // 4. Sonuca göre (özellikle ALICI_YOK veya hiç randevu olmama durumu) uyarı göster
+    // [YENİ]: Sadece Web üzerinde ALICI_YOK uyarısı gösterilsin (Telefonda zaten mühürleme yapılıyor)
+    if (sonuc == "ALICI_YOK" && context.mounted && kIsWeb) {
+      debugPrint("⚠️ ALICI_YOK Diyaloğu Tetikleniyor...");
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          icon: const Icon(Icons.warning_amber_rounded, size: 50, color: Colors.orange),
+          title: const Text("Bildirim Uyarısı", textAlign: TextAlign.center),
+          content: Text(
+            esnafMi
+              ? "Hoşgeldiniz\nBildirim kontrollerinin yapılabilmesi için\nTelefonunuzdan giriş yapmalısınız"
+              : "Hoşgeldiniz\nBildirimlerinizin telefonunuza gelebilmesi için\nTelefonunuzdan giriş yapmalısınız",
+            textAlign: TextAlign.center,
+          ),
+          actions: [
+            Center(
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text("TAMAM"),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
   }
 
   static Future<void> tokenKaydet(String telefon, {String? role, BuildContext? context}) async {
@@ -39,7 +105,9 @@ class BildirimServisi {
     return temiz;
   }
 
-  static Future<void> syncAkilliTakipBildirimleri(String telefon, BuildContext? context, {bool esnafMi = false, String? esnafId}) async {
+  static Future<String?> syncAkilliTakipBildirimleri(String telefon, BuildContext? context, {bool esnafMi = false, String? esnafId}) async {
+    if (_isSyncing) return "BUSY";
+    _isSyncing = true;
     try {
       final simdi = DateTime.now();
       final bugunSifir = DateTime(simdi.year, simdi.month, simdi.day);
@@ -47,28 +115,27 @@ class BildirimServisi {
       
       _syncedIds.clear();
 
-      // [GÜNCELLEME] OneSignal aboneliğinin oturması için kısa bir güvenli bekleme ekliyoruz.
-      // Chrome'dan alınıp telefona geçildiğinde bu bekleme hayati önem taşır.
       await Future.delayed(const Duration(seconds: 1));
 
-      // [GÜNCELLEME] Sadece 'Onaylandı' değil, 'Onay bekliyor' durumundaki randevuları da kontrol etmeliyiz.
-      // Çünkü Chrome'dan alınan randevular henüz onaylanmamış olsa bile bildirimlerinin (uzatma) planlanması gerekir.
       final snap = await _db.collection('randevular')
           .where('durum', whereIn: ['Onaylandı', 'Onay bekliyor'])
           .get();
 
-      if (snap.docs.isEmpty) return;
+      if (snap.docs.isEmpty) {
+        // [KRİTİK]: Randevu yoksa bile mühürleme kontrolü yapmalıyiz
+        bool aliciVar = await OneSignalServisi.aliciVarMi(telefon);
+        return aliciVar ? "OK" : "ALICI_YOK";
+      }
 
       String? hedefEsnafId = esnafId;
       int onarilanSayisi = 0;
+      bool aliciYokHatasiVar = false;
 
       for (var doc in snap.docs) {
         final r = RandevuModeli.fromFirestore(doc);
 
         if (r.tarih.isBefore(bugunSifir)) continue;
 
-        // [MANTIK GÜNCELLEMESİ]: Eğer esnaf giriş yaptıysa sadece kendi dükkanındaki randevuları onarır.
-        // Eğer MÜŞTERİ giriş yaptıysa, sadece kendi aldığı randevuları onarır.
         if (esnafMi) {
           if (r.esnafId != hedefEsnafId) continue;
         } else {
@@ -80,92 +147,185 @@ class BildirimServisi {
         final bitis = baslangic.add(Duration(minutes: r.sure));
         final String bitisSaatiString = DateFormat('HH:mm').format(bitis);
 
-        final esDoc = await _db.collection('esnaflar').doc(r.esnafId).get();
-        if (!esDoc.exists) continue;
-        final esnaf = EsnafModeli.fromFirestore(esDoc);
+         final esDoc = await _db.collection('esnaflar').doc(r.esnafId).get();
+         if (!esDoc.exists) continue;
+         final esnaf = EsnafModeli.fromFirestore(esDoc);
 
-        if (!esnaf.akilliTakipModu) continue;
+         if (!esnaf.akilliTakipModu) continue;
 
-        // [OTOMATİK ONARMA]: Eksik bildirimleri planla
-        
+         // --- [REVİZE] KARŞILIKLI KONTROL MANTIĞI ---
+         bool kendisiIcinUzatmaYasak = false;
+
+         // Aynı esnaf, aynı kanal (araç) ve aynı gün için TÜM AKTİF randevuları al (Onaylı veya Bekleyen)
+         final tumRandevular = snap.docs
+             .map((d) => RandevuModeli.fromFirestore(d))
+             .where((randevu) =>
+                randevu.esnafId == r.esnafId &&
+                randevu.randevuKanali == r.randevuKanali &&
+                randevu.tarih.year == r.tarih.year &&
+                randevu.tarih.month == r.tarih.month &&
+                randevu.tarih.day == r.tarih.day &&
+                (randevu.durum == 'Onaylandı' || randevu.durum == 'Onay bekliyor'))
+             .toList();
+
+         for (var diger in tumRandevular) {
+           if (diger.id == r.id) continue;
+
+           final digerBaslangic = DateTime(
+               diger.tarih.year, diger.tarih.month, diger.tarih.day,
+               int.parse(diger.saat.split(':')[0]),
+               int.parse(diger.saat.split(':')[1]));
+           final digerBitis = digerBaslangic.add(Duration(minutes: diger.sure));
+
+           // 1. ÖNÜNDEKİ randevuyu kontrol et (r'den önce olan)
+           // Eğer bizim randevumuz (r), önceki randevunun (diger) uzamasını engelliyorsa
+           if (digerBaslangic.isBefore(baslangic)) {
+             // Boşluk kontrolü: Önceki bitiş + minRandevuSuresi bizim başlangıcı geçiyor mu?
+             final minBoslukSonu = digerBitis.add(Duration(minutes: esnaf.minimumRandevuSuresi));
+             if (baslangic.isBefore(minBoslukSonu)) {
+               // Önceki randevunun uzatmasını İPTAL ET
+               if (diger.uzatmaBildirimId != null) {
+                 final bool iptal = await OneSignalServisi.bildirimIptalEt(diger.uzatmaBildirimId!);
+                 if (iptal) {
+                   await _db.collection('randevular').doc(diger.id).update({'uzatmaBildirimId': null});
+                   debugPrint("🗑️  Önceki Randevu (${diger.id}) Uzatması İptal: Çünkü ${r.id} aradaki boşluğu kapatıyor.");
+                 }
+               }
+             }
+           }
+
+           // 2. ARKASINDAKİ randevuyu kontrol et (r'den sonra olan)
+           // Eğer arkadaki randevu (diger), bizim (r) uzamamızı engelliyorsa
+           if (digerBaslangic.isAfter(bitis) || digerBaslangic.isAtSameMomentAs(bitis)) {
+             final minBoslukSonu = bitis.add(Duration(minutes: esnaf.minimumRandevuSuresi));
+             if (digerBaslangic.isBefore(minBoslukSonu)) {
+               kendisiIcinUzatmaYasak = true;
+               debugPrint("🚫 Kendi Uzatması Yasak: Çünkü ${diger.id} arkada boşluk bırakmıyor.");
+             }
+           }
+         }
+
+         // [İPTAL] Eğer arkada randevu varsa ve kendi uzatma bildirimi planlanmışsa, iptal et
+         if (kendisiIcinUzatmaYasak && r.uzatmaBildirimId != null) {
+            final bool iptalBasarili = await OneSignalServisi.bildirimIptalEt(r.uzatmaBildirimId!);
+            if (iptalBasarili) {
+              await doc.reference.update({'uzatmaBildirimId': null});
+            }
+         }
+
+         // [ALICI_YOK KONTROLÜ] Planlanmış olsa bile alıcıyı kontrol et (Mühürleme denetimi)
+         if (!kendisiIcinUzatmaYasak && r.uzatmaBildirimId != null) {
+            bool aliciVar = await OneSignalServisi.aliciVarMi(r.kullaniciTel);
+            if (!aliciVar) aliciYokHatasiVar = true;
+         }
+
+
         // 1. ESNAF İÇİN ONARMA (Kritik Gecikme Bildirimi)
-        // [PROFESYONEL]: Müşteri giriş yaptığında bile esnafın gecikme bildirimini kurabilmeli (Karşılıklı tam koruma)
-        if (r.durum == 'Onaylandı' && r.gecikmeBildirimId == null) {
+        if (r.durum == 'Onaylandı') {
            final DateTime gecikmeZamani = bitis.add(const Duration(minutes: 1));
            if (gecikmeZamani.isAfter(simdi)) {
-              String? id = await OneSignalServisi.bildirimPlanla(
-                baslik: "🔴 KRİTİK GECİKME ALARMI",
-                icerik: "${r.randevuKanali} plakalı aracın iade saati ($bitisSaatiString) geçti!",
-                zaman: gecikmeZamani,
-                telefon: esnaf.telefon,
-                randevuId: r.id,
-                ekVeri: {
-                  'action': 'kritik_gecikme',
-                  'tel': esnaf.telefon,
-                  'randevuId': r.id,
-                },
-              );
-              if (id != null && id != "ALICI_YOK") {
-                await doc.reference.update({'gecikmeBildirimId': id});
-                onarilanSayisi++;
-              } else if (id == "ALICI_YOK" && esnafMi) {
-                // Sadece esnaf kendisi girmişse ve abonelik yoksa retry yap (müşteri esnaf için retry yapamaz)
-                Future.delayed(const Duration(seconds: 2), () {
-                  syncAkilliTakipBildirimleri(telefon, context, esnafMi: esnafMi, esnafId: esnafId);
+
+              // [PROFESYONEL]: Sadece arkasında müşteri bekliyorsa kritik alarm kur!
+              RandevuModeli? siradakiRandevu;
+              try {
+                siradakiRandevu = tumRandevular.firstWhere((sr) {
+                  final srBas = DateTime(sr.tarih.year, sr.tarih.month, sr.tarih.day,
+                      int.parse(sr.saat.split(':')[0]), int.parse(sr.saat.split(':')[1]));
+                  // Mevcut randevu bittikten sonraki 2 saat içinde başka randevu var mı?
+                  return srBas.isAfter(bitis) && srBas.isBefore(bitis.add(const Duration(hours: 2)));
                 });
-                return;
+              } catch (_) {}
+
+              if (siradakiRandevu != null) {
+                // [VERİMLİLİK]: Bildirim zaten varsa, tekrar kurup paneli kalabalık etme!
+                if (r.gecikmeBildirimId == null) {
+                  String? id = await OneSignalServisi.bildirimPlanla(
+                    baslik: "🔴 KRİTİK GECİKME: ${siradakiRandevu.kullaniciAd} (${siradakiRandevu.saat}) BEKLİYOR!",
+                    icerik: "${r.randevuKanali} plakalı aracın iade saati ($bitisSaatiString) geçti! Lütfen aracı teslim alınız.",
+                    zaman: gecikmeZamani,
+                    telefon: esnaf.telefon,
+                    randevuId: r.id,
+                    ekVeri: {
+                      'action': 'kritik_gecikme',
+                      'tel': esnaf.telefon,
+                      'randevuId': r.id,
+                    },
+                  );
+
+                  if (id != null && id != "ALICI_YOK") {
+                    await doc.reference.update({'gecikmeBildirimId': id});
+                    onarilanSayisi++;
+                  } else if (id == "ALICI_YOK") {
+                    aliciYokHatasiVar = true;
+                  }
+                }
+              } else {
+                // Arkada müşteri yoksa varsa mevcut alarmı temizle (Gereksiz kalabalık yapmasın)
+                if (r.gecikmeBildirimId != null) {
+                  await OneSignalServisi.bildirimIptalEt(r.gecikmeBildirimId!);
+                  await doc.reference.update({'gecikmeBildirimId': null});
+                }
+                debugPrint("ℹ️ Gecikme Alarmı İptal/Kurulmadı: ${r.randevuKanali} arkasında bekleyen müşteri yok.");
               }
            }
         }
 
-        // 2. MÜŞTERİ İÇİN ONARMA (Uzatma Bildirimi)
-        if (r.uzatmaBildirimId == null) {
-           final DateTime uzatmaZamani = bitis.subtract(Duration(minutes: esnaf.akilliTakipSuresi));
-           if (uzatmaZamani.isAfter(simdi)) {
-              String? id = await OneSignalServisi.bildirimPlanla(
-                baslik: "Kiralama Süreniz Doluyor",
-                icerik: "${r.randevuKanali} için süreniz bitmek üzere.Uzatmak ister misiniz?",
-                zaman: uzatmaZamani,
-                telefon: r.kullaniciTel,
-                randevuId: r.id,
-                ekVeri: {
-                  'action': 'uzatma_ekrani',
-                  'tel': r.kullaniciTel,
-                  'randevuId': r.id,
-                },
-              );
-              if (id != null && id != "ALICI_YOK") {
-                await doc.reference.update({'uzatmaBildirimId': id});
-                onarilanSayisi++;
-              } else if (id == "ALICI_YOK" && !esnafMi) {
-                // Sadece müşteri kendisi girmişse ve abonelik yoksa retry yap
-                Future.delayed(const Duration(seconds: 2), () {
-                  syncAkilliTakipBildirimleri(telefon, context, esnafMi: esnafMi, esnafId: esnafId);
-                });
-                return;
-              }
-           }
-        }
+          // 2. MÜŞTERİ İÇİN ONARMA (Uzatma Bildirimi)
+          if (!kendisiIcinUzatmaYasak) {
+             final DateTime uzatmaZamani = bitis.subtract(Duration(minutes: esnaf.akilliTakipSuresi));
+             if (uzatmaZamani.isAfter(simdi)) {
+                // [VERİMLİLİK]: Bildirim zaten kuruluysa dokunma!
+                if (r.uzatmaBildirimId == null) {
+                  String? id = await OneSignalServisi.bildirimPlanla(
+                    baslik: "Kiralama Süreniz Doluyor",
+                    icerik: "${r.randevuKanali} için kiralama süreniz ${esnaf.akilliTakipSuresi} dakika sonra bitiyor. Uzatmak ister misiniz?",
+                    zaman: uzatmaZamani,
+                    telefon: r.kullaniciTel,
+                    randevuId: r.id,
+                    ekVeri: {
+                      'action': 'uzatma_ekrani',
+                      'tel': r.kullaniciTel,
+                      'randevuId': r.id,
+                    },
+                  );
+
+                  if (id != null && id != "ALICI_YOK") {
+                    await doc.reference.update({'uzatmaBildirimId': id});
+                    onarilanSayisi++;
+                  } else if (id == "ALICI_YOK") {
+                    aliciYokHatasiVar = true;
+                  }
+                }
+             }
+          }
       }
 
-      if (onarilanSayisi > 0 && context != null) {
-        // [PROFESYONEL MESAJ]: context.mounted kontrolü ve SnackBar'ın her durumda görünmesi için temizleme
+      if (onarilanSayisi > 0 && context != null && context.mounted) {
         final messenger = ScaffoldMessenger.maybeOf(context);
         if (messenger != null) {
-          messenger.clearSnackBars();
           messenger.showSnackBar(
             SnackBar(
               content: const Text("Bildirimleriniz oluştu ✅"),
               backgroundColor: Colors.green.shade800,
-              duration: const Duration(seconds: 5),
+              duration: const Duration(seconds: 3),
               behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             )
           );
         }
       }
+
+      // [YENİ] Eğer randevu olmasına rağmen hiiiç bildirim planlanmadıysa ve alıcı yoksa da uyaralım
+      if (onarilanSayisi == 0 && aliciYokHatasiVar == false) {
+        // En az bir randevu için planlama teşebbüsü oldu mu kontrol et
+        // (Eğer randevu varsa ama hepsi geçmişse veya uzatma yasağına takılmışsa buraya girer)
+      }
+
+      return aliciYokHatasiVar ? "ALICI_YOK" : "OK";
     } catch (e) {
       debugPrint("Senkronizasyon Hatası: $e");
+      return "HATA";
+    } finally {
+      _isSyncing = false;
     }
   }
 

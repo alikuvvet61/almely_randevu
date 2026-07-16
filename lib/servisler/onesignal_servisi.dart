@@ -111,6 +111,52 @@ class OneSignalServisi {
     return "GMT+0300";
   }
 
+  static Future<bool> aliciVarMi(String telefon) async {
+    try {
+      String temizTel = _numaraTemizle(telefon);
+      debugPrint("🔍 OneSignal Sorgusu Başlatılıyor: $temizTel");
+
+      final response = await http.get(
+        Uri.parse('https://onesignal.com/api/v1/players?app_id=$appId'),
+        headers: {
+          'Authorization': 'Basic $restApiKey',
+        },
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final List players = data['players'] ?? [];
+        
+        debugPrint("📊 OneSignal'de toplam ${players.length} cihaz bulundu.");
+
+        for (var p in players) {
+          final tags = p['tags'];
+          if (tags != null && tags is Map) {
+            final tagTel = tags['telefon']?.toString();
+            final tagRoleTel = tags['telefon_kullanici']?.toString();
+            
+            if (tagTel == temizTel || tagRoleTel == temizTel) {
+               // [HAFİFLETİLDİ]: Sadece aktif olanları kontrol et
+               bool gecersizMi = p['invalid_identifier'] == true || p['notification_types'] == -2;
+               
+               if (!gecersizMi) {
+                 debugPrint("✅ AKTİF EŞLEŞME: ${p['id']}");
+                 return true;
+               }
+            }
+          }
+        }
+        
+        debugPrint("❌ AKTİF ALICI BULUNAMADI: $temizTel");
+        return false;
+      }
+      return true;
+    } catch (e) {
+      debugPrint("OneSignal Alıcı Kontrol Hatası: $e");
+      return false;
+    }
+  }
+
   /// REST API Key ve uygulaması kontrol et (v3 Bearer format)
   static void _checkApiKey() {
     String key = restApiKey;
@@ -160,6 +206,7 @@ class OneSignalServisi {
       // OneSignal Dashboard'da yeşil kutu içinde gördüğünüz "telefon" etiketini kullanır.
       final Map<String, dynamic> notificationBody = {
         'app_id': appId,
+        'name': baslik, // [YENİ] Panel listesinde doğrudan bu isim görünecek
         'filters': [
           {'field': 'tag', 'key': 'telefon', 'relation': '=', 'value': temizTel}
         ],

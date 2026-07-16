@@ -27,10 +27,12 @@ class _EsnafRandevuYonetimEkraniState extends State<EsnafRandevuYonetimEkrani> {
     // [YENİ] Esnaf için bu sayfada da canlı bildirim dinleyiciyi mühürleyelim
     if (_esnaf != null) {
       BildirimServisi.bildirimDinle(_esnaf!.telefon, context: context);
+      BildirimServisi.syncAkilliTakipBildirimleri(_esnaf!.telefon, context, esnafMi: true, esnafId: _esnaf!.id);
     } else {
        _esnafYukle().then((_) {
          if (mounted && _esnaf != null) {
            BildirimServisi.bildirimDinle(_esnaf!.telefon, context: context);
+           BildirimServisi.syncAkilliTakipBildirimleri(_esnaf!.telefon, context, esnafMi: true, esnafId: _esnaf!.id);
          }
        });
     }
@@ -460,6 +462,11 @@ class _EsnafRandevuYonetimEkraniState extends State<EsnafRandevuYonetimEkrani> {
                               if (mounted) {
                                 Navigator.pop(context); // Kum saatini kapat
 
+                                // [YENİ] Bildirimleri hemen senkronize et (Arka randevuları kontrol etmesi için)
+                                if (_esnaf != null) {
+                                   BildirimServisi.syncAkilliTakipBildirimleri(_esnaf!.telefon, context, esnafMi: true, esnafId: _esnaf!.id);
+                                }
+
                                 String msg = "Randevu onaylandı";
                                 Color bgColor = Colors.green;
                                 
@@ -563,7 +570,13 @@ class _EsnafRandevuYonetimEkraniState extends State<EsnafRandevuYonetimEkrani> {
                             esnafAdi: r.esnafAdi,
                             tarihSaat: "$tarihFormat ${r.saat}"
                           );
-                          if (navigator.mounted) navigator.pop();
+                          if (context.mounted && navigator.mounted) {
+                            // [YENİ] İptal sonrası bildirimleri onar
+                            if (_esnaf != null) {
+                               BildirimServisi.syncAkilliTakipBildirimleri(_esnaf!.telefon, context, esnafMi: true, esnafId: _esnaf!.id);
+                            }
+                            navigator.pop();
+                          }
                         },
                       );
                     },
@@ -617,7 +630,13 @@ class _EsnafRandevuYonetimEkraniState extends State<EsnafRandevuYonetimEkrani> {
                             esnafAdi: r.esnafAdi,
                             tarihSaat: "$tarihFormat ${r.saat}"
                           );
-                          if (navigator.mounted) navigator.pop();
+                          if (context.mounted && navigator.mounted) {
+                            // [YENİ] İptal sonrası bildirimleri onar
+                            if (_esnaf != null) {
+                               BildirimServisi.syncAkilliTakipBildirimleri(_esnaf!.telefon, context, esnafMi: true, esnafId: _esnaf!.id);
+                            }
+                            navigator.pop();
+                          }
                         },
                       );
                     },

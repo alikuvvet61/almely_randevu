@@ -29,17 +29,16 @@ class _AnaEkranState extends State<AnaEkran> {
     _determinePosition();
     _favoriAboneligiBaslat();
     
-    // [OPTİMİZASYON] Gecikme 4 saniyeden 500ms'ye indirildi.
     if (widget.kullaniciTel != null) {
-       OneSignalServisi.kullaniciyiKaydet(widget.kullaniciTel!, role: 'kullanici').then((_) {
-         Future.delayed(const Duration(milliseconds: 500), () {
-           if (mounted) {
-             BildirimServisi.syncAkilliTakipBildirimleri(widget.kullaniciTel!, context);
-           }
-         });
+       // [YENİ] Giriş kontrollerini başlat (Hoşgeldiniz mesajı, Akıllı Senkronizasyon ve İptal Mantığı)
+       // Hem Mobil hem Web için ortak merkezi mantık çalışacak.
+       WidgetsBinding.instance.addPostFrameCallback((_) {
+         if (mounted) {
+           BildirimServisi.girisKontrolleri(widget.kullaniciTel!, context);
+         }
        });
 
-       // [YENİ] Web ve Mobil ana ekranda da canlı bildirim dinleyiciyi aktif tutalım
+       // [YENİ] Canlı bildirim dinleyiciyi aktif tutalım
        BildirimServisi.bildirimDinle(widget.kullaniciTel!, context: context);
     }
   }

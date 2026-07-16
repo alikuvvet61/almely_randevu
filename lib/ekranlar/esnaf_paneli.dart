@@ -91,22 +91,21 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
   @override
   void initState() {
     super.initState();
+    // [YENİ] Esnaf için merkezi giriş kontrollerini başlat
+    // Hem Mobil hem Web için ortak merkezi mantık çalışacak.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        BildirimServisi.girisKontrolleri(
+          widget.soforTel ?? widget.esnaf.telefon, 
+          context, 
+          esnafMi: true, 
+          esnafId: widget.esnaf.id
+        );
+      }
+    });
+
     // [YENİ] Web ve Mobil'de canlı bildirim dinleyiciyi mühürleyelim
     BildirimServisi.bildirimDinle(widget.soforTel ?? widget.esnaf.telefon, context: context);
-
-    // [OPTİMİZASYON] Gereksiz çift çağrı kaldırıldı, gecikme 500ms'ye çekildi.
-    OneSignalServisi.kullaniciyiKaydet(widget.soforTel ?? widget.esnaf.telefon, role: 'esnaf').then((_) {
-      Future.delayed(const Duration(milliseconds: 500), () {
-        if (mounted) {
-          BildirimServisi.syncAkilliTakipBildirimleri(
-            widget.soforTel ?? widget.esnaf.telefon, 
-            context, 
-            esnafMi: true, 
-            esnafId: widget.esnaf.id
-          );
-        }
-      });
-    });
 
     // TEŞHİS: Bildirim servisini bağla
     BildirimServisi.tokenKaydet(widget.esnaf.telefon, role: 'esnaf', context: context);
@@ -1312,15 +1311,22 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
           borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
         ),
         child: StreamBuilder<List<RandevuModeli>>(
-          // [CANLI VERI]: Alt pencere artık doğrudan Firestore'u dinliyor, bu sayede 'Kayıt Kapatınca' anında yenilenir.
+          // [İYİLEŞTİRME]: Sadece tam isim eşleşmesi yerine, ana ekrandaki gibi esnek filtreleme yapabilmek için 
+          // tüm randevuları çekip Dart tarafında süzüyoruz. Bu, isim farkları yüzünden kayıtların kaybolmasını önler.
           stream: FirebaseFirestore.instance
               .collection('randevular')
               .where('esnafId', isEqualTo: widget.esnaf.id)
-              .where('randevu_kanali', isEqualTo: ad)
               .snapshots()
               .map((snapshot) => snapshot.docs.map((doc) => RandevuModeli.fromMap(doc.data(), doc.id)).toList()),
           builder: (context, streamSnapshot) {
-            final guncelRandevular = streamSnapshot.data ?? ilkRandevular;
+            // [ESNEK FİLTRELEME]: Plaka veya araç adı içeren tüm randevuları al
+            final hamRandevular = streamSnapshot.data ?? ilkRandevular;
+            final guncelRandevular = hamRandevular.where((r) {
+               String rKanal = (r.randevuKanali ?? "").trim().toLowerCase();
+               String tAd = ad.toLowerCase();
+               String tPlaka = (plaka ?? "").toLowerCase();
+               return rKanal == tAd || rKanal == tPlaka || (tPlaka.isNotEmpty && rKanal.contains(tPlaka));
+            }).toList();
 
             return Column(
               children: [
@@ -1360,13 +1366,13 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                           final rBas = DateTime(r.tarih.year, r.tarih.month, r.tarih.day, int.parse(r.saat.split(':')[0]), int.parse(r.saat.split(':')[1]));
                           final rBit = rBas.add(Duration(minutes: r.sure));
                           
+                          // [GÜNCELLEME]: 'Onaylandı' olan randevular teslim alınana kadar (Tamamlandı olana kadar) 
+                          // GEÇMİŞ değil AKTİF sayılmalı ve ana listede durmalı.
                           bool teslimAlindiMi = r.durum == 'Tamamlandı' || r.durum == 'İptal Edildi' || r.durum == 'Reddedildi';
                           bool zamanGectiMi = rBit.isBefore(simdi);
                           
-                          bool gecmisMi = teslimAlindiMi || (zamanGectiMi && teslimAlindiMi); 
-                          if (r.durum == 'Onaylandı' && zamanGectiMi) {
-                            gecmisMi = false; 
-                          }
+                          // Sadece teslim alınmış randevular veya zamanı geçmiş ve onaylanmamış/iptal randevular geçmiş sayılır
+                          bool gecmisMi = teslimAlindiMi || (zamanGectiMi && r.durum != 'Onaylandı');
 
                           if (_gecmisKiraHareketleriGosterilsin) {
                             return true;
@@ -1688,8 +1694,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Vazgeç")),
           ElevatedButton(
             onPressed: () async {
-              Navigator.pop(ctx); // Onay kutusunu kapat
-              Navigator.pop(context); // Detay penceresini kapat
+              Navigator.pop(ctx); // Sadece onay kutusunu kapat
               await _kiraSonlandir(r);
             },
             style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
@@ -3518,25 +3523,22 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
 
       // EĞER: İade saati geçtiyse VE henüz teslim alınmadıysa (durum hala Onaylandı ise)
       if (simdi.isAfter(rBit)) {
-        try {
-          // Bu aracın hemen arkasından gelen başka bir randevu var mı?
-          final sonrakiRandevu = hepsi.firstWhere((sr) {
-            // [İYİLEŞTİRME] Sadece 'Onaylandı' değil, 'Onay bekliyor' olanlar da çakışma uyarısı tetiklemeli
-            if (sr.id == r.id || (sr.durum != 'Onaylandı' && sr.durum != 'Onay bekliyor')) return false;
-            if (sr.randevuKanali != r.randevuKanali) return false;
-            
-            final srBas = DateTime(sr.tarih.year, sr.tarih.month, sr.tarih.day,
-                int.parse(sr.saat.split(':')[0]), int.parse(sr.saat.split(':')[1]));
-            
-            // Eğer sonraki randevu, mevcut randevunun bitişinden hemen sonra başlıyorsa (çakışma riski)
-            return srBas.isBefore(rTamBit.add(const Duration(minutes: 60))) && srBas.isAfter(rBit.subtract(const Duration(minutes: 5)));
-          });
+          // [İYİLEŞTİRME]: Artık arkasında müşteri beklese de beklemese de alarm veriyoruz!
+          // Sadece eğer arkada müşteri varsa o randevuyu karta gönderiyoruz.
+          RandevuModeli? sonrakiRandevu;
+          try {
+            sonrakiRandevu = hepsi.firstWhere((sr) {
+              if (sr.id == r.id || (sr.durum != 'Onaylandı' && sr.durum != 'Onay bekliyor')) return false;
+              if (sr.randevuKanali != r.randevuKanali) return false;
+              
+              final srBas = DateTime(sr.tarih.year, sr.tarih.month, sr.tarih.day,
+                  int.parse(sr.saat.split(':')[0]), int.parse(sr.saat.split(':')[1]));
+              
+              return srBas.isBefore(rTamBit.add(const Duration(minutes: 60))) && srBas.isAfter(rBit.subtract(const Duration(minutes: 5)));
+            });
+          } catch (_) {}
 
           alarmlar.add(_kritikAlarmKarti(r, sonrakiRandevu, hepsi));
-        } catch (_) {
-          // Arkasından gelen randevu yoksa alarm vermeye gerek olmayabilir veya sadece bilgi amaçlı verilebilir.
-          // Kullanıcı spesifik olarak "arkadan başka randevu varsa" dediği için catch'te bir şey yapmıyoruz.
-        }
       }
     }
 
@@ -3544,7 +3546,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
     return Column(children: alarmlar);
   }
 
-  Widget _kritikAlarmKarti(RandevuModeli gecikenR, RandevuModeli tehlikedekiR, List<RandevuModeli> hepsi) {
+  Widget _kritikAlarmKarti(RandevuModeli gecikenR, RandevuModeli? tehlikedekiR, List<RandevuModeli> hepsi) {
     final DateTime rBas = DateTime(gecikenR.tarih.year, gecikenR.tarih.month, gecikenR.tarih.day,
         int.parse(gecikenR.saat.split(':')[0]), int.parse(gecikenR.saat.split(':')[1]));
     final DateTime rBit = rBas.add(Duration(minutes: gecikenR.sure));
@@ -3610,32 +3612,46 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                     ),
                   ],
                 ),
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 4),
-                  child: Divider(height: 10),
-                ),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.person_outline, size: 16, color: Colors.indigo),
-                        const SizedBox(width: 8),
-                        Text("Sıradaki: ${tehlikedekiR.kullaniciAd} (${tehlikedekiR.saat})", style: TextStyle(color: Colors.indigo.shade900, fontSize: 13, fontWeight: FontWeight.bold)),
-                      ],
-                    ),
-                    TextButton(
-                      onPressed: () => _kiraDetayiniGoster(tehlikedekiR),
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        foregroundColor: Colors.indigo,
+                if (tehlikedekiR != null) ...[
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 4),
+                    child: Divider(height: 10),
+                  ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.person_outline, size: 16, color: Colors.indigo),
+                          const SizedBox(width: 8),
+                          Text("Sıradaki: ${tehlikedekiR.kullaniciAd} (${tehlikedekiR.saat})", style: TextStyle(color: Colors.indigo.shade900, fontSize: 13, fontWeight: FontWeight.bold)),
+                        ],
                       ),
-                      child: const Text("İncele", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                    ),
-                  ],
-                ),
+                      TextButton(
+                        onPressed: () => _kiraDetayiniGoster(tehlikedekiR),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          foregroundColor: Colors.indigo,
+                        ),
+                        child: const Text("İncele", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                      ),
+                    ],
+                  ),
+                ] else ...[
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 4),
+                    child: Divider(height: 10),
+                  ),
+                  const Row(
+                    children: [
+                      Icon(Icons.person_off_outlined, size: 16, color: Colors.grey),
+                      SizedBox(width: 8),
+                      Text("Sıradaki: Bekleyen Yok", style: TextStyle(color: Colors.grey, fontSize: 13, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
@@ -3656,21 +3672,23 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                   ),
                 ),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () => _muadilAracaKaydir(tehlikedekiR, hepsi),
-                  icon: const Icon(Icons.alt_route_rounded, size: 18),
-                  label: const Text("MUADİLE KAYDIR", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue.shade700,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    elevation: 2,
+              if (tehlikedekiR != null) ...[
+                const SizedBox(width: 10),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () => _muadilAracaKaydir(tehlikedekiR, hepsi),
+                    icon: const Icon(Icons.alt_route_rounded, size: 18),
+                    label: const Text("MUADİLE KAYDIR", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue.shade700,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      elevation: 2,
+                    ),
                   ),
                 ),
-              ),
+              ],
             ],
           ),
           const SizedBox(height: 10),

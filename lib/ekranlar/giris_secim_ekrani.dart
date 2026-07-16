@@ -40,12 +40,20 @@ class _GirisSecimSayfasiState extends State<GirisSecimSayfasi> {
   }
 
   Future<void> _bildirimIzniIste() async {
+    if (kIsWeb) return; // Web'de izin isteme (Hata veriyor)
+    
     if (await Permission.notification.isDenied) {
       await Permission.notification.request();
     }
-    if (await Permission.scheduleExactAlarm.isDenied) {
-      await Permission.scheduleExactAlarm.request();
+    // scheduleExactAlarm web'de unimplemented hatası veriyor
+    try {
+      if (await Permission.scheduleExactAlarm.isDenied) {
+        await Permission.scheduleExactAlarm.request();
+      }
+    } catch (e) {
+      debugPrint("İzin Hatası (Web olabilir): $e");
     }
+
     // Paralel başlatma
     await BildirimServisi.initialize();
     if (mounted) await OneSignalServisi.initialize();
