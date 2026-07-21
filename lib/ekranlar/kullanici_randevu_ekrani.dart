@@ -7,6 +7,8 @@ import '../servisler/onesignal_servisi.dart';
 import '../servisler/firestore_servisi.dart';
 import '../modeller/randevu_modeli.dart';
 import '../modeller/esnaf_modeli.dart';
+import '../widgets/medya_goruntuleyici.dart';
+import 'kaza_bildirim_ekrani.dart';
 
 class KullaniciRandevuEkrani extends StatefulWidget {
   final String telefon;
@@ -247,12 +249,37 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
                 // BİTİŞ ZAMANI VE UZATMA BİLGİSİ (İade zamanı gösterir)
                 _bitisVeUzatmaBilgisi(r),
                 
+                // [YENİ] GÖRSEL KANIT GALERİSİ
+                if (r.teslimatGorselleri.isNotEmpty || r.iadeGorselleri.isNotEmpty) ...[
+                  const Divider(height: 32),
+                  _kanitGalerisi(context, r),
+                ],
+                
                 const SizedBox(height: 16),
                 if (!gecmisMi && r.durum != 'İptal Edildi' && r.durum != 'Reddedildi')
                   Column(
                     children: [
                       _akilliTakipButonu(context, r),
                       const SizedBox(height: 8),
+                      // [YENİ] ACİL KAZA / HASAR BİLDİRİM BUTONU (Sadece Onaylı Araç Kiralama İçin)
+                      if (r.durum == 'Onaylandı' && r.randevuKanali != null && r.randevuKanali!.contains(RegExp(r'[0-9]{2}\s[A-Z]+\s[0-9]+')))
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (c) => KazaBildirimEkrani(randevu: r))),
+                              icon: const Icon(Icons.warning_amber_rounded, color: Colors.white),
+                              label: const Text("🚨 ACİL: KAZA / HASAR BİLDİR"),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.red.shade800,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              ),
+                            ),
+                          ),
+                        ),
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton.icon(
@@ -572,47 +599,72 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
   }
 
   void _randevuIptalDialog(BuildContext context, RandevuModeli r) {
-     showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
-      builder: (c) => Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.of(c).viewInsets.bottom, left: 20, right: 20, top: 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+    // ... mevcut kod ...
+  }
+
+  Widget _kanitGalerisi(BuildContext context, RandevuModeli r) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Row(
           children: [
-            Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
-            const SizedBox(height: 20),
-            const Text("Randevu İptal Nedeni", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const Divider(height: 30),
-            Flexible(
-              child: StreamBuilder<List<String>>(
-                stream: _firestoreServisi.iptalNedenleriniGetir('kullanici'),
-                builder: (context, snapshot) {
-                  if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-                  final nedenler = snapshot.data!;
-                  return ListView.separated(
-                    shrinkWrap: true,
-                    itemCount: nedenler.length,
-                    separatorBuilder: (context, index) => const Divider(height: 1),
-                    itemBuilder: (context, index) {
-                      return ListTile(
-                        title: Text(nedenler[index]),
-                        leading: const Icon(Icons.radio_button_off, color: Colors.blue),
-                        onTap: () async {
-                          await _firestoreServisi.randevuIptalEt(r.id, nedenler[index]);
-                          if (context.mounted) Navigator.pop(c);
-                        },
-                      );
-                    },
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: 10),
-            TextButton(onPressed: () => Navigator.pop(c), child: const Text("Vazgeç")),
+            Icon(Icons.photo_library_outlined, size: 18, color: Colors.blueGrey),
+            SizedBox(width: 10),
+            Text("Teslimat ve İade Kanıtları", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
           ],
         ),
+        const SizedBox(height: 12),
+        if (r.teslimatGorselleri.isNotEmpty) ...[
+          const Text("🚗 Teslimat Anı", style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          _medyaYatayListe(r.teslimatGorselleri),
+          const SizedBox(height: 15),
+        ],
+        if (r.iadeGorselleri.isNotEmpty) ...[
+          const Text("✅ İade Anı", style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          _medyaYatayListe(r.iadeGorselleri),
+        ],
+      ],
+    );
+  }
+
+  Widget _medyaYatayListe(List<String> urls) {
+    return SizedBox(
+      height: 100,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        itemCount: urls.length,
+        itemBuilder: (c, i) {
+          final url = urls[i];
+          bool isVideo = url.contains('.mp4') || url.contains('.mov') || url.contains('video');
+          return GestureDetector(
+            onTap: () => _kanitGoster(urls, i),
+            child: Container(
+              width: 100,
+              margin: const EdgeInsets.only(right: 10),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.shade200),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: isVideo 
+                  ? Container(color: Colors.black87, child: const Center(child: Icon(Icons.videocam, color: Colors.white)))
+                  : Image.network(url, fit: BoxFit.cover),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  void _kanitGoster(List<String> tumu, int index) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (c) => MedyaGoruntuleyici(gorseller: tumu, baslangicIndex: index),
       ),
     );
   }

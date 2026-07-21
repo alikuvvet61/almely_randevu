@@ -445,4 +445,18 @@ class OneSignalServisi {
       return false;
     }
   }
+
+  static Future<bool> ozelBildirimGonder({
+    required String baslik,
+    required String icerik,
+    required String telefon,
+    Map<String, dynamic>? ekVeri,
+  }) async {
+    return await bildirimGonderAnlik(
+      baslik: baslik,
+      icerik: icerik,
+      telefon: telefon,
+      ekVeri: ekVeri,
+    );
+  }
 }

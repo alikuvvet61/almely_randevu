@@ -147,6 +147,25 @@ class FirestoreServisi {
     });
   }
 
+  // --- RANDEVU GÖRSEL YÖNETİMİ ---
+  /// Randevuya yeni bir fotoğraf veya video URL'si ekler
+  Future<void> randevuGorselEkle(String randevuId, String url, bool isTeslimat) async {
+    final String alan = isTeslimat ? 'teslimatGorselleri' : 'iadeGorselleri';
+    await _randevularRef.doc(randevuId).update({
+      alan: FieldValue.arrayUnion([url]),
+      'guncellemeTarihi': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Randevudan bir görseli siler
+  Future<void> randevuGorselSil(String randevuId, String url, bool isTeslimat) async {
+    final String alan = isTeslimat ? 'teslimatGorselleri' : 'iadeGorselleri';
+    await _randevularRef.doc(randevuId).update({
+      alan: FieldValue.arrayRemove([url]),
+      'guncellemeTarihi': FieldValue.serverTimestamp(),
+    });
+  }
+
   // --- KULLANICI İŞLEMLERİ ---
   Stream<List<String>> favorileriGetir(String tel) {
     return _kullanicilarRef.doc(tel).snapshots().map((doc) {
@@ -506,6 +525,10 @@ class FirestoreServisi {
                    r.tarih.isBefore(bit.add(const Duration(seconds: 1)));
           }).toList();
         });
+  }
+
+  Stream<RandevuModeli> randevuyuGetir(String id) {
+    return _randevularRef.doc(id).snapshots().map((doc) => RandevuModeli.fromFirestore(doc));
   }
 
   Stream<List<RandevuModeli>> esnafTumRandevulariGetir(String esnafId) {
@@ -924,5 +947,9 @@ else if (yeniDurum == 'Reddedildi' || yeniDurum == 'İptal Edildi' || yeniDurum 
 
   Future<void> randevuyuMuadilAracaKaydir(String randevuId, String yeniPlaka) async {
     await _randevularRef.doc(randevuId).update({'randevu_kanali': yeniPlaka, 'guncellemeTarihi': FieldValue.serverTimestamp()});
+  }
+
+  Future<void> randevuGuncelle(String randevuId, Map<String, dynamic> veri) async {
+    await _randevularRef.doc(randevuId).update(veri);
   }
 }

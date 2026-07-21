@@ -10,20 +10,21 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import 'giris_secim_ekrani.dart';
+import 'package:almely_randevu/ekranlar/giris_secim_ekrani.dart';
 import 'package:almely_randevu/modeller/esnaf_modeli.dart';
 import 'package:almely_randevu/modeller/randevu_modeli.dart';
 import 'package:almely_randevu/servisler/bildirim_servisi.dart';
 import 'package:almely_randevu/servisler/onesignal_servisi.dart';
 import 'package:almely_randevu/servisler/firestore_servisi.dart';
 import 'package:almely_randevu/servisler/konum_servisi.dart';
+import 'package:almely_randevu/widgets/medya_goruntuleyici.dart';
 
-import 'durak_takip_ekrani.dart';
-import 'esnaf_ajanda_ekrani.dart';
-import 'esnaf_parametre_ekrani.dart';
-import 'esnaf_randevu_onay_ekrani.dart';
-import 'randevu_ekrani.dart';
-import 'taksi_cizelge_ekrani.dart';
+import 'package:almely_randevu/ekranlar/durak_takip_ekrani.dart';
+import 'package:almely_randevu/ekranlar/esnaf_ajanda_ekrani.dart';
+import 'package:almely_randevu/ekranlar/esnaf_parametre_ekrani.dart';
+import 'package:almely_randevu/ekranlar/esnaf_randevu_onay_ekrani.dart';
+import 'package:almely_randevu/ekranlar/randevu_ekrani.dart';
+import 'package:almely_randevu/ekranlar/taksi_cizelge_ekrani.dart';
 
 class EsnafPaneli extends StatefulWidget {
   final EsnafModeli esnaf;
@@ -1278,12 +1279,15 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
   Widget _durumEtiketi(String durum) {
     Color renk = Colors.orange;
     if (durum == 'Onaylandı') renk = Colors.green;
-    if (durum == 'Reddedildi' || durum == 'İptal Edildi') renk = Colors.red;
+    if (durum == 'Reddedildi' || durum == 'İptal Edildi' || durum == 'KAZA BİLDİRİLDİ') renk = Colors.red;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(color: renk.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
-      child: Text(durum, style: TextStyle(color: renk, fontSize: 11, fontWeight: FontWeight.bold)),
+      child: Text(
+        durum == 'KAZA BİLDİRİLDİ' ? '🚨 $durum' : durum, 
+        style: TextStyle(color: renk, fontSize: 11, fontWeight: FontWeight.bold)
+      ),
     );
   }
 
@@ -1328,6 +1332,13 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                return rKanal == tAd || rKanal == tPlaka || (tPlaka.isNotEmpty && rKanal.contains(tPlaka));
             }).toList();
 
+            // [YENİ] Randevuları tarih ve saate göre azalan (en yeni en üstte) şekilde sırala
+            guncelRandevular.sort((a, b) {
+              final DateTime aZaman = DateTime(a.tarih.year, a.tarih.month, a.tarih.day, int.parse(a.saat.split(':')[0]), int.parse(a.saat.split(':')[1]));
+              final DateTime bZaman = DateTime(b.tarih.year, b.tarih.month, b.tarih.day, int.parse(b.saat.split(':')[0]), int.parse(b.saat.split(':')[1]));
+              return bZaman.compareTo(aZaman);
+            });
+
             return Column(
               children: [
                 const SizedBox(height: 12),
@@ -1370,9 +1381,13 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                           // GEÇMİŞ değil AKTİF sayılmalı ve ana listede durmalı.
                           bool teslimAlindiMi = r.durum == 'Tamamlandı' || r.durum == 'İptal Edildi' || r.durum == 'Reddedildi';
                           bool zamanGectiMi = rBit.isBefore(simdi);
+
+                          // [YENİ] Kaza bildirimi yapılmış araçlar asla otomatik geçmişe düşmez, esnafın müdahalesini bekler
+                          bool isKazaAktif = r.durum == 'KAZA BİLDİRİLDİ';
                           
                           // Sadece teslim alınmış randevular veya zamanı geçmiş ve onaylanmamış/iptal randevular geçmiş sayılır
-                          bool gecmisMi = teslimAlindiMi || (zamanGectiMi && r.durum != 'Onaylandı');
+                          // ANCAK kaza süreci aktifse geçmiş sayılmaz, aktif listede kalır.
+                          bool gecmisMi = (teslimAlindiMi || (zamanGectiMi && r.durum != 'Onaylandı')) && !isKazaAktif;
 
                           if (_gecmisKiraHareketleriGosterilsin) {
                             return true;
@@ -1415,18 +1430,51 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                                       final DateTime rBit = rBas.add(Duration(minutes: r.sure));
                                       final bool gecikti = r.durum == 'Onaylandı' && DateTime.now().isAfter(rBit);
                                       
+                                      // [KRİTİK GÜNCELLEME] Kaza kontrolünü daha hassas yapıyoruz
+                                      final bool isKazaAktif = r.durum == 'KAZA BİLDİRİLDİ';
+                                      final bool hasKazaData = r.kazaVerisi != null && r.kazaVerisi!.isNotEmpty;
+                                      final bool isKaza = isKazaAktif || hasKazaData;
+                                      
                                       return Container(
                                         margin: const EdgeInsets.only(bottom: 16),
                                         padding: const EdgeInsets.all(16),
                                         decoration: BoxDecoration(
-                                          color: gecikti ? Colors.red.withValues(alpha: 0.05) : Colors.white,
+                                          color: isKaza ? Colors.red.withValues(alpha: 0.08) : (gecikti ? Colors.red.withValues(alpha: 0.05) : Colors.white),
                                           borderRadius: BorderRadius.circular(20),
-                                          border: Border.all(color: gecikti ? Colors.red.withValues(alpha: 0.3) : Colors.grey.shade100),
-                                          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 10)],
+                                          border: Border.all(
+                                            color: isKaza ? Colors.red.shade700 : (gecikti ? Colors.red.withValues(alpha: 0.3) : Colors.grey.shade100),
+                                            width: isKaza ? 3.0 : 1,
+                                          ),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: (isKaza ? Colors.red : Colors.black).withValues(alpha: 0.08), 
+                                              blurRadius: 15,
+                                              spreadRadius: isKaza ? 2 : 0
+                                            )
+                                          ],
                                         ),
                                         child: Column(
                                           children: [
-                                            if (gecikti)
+                                            if (isKaza)
+                                              Container(
+                                                margin: const EdgeInsets.only(bottom: 12),
+                                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.red.shade800,
+                                                  borderRadius: BorderRadius.circular(10),
+                                                  boxShadow: [BoxShadow(color: Colors.red.withValues(alpha: 0.3), blurRadius: 4)]
+                                                ),
+                                                child: const Row(
+                                                  mainAxisSize: MainAxisSize.min,
+                                                  children: [
+                                                    Icon(Icons.warning_amber_rounded, color: Colors.white, size: 20),
+                                                    SizedBox(width: 10),
+                                                    Text("🚨 KAZA BİLDİRİMİ MEVCUT", 
+                                                      style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
+                                                  ],
+                                                ),
+                                              )
+                                            else if (gecikti)
                                               Container(
                                                 margin: const EdgeInsets.only(bottom: 12),
                                                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
@@ -1447,8 +1495,8 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                                               children: [
                                                 CircleAvatar(
                                                   radius: 20,
-                                                  backgroundColor: (r.durum == 'Onaylandı' ? Colors.green : (r.durum == 'Reddedildi' || r.durum == 'İptal Edildi' ? Colors.red : Colors.orange)).withValues(alpha: 0.1),
-                                                  child: Icon(Icons.person, size: 18, color: r.durum == 'Onaylandı' ? Colors.green : (r.durum == 'Reddedildi' || r.durum == 'İptal Edildi' ? Colors.red : Colors.orange)),
+                                                  backgroundColor: (isKaza ? Colors.red : (r.durum == 'Onaylandı' ? Colors.green : (r.durum == 'Reddedildi' || r.durum == 'İptal Edildi' ? Colors.red : Colors.orange))).withValues(alpha: 0.1),
+                                                  child: Icon(Icons.person, size: 18, color: (isKaza || r.durum == 'Reddedildi' || r.durum == 'İptal Edildi') ? Colors.red : (r.durum == 'Onaylandı' ? Colors.green : Colors.orange)),
                                                 ),
                                                 const SizedBox(width: 12),
                                                 Expanded(
@@ -1460,7 +1508,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                                                     ],
                                                   ),
                                                 ),
-                                                _durumEtiketi(r.durum),
+                                                _durumEtiketi(isKaza ? 'KAZA BİLDİRİLDİ' : r.durum),
                                               ],
                                             ),
                                             const Divider(height: 24),
@@ -1516,25 +1564,43 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
     final simdi = DateTime.now();
     final bool suAnAralikta = !simdi.isBefore(rBas) && simdi.isBefore(iadeZamani);
     final bool onayli = r.durum == 'Onaylandı';
+    final bool bitti = r.durum == 'Tamamlandı' || r.durum == 'Teslim Alındı';
+    final bool hasKazaData = r.kazaVerisi != null && r.kazaVerisi!.isNotEmpty;
+    final bool isKazaAktif = r.durum == 'KAZA BİLDİRİLDİ';
 
-    String baslikMetni = "Araç Rezervasyonu";
-    IconData baslikIkon = Icons.calendar_today;
-    Color temaRengi = Colors.orange;
-    String rozetMetni = "ARAÇ REZERVE EDİLMİŞTİR";
+    String baslikMetni = isKazaAktif ? "KAZA BİLDİRİMİ" : "Araç Rezervasyonu";
+    IconData baslikIkon = isKazaAktif ? Icons.warning_amber_rounded : Icons.calendar_today;
+    Color temaRengi = isKazaAktif ? Colors.red : Colors.orange;
+    String rozetMetni = "";
 
-    if (onayli && suAnAralikta) {
-      baslikMetni = "Aktif Kiralama";
-      baslikIkon = Icons.key;
+    if (isKazaAktif) {
+      rozetMetni = "🚨 KAZA BİLDİRİLDİ";
       temaRengi = Colors.red;
-      rozetMetni = "ARAÇ ŞU AN KİRADADIR";
-    } else if (r.durum != 'Onaylandı') {
+    } else if (onayli) {
+      if (suAnAralikta) {
+        baslikMetni = "Aktif Kiralama";
+        baslikIkon = Icons.key;
+        temaRengi = Colors.red;
+        rozetMetni = "ARAÇ ŞU AN KİRADADIR";
+      } else {
+        rozetMetni = "ARAÇ REZERVE EDİLMİŞTİR";
+        temaRengi = Colors.orange;
+      }
+    } else if (bitti) {
+      baslikMetni = "Kiralama Arşivi";
+      baslikIkon = Icons.history;
+      temaRengi = Colors.blueGrey;
+      rozetMetni = "KİRALAMA TAMAMLANDI";
+    } else {
       rozetMetni = "REZERVASYON (ONAY BEKLİYOR)";
+      temaRengi = Colors.orange;
     }
 
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        scrollable: true,
         title: Row(
           children: [
             Icon(baslikIkon, color: temaRengi),
@@ -1606,6 +1672,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                 ),
               ),
             ],
+            if (hasKazaData) _kazaRaporuDetayi(r),
             const Divider(),
             Center(
               child: Container(
@@ -1640,17 +1707,18 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                 ],
               ),
               const SizedBox(height: 10),
-              if (onayli && suAnAralikta)
+              if ((onayli && suAnAralikta) || isKazaAktif)
                 SizedBox(
                   width: double.infinity,
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 10),
                     child: ElevatedButton.icon(
                       onPressed: () => _kiraBitirOnay(r),
-                      icon: const Icon(Icons.verified_user_rounded, color: Colors.white),
-                      label: const Text("ARACI TESLİM AL", style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.2)),
+                      icon: const Icon(Icons.build_circle_outlined, color: Colors.white),
+                      label: Text(isKazaAktif ? "TAMİR SÜRECİ İÇİN TESLİM AL" : "ARACI TESLİM AL",
+                        style: const TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.2, fontSize: 12)),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green,
+                        backgroundColor: isKazaAktif ? Colors.red.shade700 : Colors.green,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 15),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -1694,7 +1762,8 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Vazgeç")),
           ElevatedButton(
             onPressed: () async {
-              Navigator.pop(ctx); // Sadece onay kutusunu kapat
+              Navigator.pop(ctx); // Onay kutusunu kapat
+              Navigator.pop(context); // Detay penceresini kapat
               await _kiraSonlandir(r);
             },
             style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
@@ -1788,6 +1857,88 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
           Expanded(child: Text(icerik, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14))),
         ],
       ),
+    );
+  }
+
+  Widget _kazaRaporuDetayi(RandevuModeli r) {
+    final kaza = r.kazaVerisi;
+    if (kaza == null) return const SizedBox.shrink();
+
+    final List<String> gorseller = List<String>.from(kaza['gorseller'] ?? []);
+    final String? konumLink = kaza['konumLink'];
+    final String? zamanRaw = kaza['konumZamani'];
+    final DateTime? zaman = zamanRaw != null ? DateTime.tryParse(zamanRaw) : null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Divider(height: 30),
+        Row(
+          children: [
+            const Icon(Icons.warning_amber_rounded, color: Colors.red, size: 20),
+            const SizedBox(width: 8),
+            Text("🚨 KAZA RAPORU DETAYI", 
+              style: TextStyle(fontWeight: FontWeight.w900, color: Colors.red.shade900, fontSize: 14, letterSpacing: 0.5)),
+          ],
+        ),
+        const SizedBox(height: 10),
+        if (zaman != null)
+          _detaySatiri(Icons.access_time, "Bildirim Zamanı", DateFormat('dd.MM.yyyy HH:mm').format(zaman)),
+        if (konumLink != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () async {
+                  final url = Uri.parse(konumLink);
+                  if (await canLaunchUrl(url)) {
+                    await launchUrl(url, mode: LaunchMode.externalApplication);
+                  }
+                },
+                icon: const Icon(Icons.map, size: 18),
+                label: const Text("KAZA KONUMUNU HARİTADA GÖR", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red.shade700, 
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+            ),
+          ),
+        if (gorseller.isNotEmpty) ...[
+          const SizedBox(height: 5),
+          const Text("Hasar Fotoğrafları:", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: gorseller.asMap().entries.map((entry) {
+                int index = entry.key;
+                String url = entry.value;
+                return GestureDetector(
+                  onTap: () {
+                    Navigator.push(context, MaterialPageRoute(
+                      builder: (c) => MedyaGoruntuleyici(gorseller: gorseller, baslangicIndex: index)
+                    ));
+                  },
+                  child: Container(
+                    width: 100,
+                    height: 100,
+                    margin: const EdgeInsets.only(right: 10),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey.shade300),
+                      image: DecorationImage(image: NetworkImage(url), fit: BoxFit.cover),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        ]
+      ],
     );
   }
 
@@ -2973,23 +3124,18 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
       return DurakTakipEkrani(esnaf: _guncelEsnaf, soforTel: widget.soforTel);
     }
 
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, result) {
-        if (didPop) return;
-      },
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text(_adController.text, style: const TextStyle(fontWeight: FontWeight.bold)),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.logout, color: Colors.redAccent),
-              onPressed: () => _cikisYap(context),
-              tooltip: "Çıkış Yap",
-            ),
-            IconButton(icon: const Icon(Icons.refresh), onPressed: _verileriTazele),
-          ],
-        ),
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(_adController.text, style: const TextStyle(fontWeight: FontWeight.bold)),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout, color: Colors.redAccent),
+            onPressed: () => _cikisYap(context),
+            tooltip: "Çıkış Yap",
+          ),
+          IconButton(icon: const Icon(Icons.refresh), onPressed: _verileriTazele),
+        ],
+      ),
         body: StreamBuilder<List<RandevuModeli>>(
           stream: FirebaseFirestore.instance
               .collection('randevular')
@@ -3145,33 +3291,39 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                           String durumEtiketi = "";
                           final simdi = DateTime.now();
 
-                              try {
-                                aktifRandevu = buAracinRandevulari.firstWhere((r) {
-                                  // Durum kontrolü: Sadece Onaylı veya Bekleyenler (Etiket için)
-                                  bool durumGecerli = r.durum == 'Onaylandı' || r.durum == 'Onay bekliyor' || r.durum == 'Beklemede';
-                                  if (!durumGecerli) return false;
+                          try {
+                            aktifRandevu = buAracinRandevulari.firstWhere((r) {
+                              // [YENİ] Kaza kontrolünü en öncelikli yapalım
+                              if (r.durum == 'KAZA BİLDİRİLDİ') {
+                                durumEtiketi = "KAZA BİLDİRİLDİ";
+                                return true;
+                              }
 
-                                  final rBas = DateTime(r.tarih.year, r.tarih.month, r.tarih.day,
-                                    int.parse(r.saat.split(':')[0]), int.parse(r.saat.split(':')[1]));
-                                  final rBit = rBas.add(Duration(minutes: r.sure));
-                                  final rTamBit = rBit.add(Duration(minutes: widget.esnaf.bakimTemizlikSuresi));
+                              // Durum kontrolü: Sadece Onaylı veya Bekleyenler (Etiket için)
+                              bool durumGecerli = r.durum == 'Onaylandı' || r.durum == 'Onay bekliyor' || r.durum == 'Beklemede';
+                              if (!durumGecerli) return false;
 
-                                  if (simdi.isAfter(rTamBit)) return false;
+                              final rBas = DateTime(r.tarih.year, r.tarih.month, r.tarih.day,
+                                int.parse(r.saat.split(':')[0]), int.parse(r.saat.split(':')[1]));
+                              final rBit = rBas.add(Duration(minutes: r.sure));
+                              final rTamBit = rBit.add(Duration(minutes: widget.esnaf.bakimTemizlikSuresi));
 
-                                  bool suAnAralikta = !simdi.isBefore(rBas) && simdi.isBefore(rBit);
-                                  bool suAnBakimda = !simdi.isBefore(rBit) && simdi.isBefore(rTamBit);
-                                  bool gelecekte = rBas.isAfter(simdi);
+                              if (simdi.isAfter(rTamBit)) return false;
 
-                                  if (r.durum == 'Onaylandı') {
-                                    if (suAnAralikta) { durumEtiketi = "ŞU AN KİRADA"; return true; }
-                                    else if (suAnBakimda) { durumEtiketi = "BAKIMDA"; return true; }
-                                    else if (gelecekte) { durumEtiketi = "REZERVE"; return true; }
-                                  } else {
-                                    if (gelecekte || suAnAralikta) { durumEtiketi = "REZERVE"; return true; }
-                                  }
-                                  return false;
-                                });
-                              } catch (_) {}
+                              bool suAnAralikta = !simdi.isBefore(rBas) && simdi.isBefore(rBit);
+                              bool suAnBakimda = !simdi.isBefore(rBit) && simdi.isBefore(rTamBit);
+                              bool gelecekte = rBas.isAfter(simdi);
+
+                              if (r.durum == 'Onaylandı') {
+                                if (suAnAralikta) { durumEtiketi = "ŞU AN KİRADA"; return true; }
+                                else if (suAnBakimda) { durumEtiketi = "BAKIMDA"; return true; }
+                                else if (gelecekte) { durumEtiketi = "REZERVE"; return true; }
+                              } else {
+                                if (gelecekte || suAnAralikta) { durumEtiketi = "REZERVE"; return true; }
+                              }
+                              return false;
+                            });
+                          } catch (_) {}
 
                           bool dolu = aktifRandevu != null;
 
@@ -3183,7 +3335,10 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                               decoration: BoxDecoration(
                                 color: isAktif ? Colors.white : Colors.grey.shade50,
                                 borderRadius: BorderRadius.circular(15),
-                                border: Border.all(color: dolu ? (durumEtiketi == "REZERVE" ? Colors.orange.shade200 : Colors.red.shade200) : Colors.grey.shade200),
+                                border: Border.all(
+                                  color: durumEtiketi == "KAZA BİLDİRİLDİ" ? Colors.red : (dolu ? (durumEtiketi == "REZERVE" ? Colors.orange.shade200 : Colors.red.shade200) : Colors.grey.shade200),
+                                  width: durumEtiketi == "KAZA BİLDİRİLDİ" ? 2 : 1,
+                                ),
                                 boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10)],
                               ),
                               child: Stack(
@@ -3202,12 +3357,13 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                                             Positioned.fill(
                                               child: Container(
                                                 decoration: BoxDecoration(
-                                                  color: (durumEtiketi == "REZERVE" ? Colors.orange : Colors.red).withValues(alpha: 0.7),
+                                                  color: durumEtiketi == "KAZA BİLDİRİLDİ" ? Colors.red : (durumEtiketi == "REZERVE" ? Colors.orange : Colors.red).withValues(alpha: 0.7),
                                                   borderRadius: BorderRadius.circular(10)
                                                 ),
                                                 child: Center(
                                                   child: Text(
-                                                    durumEtiketi,
+                                                    durumEtiketi == "KAZA BİLDİRİLDİ" ? "🚨 KAZA" : durumEtiketi,
+                                                    textAlign: TextAlign.center,
                                                     style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10)
                                                   )
                                                 ),
@@ -3503,7 +3659,6 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
             );
           },
         ),
-      ),
     );
   }
 

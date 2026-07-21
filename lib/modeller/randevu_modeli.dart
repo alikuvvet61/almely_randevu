@@ -25,6 +25,9 @@ class RandevuModeli {
   final int uzatmaSuresi; 
   final String? gecikmeBildirimId; 
   final String? uzatmaBildirimId; 
+  final List<String> teslimatGorselleri; // [YENİ] Teslimat anı fotoğraf/video linkleri
+  final List<String> iadeGorselleri;     // [YENİ] İade anı fotoğraf/video linkleri
+  final Map<String, dynamic>? kazaVerisi; // [YENİ] Hasar/Kaza anındaki tüm detaylar (konum, gorseller, notlar)
 
   RandevuModeli({
     required this.id,
@@ -51,6 +54,9 @@ class RandevuModeli {
     this.uzatmaSuresi = 0,
     this.gecikmeBildirimId,
     this.uzatmaBildirimId,
+    this.teslimatGorselleri = const [],
+    this.iadeGorselleri = const [],
+    this.kazaVerisi,
   });
 
   factory RandevuModeli.fromFirestore(DocumentSnapshot doc) {
@@ -91,6 +97,9 @@ class RandevuModeli {
       uzatmaSuresi: data['uzatmaSuresi'] ?? 0,
       gecikmeBildirimId: data['gecikmeBildirimId'],
       uzatmaBildirimId: data['uzatmaBildirimId'],
+      teslimatGorselleri: List<String>.from(data['teslimatGorselleri'] ?? []),
+      iadeGorselleri: List<String>.from(data['iadeGorselleri'] ?? []),
+      kazaVerisi: data['kazaVerisi'] != null ? Map<String, dynamic>.from(data['kazaVerisi']) : null,
     );
   }
 
@@ -123,6 +132,9 @@ class RandevuModeli {
       'uzatmaSuresi': uzatmaSuresi,
       'gecikmeBildirimId': gecikmeBildirimId,
       'uzatmaBildirimId': uzatmaBildirimId,
+      'teslimatGorselleri': teslimatGorselleri,
+      'iadeGorselleri': iadeGorselleri,
+      'kazaVerisi': kazaVerisi,
     };
   }
 
@@ -151,6 +163,9 @@ class RandevuModeli {
     int? uzatmaSuresi,
     String? gecikmeBildirimId,
     String? uzatmaBildirimId,
+    List<String>? teslimatGorselleri,
+    List<String>? iadeGorselleri,
+    Map<String, dynamic>? kazaVerisi,
   }) {
     return RandevuModeli(
       id: id ?? this.id,
@@ -177,6 +192,9 @@ class RandevuModeli {
       uzatmaSuresi: uzatmaSuresi ?? this.uzatmaSuresi,
       gecikmeBildirimId: gecikmeBildirimId ?? this.gecikmeBildirimId,
       uzatmaBildirimId: uzatmaBildirimId ?? this.uzatmaBildirimId,
+      teslimatGorselleri: teslimatGorselleri ?? this.teslimatGorselleri,
+      iadeGorselleri: iadeGorselleri ?? this.iadeGorselleri,
+      kazaVerisi: kazaVerisi ?? this.kazaVerisi,
     );
   }
 }

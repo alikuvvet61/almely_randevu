@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'dart:async';
+import '../modeller/esnaf_modeli.dart';
 import '../servisler/firestore_servisi.dart';
 import '../servisler/bildirim_servisi.dart';
 import '../servisler/onesignal_servisi.dart';
-import '../modeller/esnaf_modeli.dart';
 import 'esnaf_detay_ekrani.dart';
 import 'kullanici_randevu_ekrani.dart';
 import 'giris_secim_ekrani.dart';
@@ -397,12 +397,7 @@ class _AnaEkranState extends State<AnaEkran> {
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, result) {
-        if (didPop) return;
-      },
-      child: Scaffold(
+    return Scaffold(
         appBar: AppBar(
           title: const Text("AlmEly - Trabzon"),
           centerTitle: true,
@@ -566,7 +561,6 @@ class _AnaEkranState extends State<AnaEkran> {
             ),
           ],
         ),
-      ),
     );
   }
 }
