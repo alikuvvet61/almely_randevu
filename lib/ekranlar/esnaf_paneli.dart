@@ -25,6 +25,7 @@ import 'package:almely_randevu/ekranlar/esnaf_parametre_ekrani.dart';
 import 'package:almely_randevu/ekranlar/esnaf_randevu_onay_ekrani.dart';
 import 'package:almely_randevu/ekranlar/randevu_ekrani.dart';
 import 'package:almely_randevu/ekranlar/taksi_cizelge_ekrani.dart';
+import 'package:almely_randevu/ekranlar/kira_teslimat_ekrani.dart';
 
 class EsnafPaneli extends StatefulWidget {
   final EsnafModeli esnaf;
@@ -1278,7 +1279,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
 
   Widget _durumEtiketi(String durum) {
     Color renk = Colors.orange;
-    if (durum == 'Onaylandı') renk = Colors.green;
+    if (durum == 'Onaylandı' || durum == 'Teslim Edildi' || durum == 'Kullanımda') renk = Colors.green;
     if (durum == 'Reddedildi' || durum == 'İptal Edildi' || durum == 'KAZA BİLDİRİLDİ') renk = Colors.red;
 
     return Container(
@@ -1377,17 +1378,18 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                           final rBas = DateTime(r.tarih.year, r.tarih.month, r.tarih.day, int.parse(r.saat.split(':')[0]), int.parse(r.saat.split(':')[1]));
                           final rBit = rBas.add(Duration(minutes: r.sure));
                           
-                          // [GÜNCELLEME]: 'Onaylandı' olan randevular teslim alınana kadar (Tamamlandı olana kadar) 
+                          // [GÜNCELLEME]: 'Onaylandı', 'Kullanımda' veya 'Kaza' olan randevular teslim alınana kadar (Tamamlandı olana kadar) 
                           // GEÇMİŞ değil AKTİF sayılmalı ve ana listede durmalı.
                           bool teslimAlindiMi = r.durum == 'Tamamlandı' || r.durum == 'İptal Edildi' || r.durum == 'Reddedildi';
                           bool zamanGectiMi = rBit.isBefore(simdi);
 
-                          // [YENİ] Kaza bildirimi yapılmış araçlar asla otomatik geçmişe düşmez, esnafın müdahalesini bekler
-                          bool isKazaAktif = r.durum == 'KAZA BİLDİRİLDİ';
+                          // Açık dosyalar (İşlemi devam edenler)
+                          bool isDosyaAcik = r.durum == 'KAZA BİLDİRİLDİ' || r.durum == 'Kullanımda' || r.durum == 'Onaylandı';
                           
-                          // Sadece teslim alınmış randevular veya zamanı geçmiş ve onaylanmamış/iptal randevular geçmiş sayılır
-                          // ANCAK kaza süreci aktifse geçmiş sayılmaz, aktif listede kalır.
-                          bool gecmisMi = (teslimAlindiMi || (zamanGectiMi && r.durum != 'Onaylandı')) && !isKazaAktif;
+                          // Sadece teslim alınmış randevular geçmiş sayılır. 
+                          // Onaylanmamış/Bekleyen ve zamanı geçmiş olanlar da geçmişe gider.
+                          // Ancak Onaylı, Kirada veya Kazalı olanlar zamanı geçse de esnaf kapatana kadar AKTİF kalır.
+                          bool gecmisMi = teslimAlindiMi || (zamanGectiMi && !isDosyaAcik);
 
                           if (_gecmisKiraHareketleriGosterilsin) {
                             return true;
@@ -1564,6 +1566,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
     final simdi = DateTime.now();
     final bool suAnAralikta = !simdi.isBefore(rBas) && simdi.isBefore(iadeZamani);
     final bool onayli = r.durum == 'Onaylandı';
+    final bool kullanimda = r.durum == 'Kullanımda' || r.durum == 'Teslim Edildi';
     final bool bitti = r.durum == 'Tamamlandı' || r.durum == 'Teslim Alındı';
     final bool hasKazaData = r.kazaVerisi != null && r.kazaVerisi!.isNotEmpty;
     final bool isKazaAktif = r.durum == 'KAZA BİLDİRİLDİ';
@@ -1576,12 +1579,17 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
     if (isKazaAktif) {
       rozetMetni = "🚨 KAZA BİLDİRİLDİ";
       temaRengi = Colors.red;
-    } else if (onayli) {
-      if (suAnAralikta) {
+    } else if (kullanimda) {
         baslikMetni = "Aktif Kiralama";
         baslikIkon = Icons.key;
-        temaRengi = Colors.red;
+        temaRengi = Colors.blue;
         rozetMetni = "ARAÇ ŞU AN KİRADADIR";
+    } else if (onayli) {
+      if (suAnAralikta) {
+        baslikMetni = "Onaylı Rezervasyon";
+        baslikIkon = Icons.check_circle_outline;
+        temaRengi = Colors.green;
+        rozetMetni = "TESLİMAT BEKLENİYOR";
       } else {
         rozetMetni = "ARAÇ REZERVE EDİLMİŞTİR";
         temaRengi = Colors.orange;
@@ -1707,13 +1715,80 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                 ],
               ),
               const SizedBox(height: 10),
-              if ((onayli && suAnAralikta) || isKazaAktif)
+              if (r.durum == 'Onaylandı' || r.durum == 'Kullanımda') ...[
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Row(
+                    children: [
+                      Icon(Icons.login_rounded, size: 16, color: Colors.indigo),
+                      SizedBox(width: 8),
+                      Text("Teslimat İşlemleri", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.indigo, fontSize: 12)),
+                      Expanded(child: Divider(indent: 10, color: Colors.indigo, thickness: 0.5)),
+                    ],
+                  ),
+                ),
+                if (r.durum == 'Onaylandı') ...[
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (c) => KiraTeslimatEkrani(randevu: r, isTeslimat: true))),
+                          icon: const Icon(Icons.camera_alt, size: 18),
+                          label: const Text("TESLİMAT KANITI YÜKLE", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                          style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 12)),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () => _aracTeslimEt(r),
+                          icon: const Icon(Icons.key, size: 18),
+                          label: const Text("TESLİMATI BAŞLAT (TESLİM ET)", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                          style: ElevatedButton.styleFrom(backgroundColor: Colors.blue.shade700, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 12)),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 15),
+                ],
+                if (r.durum == 'Kullanımda') ...[
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Row(
+                      children: [
+                        Icon(Icons.logout_rounded, size: 16, color: Colors.teal),
+                        SizedBox(width: 8),
+                        Text("İade Alım İşlemleri", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.teal, fontSize: 12)),
+                        Expanded(child: Divider(indent: 10, color: Colors.teal, thickness: 0.5)),
+                      ],
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (c) => KiraTeslimatEkrani(randevu: r, isTeslimat: false))),
+                          icon: const Icon(Icons.check_circle_outline, size: 18),
+                          label: const Text("İADE KANITI YÜKLE", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                          style: ElevatedButton.styleFrom(backgroundColor: Colors.teal, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 12)),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                ],
+              ],
+              if (isKazaAktif || kullanimda)
                 SizedBox(
                   width: double.infinity,
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 10),
                     child: ElevatedButton.icon(
-                      onPressed: () => _kiraBitirOnay(r),
+                      onPressed: () => _kiraBitirOnay(r, isFromDialog: true),
                       icon: const Icon(Icons.build_circle_outlined, color: Colors.white),
                       label: Text(isKazaAktif ? "TAMİR SÜRECİ İÇİN TESLİM AL" : "ARACI TESLİM AL",
                         style: const TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.2, fontSize: 12)),
@@ -1733,7 +1808,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 10),
                     child: OutlinedButton.icon(
-                      onPressed: () => _kiraBitirOnay(r),
+                      onPressed: () => _kiraBitirOnay(r, isFromDialog: true),
                       icon: const Icon(Icons.check_circle_outline, size: 18),
                       label: const Text("Kayıt Kapat (Boşa Çıkar)"),
                       style: OutlinedButton.styleFrom(
@@ -1751,7 +1826,43 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
     );
   }
 
-  void _kiraBitirOnay(RandevuModeli r) {
+  void _aracTeslimEt(RandevuModeli r) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Araç Teslim Ediliyor mu?"),
+        content: const Text("Müşteri aracı şu an teslim alıyor mu? Bu işlem randevuyu 'Kullanımda' durumuna çekecek ve teslimatı resmileştirecektir."),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Vazgeç")),
+          ElevatedButton(
+            onPressed: () async {
+              final nav = Navigator.of(context);
+              Navigator.pop(ctx);
+              // Detay penceresini kapat
+              if (nav.canPop()) nav.pop();
+
+              await FirebaseFirestore.instance.collection('randevular').doc(r.id).update({
+                'durum': 'Kullanımda',
+                'teslimZamani': FieldValue.serverTimestamp(),
+              });
+
+              BildirimServisi.bildirimGonder(
+                baslik: "Kiralama Başladı",
+                icerik: "Aracı teslim aldınız. İyi yolculuklar dileriz!",
+                kullaniciTel: r.kullaniciTel,
+              );
+
+              if (mounted) setState(() {});
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
+            child: const Text("Evet, Teslim Ettim", style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _kiraBitirOnay(RandevuModeli r, {bool isFromDialog = true}) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1762,8 +1873,16 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Vazgeç")),
           ElevatedButton(
             onPressed: () async {
-              Navigator.pop(ctx); // Onay kutusunu kapat
-              Navigator.pop(context); // Detay penceresini kapat
+              final nav = Navigator.of(context);
+              
+              // 1. Onay kutusunu kapat (ctx)
+              Navigator.pop(ctx); 
+              
+              // 2. Detay penceresini kapat (Eğer açık bir diyalogdan geliyorsa)
+              if (isFromDialog && nav.canPop()) {
+                nav.pop();
+              }
+
               await _kiraSonlandir(r);
             },
             style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
@@ -1775,6 +1894,22 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
   }
 
   Future<void> _kiraSonlandir(RandevuModeli r) async {
+    // [YENİ]: İşlem devam ederken kullanıcıya bilgi ver
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const AlertDialog(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 20),
+            Text("İşlem yapılıyor...\nLütfen bekleyiniz.", textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.bold)),
+          ],
+        ),
+      ),
+    );
+
     try {
       // [YENİ] Planlanmış OneSignal bildirimlerini iptal et
       if (r.gecikmeBildirimId != null && r.gecikmeBildirimId!.isNotEmpty) {
@@ -1800,6 +1935,11 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
         kullaniciTel: r.kullaniciTel,
       );
 
+      // [YENİ] Bilgi diyaloğunu kapat
+      if (context.mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+
       // [YENİ] Ana ekranı yenilemek için setState tetikle
       if (mounted) setState(() {});
 
@@ -1808,6 +1948,10 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
         const SnackBar(content: Text("Araç teslim alındı ve başarıyla boşa çıkarıldı."), backgroundColor: Colors.green)
       );
     } catch (e) {
+      // Hata durumunda da diyaloğu kapat
+      if (context.mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Hata: $e"), backgroundColor: Colors.red)
@@ -3286,22 +3430,28 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                             return bZ.compareTo(aZ);
                           });
 
-                          // Aracın o anki kira veya rezervasyon durumunu bul
-                          RandevuModeli? aktifRandevu;
-                          String durumEtiketi = "";
-                          final simdi = DateTime.now();
+                                  // Aracın o anki kira veya rezervasyon durumunu bul
+                                  RandevuModeli? aktifRandevu;
+                                  String durumEtiketi = "";
+                                  final simdi = DateTime.now();
 
-                          try {
-                            aktifRandevu = buAracinRandevulari.firstWhere((r) {
-                              // [YENİ] Kaza kontrolünü en öncelikli yapalım
-                              if (r.durum == 'KAZA BİLDİRİLDİ') {
-                                durumEtiketi = "KAZA BİLDİRİLDİ";
-                                return true;
-                              }
+                                  try {
+                                    aktifRandevu = buAracinRandevulari.firstWhere((r) {
+                                      // [YENİ] Kaza kontrolünü en öncelikli yapalım
+                                      if (r.durum == 'KAZA BİLDİRİLDİ') {
+                                        durumEtiketi = "KAZA BİLDİRİLDİ";
+                                        return true;
+                                      }
 
-                              // Durum kontrolü: Sadece Onaylı veya Bekleyenler (Etiket için)
-                              bool durumGecerli = r.durum == 'Onaylandı' || r.durum == 'Onay bekliyor' || r.durum == 'Beklemede';
-                              if (!durumGecerli) return false;
+                                      // [YENİ] Kullanımda olanları göster
+                                      if (r.durum == 'Kullanımda' || r.durum == 'Teslim Edildi') {
+                                        durumEtiketi = "KİRADA";
+                                        return true;
+                                      }
+
+                                      // Durum kontrolü: Sadece Onaylı veya Bekleyenler (Etiket için)
+                                      bool durumGecerli = r.durum == 'Onaylandı' || r.durum == 'Onay bekliyor' || r.durum == 'Beklemede';
+                                      if (!durumGecerli) return false;
 
                               final rBas = DateTime(r.tarih.year, r.tarih.month, r.tarih.day,
                                 int.parse(r.saat.split(':')[0]), int.parse(r.saat.split(':')[1]));
@@ -3315,7 +3465,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                               bool gelecekte = rBas.isAfter(simdi);
 
                               if (r.durum == 'Onaylandı') {
-                                if (suAnAralikta) { durumEtiketi = "ŞU AN KİRADA"; return true; }
+                                if (suAnAralikta) { durumEtiketi = "TESLİMAT BEKLENİYOR"; return true; }
                                 else if (suAnBakimda) { durumEtiketi = "BAKIMDA"; return true; }
                                 else if (gelecekte) { durumEtiketi = "REZERVE"; return true; }
                               } else {
@@ -3350,7 +3500,17 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                                           ClipRRect(
                                             borderRadius: BorderRadius.circular(10),
                                             child: (resim != null && resim.isNotEmpty)
-                                                ? Image.network(resim, width: 90, height: 65, fit: BoxFit.cover)
+                                                ? Image.network(
+                                                    resim, 
+                                                    width: 90, 
+                                                    height: 65, 
+                                                    fit: BoxFit.cover,
+                                                    errorBuilder: (context, error, stackTrace) => Container(width: 90, height: 65, color: Colors.grey.shade200, child: const Icon(Icons.broken_image, color: Colors.grey)),
+                                                    loadingBuilder: (context, child, loadingProgress) {
+                                                      if (loadingProgress == null) return child;
+                                                      return Container(width: 90, height: 65, color: Colors.grey.shade100, child: const Center(child: CircularProgressIndicator(strokeWidth: 2)));
+                                                    },
+                                                  )
                                                 : Container(width: 90, height: 65, color: Colors.grey.shade100, child: const Icon(Icons.directions_car, color: Colors.grey)),
                                           ),
                                           if (dolu && durumEtiketi.isNotEmpty)
@@ -3668,8 +3828,9 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
 
     // 'hepsi' listesi tüm randevuları içerir
     for (var r in hepsi) {
-      // Sadece 'Onaylandı' durumundaki aktif kiralamalara bakıyoruz
-      if (r.durum != 'Onaylandı') continue;
+      // [GÜNCELLEME]: Hem 'Onaylandı' (henüz teslim edilmemiş) hem de 'Kullanımda' (teslim edilmiş) 
+      // durumundaki araçlar için gecikme kontrolü yapılmalı.
+      if (r.durum != 'Onaylandı' && r.durum != 'Kullanımda') continue;
 
       final rBas = DateTime(r.tarih.year, r.tarih.month, r.tarih.day,
           int.parse(r.saat.split(':')[0]), int.parse(r.saat.split(':')[1]));
@@ -3815,7 +3976,26 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
             children: [
               Expanded(
                 child: ElevatedButton.icon(
-                  onPressed: () => _kiraBitirOnay(gecikenR),
+                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (c) => KiraTeslimatEkrani(randevu: gecikenR, isTeslimat: false))),
+                  icon: const Icon(Icons.check_circle_outline, size: 18),
+                  label: const Text("İADE KANITI YÜKLE", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.teal,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    elevation: 2,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () => _kiraBitirOnay(gecikenR, isFromDialog: false),
                   icon: const Icon(Icons.verified_user_rounded, size: 18),
                   label: const Text("ARACI TESLİM AL", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900)),
                   style: ElevatedButton.styleFrom(

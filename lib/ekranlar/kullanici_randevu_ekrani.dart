@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'giris_secim_ekrani.dart';
 import '../servisler/bildirim_servisi.dart';
 import '../servisler/onesignal_servisi.dart';
@@ -91,21 +92,23 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
             for (var r in tumRandevular) {
               // Randevunun başlangıç saatini hesapla
               DateTime rBas = _randevuZamaniHesapla(r);
+              final rBit = rBas.add(Duration(minutes: r.sure));
+              
+              // [GÜNCELLEME]: Esnaf tarafıyla tam senkronize arşivleme mantığı
+              // 'Onaylandı', 'Kullanımda' veya 'Kaza' olan randevular teslim alınana kadar (Tamamlandı olana kadar) 
+              // GEÇMİŞ değil MEVCUT sayılmalı.
+              bool teslimAlindiMi = r.durum == 'Tamamlandı' || r.durum == 'İptal Edildi' || r.durum == 'Reddedildi';
+              bool zamanGectiMi = rBit.isBefore(simdi);
+              bool isDosyaAcik = r.durum == 'KAZA BİLDİRİLDİ' || r.durum == 'Kullanımda' || r.durum == 'Onaylandı';
+              
+              // Sadece süreci tamamen bitmiş kayıtlar geçmişe gider. 
+              // Diğerleri (Gecikse bile) esnaf kapatana kadar Mevcut sekmesinde kalır.
+              bool gecmisMi = teslimAlindiMi || (zamanGectiMi && !isDosyaAcik);
 
-              // Araç kiralama ise iADE saatini hesapla, değilse başlangıç saatini kullan
-              DateTime referansZaman;
-              if (r.randevuKanali != null && r.randevuKanali!.isNotEmpty) {
-                // Araç kiralama randevusu: iADE saatine göre filtrele
-                referansZaman = rBas.add(Duration(minutes: r.sure));
-              } else {
-                // Diğer hizmetler: başlangıç saatine göre filtrele
-                referansZaman = rBas;
-              }
-
-              if (referansZaman.isAfter(simdi)) {
-                mevcutler.add(r);
-              } else {
+              if (gecmisMi) {
                 gecmisler.add(r);
+              } else {
+                mevcutler.add(r);
               }
             }
 
@@ -152,19 +155,41 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
   }
 
   Widget _randevuKarti(BuildContext context, RandevuModeli r, bool gecmisMi, {bool baslangictaAcik = false}) {
+    // [YENİ] Kaza kontrolü
+    final bool isKazaAktif = r.durum == 'KAZA BİLDİRİLDİ';
+    final bool hasKazaData = r.kazaVerisi != null && r.kazaVerisi!.isNotEmpty;
+    final bool isKaza = isKazaAktif || hasKazaData;
+
     return Card(
       elevation: 2,
       margin: const EdgeInsets.only(bottom: 16),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: isKaza ? BorderSide(color: Colors.red.shade700, width: 2) : BorderSide.none,
+      ),
+      color: isKaza ? Colors.red.shade50 : Colors.white,
       child: ExpansionTile(
-        initiallyExpanded: baslangictaAcik, // [YENİ] Bildirimden gelindiyse otomatik aç
+        initiallyExpanded: baslangictaAcik || isKazaAktif, // [YENİ] Kaza aktifse açık gelsin
         tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         leading: Container(
           padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(color: Colors.blue.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)),
-          child: const Icon(Icons.business, color: Colors.blue),
+          decoration: BoxDecoration(
+            color: (isKaza ? Colors.red : Colors.blue).withValues(alpha: 0.1), 
+            borderRadius: BorderRadius.circular(10)
+          ),
+          child: Icon(isKaza ? Icons.warning_amber_rounded : Icons.business, color: isKaza ? Colors.red : Colors.blue),
         ),
-        title: Text(r.esnafAdi, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        title: Row(
+          children: [
+            Expanded(child: Text(r.esnafAdi, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16))),
+            if (isKaza)
+               Container(
+                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                 decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(8)),
+                 child: const Text("KAZA BİLDİRİLDİ", style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+               ),
+          ],
+        ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -254,6 +279,12 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
                   const Divider(height: 32),
                   _kanitGalerisi(context, r),
                 ],
+
+                // [YENİ] MÜŞTERİ İÇİN KAZA RAPORU DETAYI
+                if (hasKazaData) ...[
+                  const Divider(height: 32),
+                  _kazaRaporuDetayi(context, r),
+                ],
                 
                 const SizedBox(height: 16),
                 if (!gecmisMi && r.durum != 'İptal Edildi' && r.durum != 'Reddedildi')
@@ -261,8 +292,8 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
                     children: [
                       _akilliTakipButonu(context, r),
                       const SizedBox(height: 8),
-                      // [YENİ] ACİL KAZA / HASAR BİLDİRİM BUTONU (Sadece Onaylı Araç Kiralama İçin)
-                      if (r.durum == 'Onaylandı' && r.randevuKanali != null && r.randevuKanali!.contains(RegExp(r'[0-9]{2}\s[A-Z]+\s[0-9]+')))
+                      // [YENİ] ACİL KAZA / HASAR BİLDİRİM BUTONU (Onaylı veya Kirada Olan Araçlar İçin)
+                      if ((r.durum == 'Onaylandı' || r.durum == 'Kullanımda') && r.randevuKanali != null && r.randevuKanali!.contains(RegExp(r'[0-9]{2}\s[A-Z]+\s[0-9]+')))
                         Padding(
                           padding: const EdgeInsets.only(bottom: 8),
                           child: SizedBox(
@@ -376,8 +407,14 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
 
   Widget _durumRozeti(String durum) {
     Color renk = Colors.orange;
+    String gosterimMetni = durum;
+    
     if (durum == 'Onaylandı') renk = Colors.green;
-    if (durum == 'Reddedildi' || durum == 'İptal Edildi') renk = Colors.red;
+    if (durum == 'Kullanımda' || durum == 'Teslim Edildi') {
+      renk = Colors.blue;
+      gosterimMetni = 'Kirada';
+    }
+    if (durum == 'Reddedildi' || durum == 'İptal Edildi' || durum == 'KAZA BİLDİRİLDİ') renk = Colors.red;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -386,7 +423,7 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
         borderRadius: BorderRadius.circular(6),
         border: Border.all(color: renk.withValues(alpha: 0.5)),
       ),
-      child: Text(durum, style: TextStyle(color: renk, fontSize: 11, fontWeight: FontWeight.bold)),
+      child: Text(gosterimMetni, style: TextStyle(color: renk, fontSize: 11, fontWeight: FontWeight.bold)),
     );
   }
 
@@ -666,6 +703,62 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
       MaterialPageRoute(
         builder: (c) => MedyaGoruntuleyici(gorseller: tumu, baslangicIndex: index),
       ),
+    );
+  }
+
+  Widget _kazaRaporuDetayi(BuildContext context, RandevuModeli r) {
+    final kaza = r.kazaVerisi;
+    if (kaza == null) return const SizedBox.shrink();
+
+    final List<String> gorseller = List<String>.from(kaza['gorseller'] ?? []);
+    final String? konumLink = kaza['konumLink'];
+    final String? zamanRaw = kaza['konumZamani'];
+    final DateTime? zaman = zamanRaw != null ? DateTime.tryParse(zamanRaw) : null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.warning_amber_rounded, color: Colors.red, size: 18),
+            const SizedBox(width: 10),
+            Text("🚨 KAZA BİLDİRİM DETAYLARINIZ", 
+              style: TextStyle(fontWeight: FontWeight.w900, color: Colors.red.shade900, fontSize: 13, letterSpacing: 0.5)),
+          ],
+        ),
+        const SizedBox(height: 12),
+        if (zaman != null)
+          _bilgiSatiri(Icons.access_time, "Bildirim Zamanı: ${DateFormat('dd.MM.yyyy HH:mm').format(zaman)}"),
+        if (konumLink != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () async {
+                  final url = Uri.parse(konumLink);
+                  if (await canLaunchUrl(url)) {
+                    await launchUrl(url, mode: LaunchMode.externalApplication);
+                  }
+                },
+                icon: const Icon(Icons.map, size: 16),
+                label: const Text("BİLDİRDİĞİNİZ KONUMU GÖR", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red.shade700, 
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+            ),
+          ),
+        if (gorseller.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          const Text("Gönderdiğiniz Fotoğraflar:", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
+          const SizedBox(height: 8),
+          _medyaYatayListe(gorseller),
+        ]
+      ],
     );
   }
 }

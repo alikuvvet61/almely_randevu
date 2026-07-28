@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AlmEly Randevu - Rent-a-Car İşleyiş Rehberi</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; max-width: 900px; margin: 0 auto; padding: 40px; background-color: #f4f7f6; }
+        .container { background: white; padding: 40px; border-radius: 15px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+        h1 { color: #1a237e; border-bottom: 3px solid #1a237e; padding-bottom: 10px; text-align: center; }
+        h2 { color: #c62828; margin-top: 30px; border-left: 5px solid #c62828; padding-left: 15px; }
+        h3 { color: #1565c0; margin-top: 20px; }
+        .highlight { background-color: #fff9c4; padding: 2px 5px; border-radius: 3px; font-weight: bold; }
+        .alert { background-color: #ffebee; border: 1px solid #ffcdd2; padding: 15px; border-radius: 10px; color: #b71c1c; margin: 20px 0; }
+        .success { background-color: #e8f5e9; border: 1px solid #c8e6c9; padding: 15px; border-radius: 10px; color: #2e7d32; margin: 20px 0; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; background: white; }
+        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+        th { background-color: #1a237e; color: white; }
+        tr:nth-child(even) { background-color: #f9f9f9; }
+        .icon { font-size: 1.2em; margin-right: 10px; }
+        .footer { margin-top: 50px; text-align: center; font-size: 0.9em; color: #777; border-top: 1px solid #ddd; padding-top: 20px; }
+        @media print {
+            body { background: white; padding: 0; }
+            .container { box-shadow: none; width: 100%; padding: 20px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚗 AlmEly Randevu: Araç Kiralama Sistemi</h1>
+        <p style="text-align: center; font-style: italic;">Profesyonel Araç Takip, Kaza Yönetimi ve Müşteri İlişkileri Rehberi</p>
+
+        <h2>🏗️ 1. Esnaf Paneli (Yönetici Modülü)</h2>
+        <p>İşletme sahipleri için araç filosunu ve operasyonel süreçleri yöneten ana kumanda merkezidir.</p>
+
+        <h3>🔹 Filo ve Müsaitlik Yönetimi</h3>
+        <ul>
+            <li><strong>Anlık Kontrol:</strong> "Araç Filomuz" listesinden araçların teknik özelliklerini ve doluluk durumlarını yönetebilirsiniz.</li>
+            <li><strong>Manuel Blokaj:</strong> Herhangi bir aracı dilediğiniz an Switch (Anahtar) ile kiraya kapatabilir veya açabilirsiniz.</li>
+        </ul>
+
+        <div class="alert">
+            <strong>🚨 Kritik Özellik: Otomatik Kaza Blokajı</strong><br>
+            Bir müşteri kaza bildirdiği anda sistem o aracı otomatik olarak pasife alır. Aracı tamir edip manuel olarak "Aktif" yapana kadar hiçbir müşteri bu aracı kiralayamaz.
+        </div>
+
+        <h3>🔹 Profesyonel Kaza ve Tamir Takibi</h3>
+        <ul>
+            <li><strong>Canlı Konum:</strong> Kazalı aracın detayına girdiğinizde müşterinin olay yerinden gönderdiği <strong>tam konumu</strong> harita üzerinde görebilirsiniz.</li>
+            <li><strong>Hasar Kanıtları:</strong> Müşterinin yüklediği kaza tespit tutanağı ve hasar fotoğraflarını büyüterek inceleyebilirsiniz.</li>
+            <li><strong>Arşivleme:</strong> <span class="highlight">"TAMİR SÜRECİ İÇİN TESLİM AL"</span> butonuna bastığınızda, müşteri ile olan kiralama dosyası kapatılır ve kayıt geçmişe taşınır.</li>
+        </ul>
+
+        <h2>👤 2. Müşteri Paneli (Kiracı Modülü)</h2>
+        <p>Kiracıların araç kiralama, ek süre talep etme ve acil durumlarda destek aldığı bölümdür.</p>
+
+        <h3>🔹 Akıllı Takip ve Süre Uzatma</h3>
+        <p>Kiralama süresinin bitimine az bir zaman kala sistem müşteriye hatırlatma yapar. Eğer araç o saatlerde müsaitse, müşteri <strong>tek tıkla</strong> süresini uzatabilir ve ödemesini uygulama üzerinden yapabilir.</p>
+
+        <h3>🔹 🚨 Acil Durum Asistanı</h3>
+        <p>Kaza durumunda müşteri panik yapmadan şu adımları izler:</p>
+        <ol>
+            <li>Randevu kartındaki <strong>"ACİL: KAZA BİLDİR"</strong> butonuna basar.</li>
+            <li>Olay yerinin konumunu tek tuşla esnafa mühürler.</li>
+            <li>Tutanak ve hasar fotoğraflarını çekip sisteme yükler.</li>
+            <li>Paneldeki "Adım Adım Ne Yapmalıyım?" rehberini okuyarak hukuki süreci doğru yönetir.</li>
+        </ol>
+
+        <h2>📊 3. Operasyonel Süreç Tablosu</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Süreç Aşaması</th>
+                    <th>Esnafın Aksiyonu</th>
+                    <th>Müşterinin Aksiyonu</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Rezervasyon</strong></td>
+                    <td>Talebi Onayla / Reddet</td>
+                    <td>Araç ve Saat Seç</td>
+                </tr>
+                <tr>
+                    <td><strong>Teslimat</strong></td>
+                    <td>Aracı Teslim Et (Fotoğraf Çek)</td>
+                    <td>Aracı Teslim Al</td>
+                </tr>
+                <tr>
+                    <td><strong>Kaza (Varsa)</strong></td>
+                    <td>Konumu ve Hasarı İncele</td>
+                    <td>Konum ve Foto Gönder</td>
+                </tr>
+                <tr>
+                    <td><strong>Kapanış</strong></td>
+                    <td>"Tamir İçin Teslim Al"</td>
+                    <td>Aracı Bırak</td>
+                </tr>
+                <tr>
+                    <td><strong>Yenileme</strong></td>
+                    <td>Aracı Manuel Aktif Et</td>
+                    <td>-</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="success">
+            <strong>✅ Sistem Avantajı:</strong> AlmEly Randevu sistemi sayesinde; kaza yapan araçlar asla unutulmaz, çakışmalar önlenir ve tüm hasar kayıtları dijital arşivinizde saklanır.
+        </div>
+
+        <div class="footer">
+            © 2026 AlmEly Randevu Sistemleri - Trabzon, Türkiye
+        </div>
+    </div>
+</body>
+</html>

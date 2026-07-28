@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <title>AlmEly Randevu - Kapsamlı Eğitim ve Kullanım Rehberi</title>
+    <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 1000px; margin: 0 auto; padding: 50px; background-color: #eceff1; }
+        .page { background: white; padding: 60px; border-radius: 8px; box-shadow: 0 0 20px rgba(0,0,0,0.1); margin-bottom: 30px; }
+        h1 { color: #0d47a1; border-bottom: 4px solid #0d47a1; padding-bottom: 10px; text-align: center; font-size: 2.5em; }
+        h2 { color: #1565c0; border-bottom: 2px solid #1565c0; margin-top: 40px; padding-bottom: 5px; }
+        h3 { color: #d32f2f; margin-top: 25px; border-left: 4px solid #d32f2f; padding-left: 10px; }
+        .step { background: #f9f9f9; border: 1px solid #eee; padding: 15px; margin: 15px 0; border-radius: 5px; }
+        .step-number { font-weight: bold; color: #0d47a1; margin-right: 10px; }
+        .tip { background: #e8f5e9; border: 1px solid #c8e6c9; padding: 15px; border-radius: 5px; color: #2e7d32; margin: 20px 0; }
+        .warning { background: #fff3e0; border: 1px solid #ffe0b2; padding: 15px; border-radius: 5px; color: #e65100; margin: 20px 0; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { border: 1px solid #cfd8dc; padding: 12px; text-align: left; }
+        th { background: #546e7a; color: white; }
+        .footer { text-align: center; color: #78909c; font-size: 0.8em; margin-top: 40px; }
+        @media print {
+            body { background: white; padding: 0; }
+            .page { box-shadow: none; margin: 0; padding: 40px; page-break-after: always; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="page">
+        <h1>📱 AlmEly Randevu</h1>
+        <p style="text-align: center; font-size: 1.2em; color: #555;">Uçtan Uca Dijital Randevu ve Yönetim Sistemi<br><strong>TAM EĞİTİM REHBERİ (2026)</strong></p>
+
+        <h2>📌 GİRİŞ: Sisteme İlk Adım</h2>
+        <p>AlmEly Randevu, yerel işletmeler ile müşterileri SMS tabanlı güvenlik doğrulamasıyla buluşturan profesyonel bir platformdur.</p>
+
+        <div class="step">
+            <span class="step-number">1.</span> <strong>Telefonla Giriş:</strong> Uygulama şifre gerektirmez. Telefon numaranızı yazıp gelen SMS kodunu girerek sisteme dahil olursunuz.
+        </div>
+        <div class="step">
+            <span class="step-number">2.</span> <strong>Rol Seçimi:</strong> Karşınıza iki seçenek gelir:
+            <ul>
+                <li><strong>Hizmet Almak İstiyorum:</strong> Müşteri olarak randevu almanızı sağlar.</li>
+                <li><strong>Hizmet Vermek İstiyorum (Esnaf):</strong> İşletmenizi yönetmenizi sağlar.</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="page">
+        <h2>🏗️ BÖLÜM 1: Esnaf (İşletme) Paneli Eğitimi</h2>
+        <p>İşletme sahiplerinin dükkanlarını dijitalleştirmek için izlemesi gereken adımlar:</p>
+
+        <h3>1.1 Profil ve Hizmet Kurulumu</h3>
+        <div class="step">
+            <span class="step-number">Adım A:</span> <strong>Parametreler:</strong> "İşletme Ayarları" kısmından çalışma saatlerinizi, randevu aralıklarınızı (örn: 30 dk) ve onay modunuzu (Otomatik/Manuel) belirleyin.
+        </div>
+        <div class="step">
+            <span class="step-number">Adım B:</span> <strong>Hizmet Tanımları:</strong> Sunduğunuz hizmetleri (Sakal Tıraşı, Araç Kiralama, Masa Rezervasyonu vb.) süre ve fiyatlarıyla sisteme kaydedin.
+        </div>
+
+        <h3>1.2 Günlük Yönetim (Ajanda)</h3>
+        <ul>
+            <li><strong>Canlı Takip:</strong> Ana ekranda o günkü tüm randevuları kronolojik sırada görürsünüz.</li>
+            <li><strong>Randevu Onaylama:</strong> Manuel moddaysanız, gelen bildirimlere tıklayarak randevuyu onaylayabilir veya müşteriye neden belirterek reddedebilirsiniz.</li>
+            <li><strong>Müşteri İletişimi:</strong> Randevu kartındaki telefon ikonuna basarak müşteriyi tek tıkla arayabilirsiniz.</li>
+        </ul>
+
+        <div class="tip">
+            <strong>💡 İpucu:</strong> "Akıllı Takip" modunu açarak, geciken randevular için sistemin otomatik uyarı göndermesini sağlayabilirsiniz.
+        </div>
+    </div>
+
+    <div class="page">
+        <h2>🚗 BÖLÜM 2: Rent-a-Car (Araç Kiralama) Modülü</h2>
+        <p>Bu bölüm, araç kiralama işletmelerine özel geliştirilmiş kritik süreçleri kapsar.</p>
+
+        <h3>2.1 Filo ve Kaza Yönetimi</h3>
+        <div class="step">
+            <strong>Araç Durumları:</strong> Araçlarınızın üzerinde "ŞU AN KİRADA", "REZERVE" veya "BAKIMDA" etiketleri otomatik görünür.
+        </div>
+        <div class="warning">
+            <strong>🚨 Kaza Yönetimi:</strong> Müşteri kaza bildirdiği an sistem aracı kilitler. Esnaf olarak kaza konumunu haritada görebilir, hasar fotoğraflarını inceleyebilirsiniz.
+        </div>
+        <div class="step">
+            <strong>Tamir Süreci:</strong> Kaza yapan aracı teslim aldığınızda "TAMİR SÜRECİ İÇİN TESLİM AL" butonuna basarak kiralama dosyasını arşive gönderirsiniz.
+        </div>
+
+        <h3>2.2 Süre Uzatma (Ek Gelir)</h3>
+        <p>Müşteri iade saatinden önce uygulama üzerinden ek süre talep edebilir. Eğer araç o saatlerde müsaitse sistem otomatik uzatma yapar ve size bildirim gönderir.</p>
+    </div>
+
+    <div class="page">
+        <h2>👤 BÖLÜM 3: Müşteri Paneli Eğitimi</h2>
+        <p>Müşteriler için randevu alma ve takip etme süreci:</p>
+
+        <h3>3.1 Randevu Alma</h3>
+        <div class="step">
+            <span class="step-number">1.</span> <strong>İşletme Bulma:</strong> Kategoriler arasından (Berber, Taksi, Rent-a-Car vb.) istediğiniz dükkanı seçin.
+        </div>
+        <div class="step">
+            <span class="step-number">2.</span> <strong>Hizmet ve Zaman:</strong> Almak istediğiniz hizmeti ve uygun olduğunuz tarih/saati takvimden seçin.
+        </div>
+
+        <h3>3.2 Randevu Takibi</h3>
+        <ul>
+            <li><strong>Mevcut Randevular:</strong> "Randevularım" sekmesinden onay bekleyen veya onaylanmış işlerinizi görebilirsiniz.</li>
+            <li><strong>Gecikme Hatırlatıcı:</strong> Randevunuza az zaman kala telefonunuza anlık bildirim gelir.</li>
+            <li><strong>Geçmiş:</strong> Tamamlanan tüm randevularınız ve Rent-a-Car kaza raporlarınız "Geçmiş" sekmesinde saklanır.</li>
+        </ul>
+    </div>
+
+    <div class="page">
+        <h2>👑 BÖLÜM 4: Admin (Yönetim) Modülü</h2>
+        <p>Sistem yöneticisinin sahip olduğu yetkiler:</p>
+        <table>
+            <tr>
+                <th>Yetki Alanı</th>
+                <th>İşlem</th>
+            </tr>
+            <tr>
+                <td><strong>Esnaf Onayları</strong></td>
+                <td>Yeni kayıt olan işletmelerin belgelerini kontrol eder ve sistemi açar.</td>
+            </tr>
+            <tr>
+                <td><strong>Kategori Yönetimi</strong></td>
+                <td>Yeni sektörler (örn: Sağlık, Danışmanlık) ekleyebilir veya düzenleyebilir.</td>
+            </tr>
+            <tr>
+                <td><strong>Sistem Duyuruları</strong></td>
+                <td>Tüm kullanıcılara veya sadece esnaflara genel duyuru/bildirim gönderebilir.</td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="footer">
+        © 2026 AlmEly Randevu Sistemleri - Her Hakkı Saklıdır.<br>
+        Destek: support@almely.com | Trabzon, Türkiye
+    </div>
+
+</body>
+</html>
