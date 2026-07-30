@@ -9,6 +9,7 @@ import '../servisler/firestore_servisi.dart';
 import '../servisler/storage_servisi.dart';
 import '../servisler/onesignal_servisi.dart';
 import '../widgets/medya_goruntuleyici.dart';
+import '../yardimcilar/resim_araclari.dart';
 
 class KazaBildirimEkrani extends StatefulWidget {
   final RandevuModeli randevu;
@@ -83,7 +84,12 @@ class _KazaBildirimEkraniState extends State<KazaBildirimEkrani> {
     final XFile? file = await _picker.pickImage(source: ImageSource.camera, imageQuality: 60);
     if (file != null) {
       setState(() => _yukleniyor = true);
-      final String? url = await _storageServisi.dosyaYukle(widget.randevu.id, File(file.path), true);
+      
+      File islenecekDosya = File(file.path);
+      // [YENİ] Zaman damgası ekle
+      islenecekDosya = await ResimAraclari.zamanDamgasiEkle(islenecekDosya);
+
+      final String? url = await _storageServisi.dosyaYukle(widget.randevu.id, islenecekDosya, true);
       if (url != null) {
         _hasarGorselleri.add(url);
         await _firestoreServisi.randevuGuncelle(widget.randevu.id, {
@@ -224,7 +230,12 @@ class _KazaBildirimEkraniState extends State<KazaBildirimEkrani> {
                         ),
                         const SizedBox(width: 10),
                         ..._hasarGorselleri.asMap().entries.map((entry) => GestureDetector(
-                          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (c) => MedyaGoruntuleyici(gorseller: _hasarGorselleri, baslangicIndex: entry.key))),
+                          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (c) => MedyaGoruntuleyici(
+                            gorseller: _hasarGorselleri, 
+                            baslangicIndex: entry.key,
+                            muhurRol: "Musteri",
+                            muhurTel: widget.randevu.kullaniciTel,
+                          ))),
                           child: Container(
                             width: 100,
                             margin: const EdgeInsets.only(right: 10),

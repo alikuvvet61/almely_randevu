@@ -1681,6 +1681,8 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
               ),
             ],
             if (hasKazaData) _kazaRaporuDetayi(r),
+            if (r.teslimatGorselleri.isNotEmpty || r.iadeGorselleri.isNotEmpty) 
+               Padding(padding: const EdgeInsets.only(top: 15), child: _kanitGalerisi(r)),
             const Divider(),
             Center(
               child: Container(
@@ -1732,9 +1734,9 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                     children: [
                       Expanded(
                         child: ElevatedButton.icon(
-                          onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (c) => KiraTeslimatEkrani(randevu: r, isTeslimat: true))),
+                          onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (c) => KiraTeslimatEkrani(randevu: r, isTeslimat: true, isEsnaf: true, telefon: widget.esnaf.telefon))),
                           icon: const Icon(Icons.camera_alt, size: 18),
-                          label: const Text("TESLİMAT KANITI YÜKLE", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                          label: const Text("TESLİMAT FOTOĞRAFI YÜKLE", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
                           style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 12)),
                         ),
                       ),
@@ -1771,9 +1773,9 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                     children: [
                       Expanded(
                         child: ElevatedButton.icon(
-                          onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (c) => KiraTeslimatEkrani(randevu: r, isTeslimat: false))),
+                          onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (c) => KiraTeslimatEkrani(randevu: r, isTeslimat: false, isEsnaf: true, telefon: widget.esnaf.telefon))),
                           icon: const Icon(Icons.check_circle_outline, size: 18),
-                          label: const Text("İADE KANITI YÜKLE", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                          label: const Text("İADE FOTOĞRAFI YÜKLE", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
                           style: ElevatedButton.styleFrom(backgroundColor: Colors.teal, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 12)),
                         ),
                       ),
@@ -2055,32 +2057,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
           const SizedBox(height: 5),
           const Text("Hasar Fotoğrafları:", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
           const SizedBox(height: 8),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: gorseller.asMap().entries.map((entry) {
-                int index = entry.key;
-                String url = entry.value;
-                return GestureDetector(
-                  onTap: () {
-                    Navigator.push(context, MaterialPageRoute(
-                      builder: (c) => MedyaGoruntuleyici(gorseller: gorseller, baslangicIndex: index)
-                    ));
-                  },
-                  child: Container(
-                    width: 100,
-                    height: 100,
-                    margin: const EdgeInsets.only(right: 10),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.grey.shade300),
-                      image: DecorationImage(image: NetworkImage(url), fit: BoxFit.cover),
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
-          ),
+          _medyaYatayListe(r, gorseller, isEsnafKaniti: false),
         ]
       ],
     );
@@ -2091,6 +2068,78 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
     if (await canLaunchUrl(url)) {
       await launchUrl(url);
     }
+  }
+
+  void _kanitGoster(RandevuModeli r, List<String> tumu, int index, {bool isEsnafKaniti = false}) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (c) => MedyaGoruntuleyici(
+          gorseller: tumu, 
+          baslangicIndex: index,
+          muhurRol: isEsnafKaniti ? "Esnaf" : "Müşteri",
+          muhurTel: isEsnafKaniti ? widget.esnaf.telefon : r.kullaniciTel,
+        ),
+      ),
+    );
+  }
+
+  Widget _medyaYatayListe(RandevuModeli r, List<String> urls, {bool isEsnafKaniti = false}) {
+    return SizedBox(
+      height: 100,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        itemCount: urls.length,
+        itemBuilder: (c, i) {
+          final url = urls[i];
+          bool isVideo = url.contains('.mp4') || url.contains('.mov') || url.contains('video');
+          return GestureDetector(
+            onTap: () => _kanitGoster(r, urls, i, isEsnafKaniti: isEsnafKaniti),
+            child: Container(
+              width: 100,
+              margin: const EdgeInsets.only(right: 10),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.shade200),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: isVideo 
+                  ? Container(color: Colors.black87, child: const Center(child: Icon(Icons.videocam, color: Colors.white)))
+                  : Image.network(url, fit: BoxFit.cover),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _kanitGalerisi(RandevuModeli r) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Row(
+          children: [
+            Icon(Icons.photo_library_outlined, size: 18, color: Colors.blueGrey),
+            SizedBox(width: 10),
+            Text("Teslimat ve İade Kanıtları", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+          ],
+        ),
+        const SizedBox(height: 12),
+        if (r.teslimatGorselleri.isNotEmpty) ...[
+          const Text("🚗 Teslimat Anı", style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          _medyaYatayListe(r, r.teslimatGorselleri, isEsnafKaniti: true),
+          const SizedBox(height: 15),
+        ],
+        if (r.iadeGorselleri.isNotEmpty) ...[
+          const Text("✅ İade Anı", style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          _medyaYatayListe(r, r.iadeGorselleri, isEsnafKaniti: true),
+        ],
+      ],
+    );
   }
 
   Widget _filoWidget() {
@@ -3976,9 +4025,9 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
             children: [
               Expanded(
                 child: ElevatedButton.icon(
-                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (c) => KiraTeslimatEkrani(randevu: gecikenR, isTeslimat: false))),
+                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (c) => KiraTeslimatEkrani(randevu: gecikenR, isTeslimat: false, isEsnaf: true, telefon: widget.esnaf.telefon))),
                   icon: const Icon(Icons.check_circle_outline, size: 18),
-                  label: const Text("İADE KANITI YÜKLE", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900)),
+                  label: const Text("İADE FOTOĞRAFI YÜKLE", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900)),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.teal,
                     foregroundColor: Colors.white,

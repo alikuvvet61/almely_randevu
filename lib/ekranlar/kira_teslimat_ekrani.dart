@@ -5,11 +5,21 @@ import '../modeller/randevu_modeli.dart';
 import '../servisler/storage_servisi.dart';
 import '../servisler/firestore_servisi.dart';
 import '../widgets/medya_goruntuleyici.dart';
+import '../yardimcilar/resim_araclari.dart';
 
 class KiraTeslimatEkrani extends StatefulWidget {
   final RandevuModeli randevu;
   final bool isTeslimat; // true: Araç Teslim Edilirken, false: Araç İade Alınırken
-  const KiraTeslimatEkrani({super.key, required this.randevu, required this.isTeslimat});
+  final bool isEsnaf; // [YENİ]
+  final String telefon; // [YENİ]
+
+  const KiraTeslimatEkrani({
+    super.key, 
+    required this.randevu, 
+    required this.isTeslimat,
+    this.isEsnaf = false,
+    this.telefon = "",
+  });
 
   @override
   State<KiraTeslimatEkrani> createState() => _KiraTeslimatEkraniState();
@@ -29,16 +39,27 @@ class _KiraTeslimatEkraniState extends State<KiraTeslimatEkrani> {
     if (file != null) {
       setState(() => _yukleniyor = true);
       
+      File islenecekDosya = File(file.path);
+
+      // [YENİ] Gelişmiş Mühürleme (Rol + Tel + Zaman)
+      if (!isVideo) {
+        islenecekDosya = await ResimAraclari.zamanDamgasiEkle(
+          islenecekDosya,
+          rol: widget.isEsnaf ? "ESNAF" : "MÜŞTERİ",
+          tel: widget.telefon,
+        );
+      }
+      
       final String? url = await _storageServisi.dosyaYukle(
         widget.randevu.id, 
-        File(file.path), 
+        islenecekDosya,
         widget.isTeslimat
       );
 
       if (url != null) {
         await _firestoreServisi.randevuGorselEkle(widget.randevu.id, url, widget.isTeslimat);
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Görsel başarıyla eklendi."), backgroundColor: Colors.green));
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Görsel mühürlenerek başarıyla eklendi."), backgroundColor: Colors.green));
         }
       }
       
@@ -50,7 +71,12 @@ class _KiraTeslimatEkraniState extends State<KiraTeslimatEkrani> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (c) => MedyaGoruntuleyici(gorseller: tumu, baslangicIndex: index),
+        builder: (c) => MedyaGoruntuleyici(
+          gorseller: tumu, 
+          baslangicIndex: index,
+          muhurRol: widget.isEsnaf ? "Esnaf" : "Musteri",
+          muhurTel: widget.telefon,
+        ),
       ),
     );
   }
@@ -59,7 +85,7 @@ class _KiraTeslimatEkraniState extends State<KiraTeslimatEkrani> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.isTeslimat ? "Teslimat Kanıtları" : "İade Kanıtları"),
+        title: Text(widget.isTeslimat ? (widget.isEsnaf ? "Teslimat Fotoğrafı" : "Alış Fotoğrafı") : "İade Fotoğrafı"),
         backgroundColor: widget.isTeslimat ? Colors.indigo : Colors.green,
         foregroundColor: Colors.white,
       ),
@@ -77,11 +103,11 @@ class _KiraTeslimatEkraniState extends State<KiraTeslimatEkrani> {
                 color: (widget.isTeslimat ? Colors.indigo : Colors.green).withValues(alpha: 0.1),
                 child: Row(
                   children: [
-                    const Icon(Icons.info_outline, color: Colors.blueGrey),
+                    const Icon(Icons.verified_user_outlined, color: Colors.blueGrey),
                     const SizedBox(width: 15),
                     Expanded(
                       child: Text(
-                        "${r.randevuKanali} plakalı aracın ${widget.isTeslimat ? 'teslimat' : 'iade'} anındaki durumunu fotoğraflayarak veya video çekerek mühürleyin.",
+                        "${r.randevuKanali} plakalı aracın ${widget.isTeslimat ? 'başlangıç' : 'iade'} anındaki durumunu fotoğraflayarak veya video çekerek mühürleyin.",
                         style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
                       ),
                     ),
@@ -91,7 +117,7 @@ class _KiraTeslimatEkraniState extends State<KiraTeslimatEkrani> {
               if (_yukleniyor) const LinearProgressIndicator(),
               Expanded(
                 child: gorseller.isEmpty 
-                    ? const Center(child: Text("Henüz görsel kanıt eklenmedi.", style: TextStyle(color: Colors.grey)))
+                    ? const Center(child: Text("Henüz mühürlü kanıt eklenmedi.", style: TextStyle(color: Colors.grey)))
                     : GridView.builder(
                         padding: const EdgeInsets.all(15),
                         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(

@@ -1,15 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:video_player/video_player.dart';
+import 'package:intl/intl.dart';
 
 class MedyaGoruntuleyici extends StatefulWidget {
   final List<String> gorseller;
   final int baslangicIndex;
+  final String? muhurRol; // [YENİ]
+  final String? muhurTel; // [YENİ]
 
   const MedyaGoruntuleyici({
     super.key,
     required this.gorseller,
     this.baslangicIndex = 0,
+    this.muhurRol,
+    this.muhurTel,
   });
 
   @override
@@ -48,15 +53,66 @@ class _MedyaGoruntuleyiciState extends State<MedyaGoruntuleyici> {
           final url = widget.gorseller[index];
           bool isVideo = url.contains('.mp4') || url.contains('.mov') || url.contains('video');
 
-          if (isVideo) {
-            return VideoOynatici(url: url);
-          } else {
-            return PhotoView(
-              imageProvider: NetworkImage(url),
-              minScale: PhotoViewComputedScale.contained,
-              maxScale: PhotoViewComputedScale.covered * 2,
-            );
-          }
+          return Stack(
+            children: [
+              if (isVideo)
+                VideoOynatici(url: url)
+              else
+                PhotoView(
+                  imageProvider: NetworkImage(url),
+                  minScale: PhotoViewComputedScale.contained,
+                  maxScale: PhotoViewComputedScale.covered * 2,
+                ),
+              
+              // [DÜZELTME]: Hem resim hem video üzerinde görünen profesyonel mühür katmanı
+              Positioned(
+                right: 20,
+                bottom: 60,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.7),
+                    borderRadius: BorderRadius.circular(15), // Yumuşatılmış kenarlar
+                    border: Border.all(color: Colors.white10, width: 0.5),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (widget.muhurRol != null)
+                        Text(
+                          widget.muhurRol == "Musteri" ? "Müşteri" : widget.muhurRol!,
+                          style: const TextStyle(
+                            color: Colors.white, 
+                            fontSize: 16, 
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      if (widget.muhurTel != null && widget.muhurTel!.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                            "Tel: ${widget.muhurTel}",
+                            style: const TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w500),
+                          ),
+                        ),
+                      const SizedBox(height: 6),
+                      Text(
+                        DateFormat('dd.MM.yyyy HH:mm:ss').format(DateTime.now()), // Not: Gelecekte dökümandaki kayıt zamanı basılabilir
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          fontFamily: 'monospace',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          );
         },
       ),
     );
@@ -65,7 +121,9 @@ class _MedyaGoruntuleyiciState extends State<MedyaGoruntuleyici> {
 
 class VideoOynatici extends StatefulWidget {
   final String url;
-  const VideoOynatici({super.key, required this.url});
+  final String? rol;
+  final String? tel;
+  const VideoOynatici({super.key, required this.url, this.rol, this.tel});
 
   @override
   State<VideoOynatici> createState() => _VideoOynaticiState();
