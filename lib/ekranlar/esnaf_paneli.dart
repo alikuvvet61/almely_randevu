@@ -3354,7 +3354,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
               child: Column(
                 children: [
                   // Ajanda Uyarı Bannerı
-                  if (_guncelEsnaf.ajandayiKendimAyarlayacagim)
+                  if (_guncelEsnaf.ajandayiKendimAyarlayacagim && !(_guncelEsnaf.kategori == 'Taksi' && _guncelEsnaf.randevuAlinmasin))
                   StreamBuilder<QuerySnapshot>(
                     stream: FirebaseFirestore.instance
                         .collection('esnaflar')
