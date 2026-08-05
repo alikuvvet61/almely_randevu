@@ -1324,13 +1324,21 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
               .snapshots()
               .map((snapshot) => snapshot.docs.map((doc) => RandevuModeli.fromMap(doc.data(), doc.id)).toList()),
           builder: (context, streamSnapshot) {
-            // [ESNEK FİLTRELEME]: Plaka veya araç adı içeren tüm randevuları al
+            // [KESİN ÇÖZÜM]: Detay penceresinde de karakter bağımsız akıllı eşleştirme uygula
             final hamRandevular = streamSnapshot.data ?? ilkRandevular;
             final guncelRandevular = hamRandevular.where((r) {
                String rKanal = (r.randevuKanali ?? "").trim().toLowerCase();
-               String tAd = ad.toLowerCase();
-               String tPlaka = (plaka ?? "").toLowerCase();
-               return rKanal == tAd || rKanal == tPlaka || (tPlaka.isNotEmpty && rKanal.contains(tPlaka));
+               if (rKanal.isEmpty) return false;
+
+               String temizRKanal = rKanal.replaceAll(RegExp(r'[^a-z0-9]'), '');
+               String temizAd = ad.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+               String temizPlaka = (plaka ?? "").toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+               
+               if (temizRKanal == temizAd) return true;
+               if (temizPlaka.isNotEmpty && temizRKanal == temizPlaka) return true;
+               if (temizPlaka.isNotEmpty && temizRKanal.contains(temizPlaka)) return true;
+               
+               return false;
             }).toList();
 
             // [YENİ] Randevuları tarih ve saate göre azalan (en yeni en üstte) şekilde sırala
@@ -1938,26 +1946,28 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
       );
 
       // [YENİ] Bilgi diyaloğunu kapat
-      if (context.mounted) {
+      if (mounted) {
         Navigator.of(context, rootNavigator: true).pop();
       }
 
       // [YENİ] Ana ekranı yenilemek için setState tetikle
       if (mounted) setState(() {});
 
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Araç teslim alındı ve başarıyla boşa çıkarıldı."), backgroundColor: Colors.green)
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Araç teslim alındı ve başarıyla boşa çıkarıldı."), backgroundColor: Colors.green)
+        );
+      }
     } catch (e) {
       // Hata durumunda da diyaloğu kapat
-      if (context.mounted) {
+      if (mounted) {
         Navigator.of(context, rootNavigator: true).pop();
       }
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Hata: $e"), backgroundColor: Colors.red)
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Hata: $e"), backgroundColor: Colors.red)
+        );
+      }
     }
   }
 
@@ -3464,12 +3474,24 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                           String? plaka = a["plaka"];
                           bool isAktif = a["aktif"] ?? true;
 
-                          // Bu araca ait tüm aktif/gelecek/geçmiş randevuları bulalım
+                          // [KESİN ÇÖZÜM]: Karakter bağımsız akıllı eşleştirme mantığı.
+                          // Özel karakterleri (parantez, boşluk vb.) temizleyerek eşleştirme yapıyoruz.
                           List<RandevuModeli> buAracinRandevulari = hepsi.where((r) {
                             String rKanal = (r.randevuKanali ?? "").trim().toLowerCase();
-                            String tAd = ad.toLowerCase();
-                            String tPlaka = (plaka ?? "").toLowerCase();
-                            return rKanal == tAd || rKanal == tPlaka || (tPlaka.isNotEmpty && rKanal.contains(tPlaka));
+                            if (rKanal.isEmpty) return false;
+                            
+                            String temizRKanal = rKanal.replaceAll(RegExp(r'[^a-z0-9]'), '');
+                            String temizAd = ad.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+                            String temizPlaka = (plaka ?? "").toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+
+                            // 1. Temizlenmiş isimler tam eşleşiyor mu?
+                            if (temizRKanal == temizAd) return true;
+                            // 2. Temizlenmiş plaka tam eşleşiyor mu?
+                            if (temizPlaka.isNotEmpty && temizRKanal == temizPlaka) return true;
+                            // 3. Randevu kanalı temizlenmiş plakayı barındırıyor mu?
+                            if (temizPlaka.isNotEmpty && temizRKanal.contains(temizPlaka)) return true;
+
+                            return false;
                           }).toList();
 
                           // Sıralama: Yeniden eskiye
@@ -3486,13 +3508,13 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
 
                                   try {
                                     aktifRandevu = buAracinRandevulari.firstWhere((r) {
-                                      // [YENİ] Kaza kontrolünü en öncelikli yapalım
+                                      // [KESİN ÇÖZÜM]: Açık dosyaları (işlemi devam edenleri) her zaman AKTİF kabul et
+                                      
                                       if (r.durum == 'KAZA BİLDİRİLDİ') {
                                         durumEtiketi = "KAZA BİLDİRİLDİ";
                                         return true;
                                       }
 
-                                      // [YENİ] Kullanımda olanları göster
                                       if (r.durum == 'Kullanımda' || r.durum == 'Teslim Edildi') {
                                         durumEtiketi = "KİRADA";
                                         return true;
@@ -3502,27 +3524,29 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                                       bool durumGecerli = r.durum == 'Onaylandı' || r.durum == 'Onay bekliyor' || r.durum == 'Beklemede';
                                       if (!durumGecerli) return false;
 
-                              final rBas = DateTime(r.tarih.year, r.tarih.month, r.tarih.day,
-                                int.parse(r.saat.split(':')[0]), int.parse(r.saat.split(':')[1]));
-                              final rBit = rBas.add(Duration(minutes: r.sure));
-                              final rTamBit = rBit.add(Duration(minutes: widget.esnaf.bakimTemizlikSuresi));
+                                      final rBas = DateTime(r.tarih.year, r.tarih.month, r.tarih.day,
+                                        int.parse(r.saat.split(':')[0]), int.parse(r.saat.split(':')[1]));
+                                      final rBit = rBas.add(Duration(minutes: r.sure));
+                                      final rTamBit = rBit.add(Duration(minutes: widget.esnaf.bakimTemizlikSuresi));
 
-                              if (simdi.isAfter(rTamBit)) return false;
+                                      // Zaman kontrolü
+                                      bool suAnAralikta = !simdi.isBefore(rBas) && simdi.isBefore(rBit);
+                                      bool suAnBakimda = !simdi.isBefore(rBit) && simdi.isBefore(rTamBit);
+                                      bool gelecekte = rBas.isAfter(simdi);
+                                      bool zamanGecti = simdi.isAfter(rBit);
 
-                              bool suAnAralikta = !simdi.isBefore(rBas) && simdi.isBefore(rBit);
-                              bool suAnBakimda = !simdi.isBefore(rBit) && simdi.isBefore(rTamBit);
-                              bool gelecekte = rBas.isAfter(simdi);
-
-                              if (r.durum == 'Onaylandı') {
-                                if (suAnAralikta) { durumEtiketi = "TESLİMAT BEKLENİYOR"; return true; }
-                                else if (suAnBakimda) { durumEtiketi = "BAKIMDA"; return true; }
-                                else if (gelecekte) { durumEtiketi = "REZERVE"; return true; }
-                              } else {
-                                if (gelecekte || suAnAralikta) { durumEtiketi = "REZERVE"; return true; }
-                              }
-                              return false;
-                            });
-                          } catch (_) {}
+                                      if (r.durum == 'Onaylandı') {
+                                        if (suAnAralikta) { durumEtiketi = "TESLİMAT BEKLENİYOR"; return true; }
+                                        else if (suAnBakimda) { durumEtiketi = "BAKIMDA"; return true; }
+                                        else if (gelecekte) { durumEtiketi = "REZERVE"; return true; }
+                                        else if (zamanGecti) { durumEtiketi = "TESLİMAT GECİKTİ"; return true; }
+                                      } else {
+                                        // Onay bekleyenler sadece gelecekte veya şu an ise rezerve sayılır
+                                        if (gelecekte || suAnAralikta) { durumEtiketi = "REZERVE"; return true; }
+                                      }
+                                      return false;
+                                    });
+                                  } catch (_) {}
 
                           bool dolu = aktifRandevu != null;
 
@@ -3874,11 +3898,10 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
   Widget _cakismaAlarmlari(List<RandevuModeli> hepsi) {
     final simdi = DateTime.now();
     List<Widget> alarmlar = [];
+    Set<String> islenenRandevuIdleri = {};
 
-    // 'hepsi' listesi tüm randevuları içerir
+    // 1. [GECİKEN TESLİMATLAR]: Mevcut mantık
     for (var r in hepsi) {
-      // [GÜNCELLEME]: Hem 'Onaylandı' (henüz teslim edilmemiş) hem de 'Kullanımda' (teslim edilmiş) 
-      // durumundaki araçlar için gecikme kontrolü yapılmalı.
       if (r.durum != 'Onaylandı' && r.durum != 'Kullanımda') continue;
 
       final rBas = DateTime(r.tarih.year, r.tarih.month, r.tarih.day,
@@ -3886,10 +3909,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
       final rBit = rBas.add(Duration(minutes: r.sure));
       final rTamBit = rBit.add(Duration(minutes: widget.esnaf.bakimTemizlikSuresi));
 
-      // EĞER: İade saati geçtiyse VE henüz teslim alınmadıysa (durum hala Onaylandı ise)
       if (simdi.isAfter(rBit)) {
-          // [İYİLEŞTİRME]: Artık arkasında müşteri beklese de beklemese de alarm veriyoruz!
-          // Sadece eğer arkada müşteri varsa o randevuyu karta gönderiyoruz.
           RandevuModeli? sonrakiRandevu;
           try {
             sonrakiRandevu = hepsi.firstWhere((sr) {
@@ -3903,12 +3923,129 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
             });
           } catch (_) {}
 
+          islenenRandevuIdleri.add(r.id);
+          if (sonrakiRandevu != null) islenenRandevuIdleri.add(sonrakiRandevu.id);
           alarmlar.add(_kritikAlarmKarti(r, sonrakiRandevu, hepsi));
+      }
+    }
+
+    // 2. [PASİF ARAÇLARIN BEKLEYEN RANDEVULARI]: Kaza veya tamir nedeniyle kapanan araçlar
+    // Bu araçların gelecekteki (bugünkü) randevuları için de uyarı verilmeli.
+    for (var arac in kiralikAraclar) {
+      bool aktifMi = arac['aktif'] ?? true;
+      if (aktifMi) continue;
+
+      String plaka = (arac['plaka'] ?? arac['ad'] ?? "").toString().toLowerCase();
+      
+      // Bu pasif aracın bugünkü bekleyen randevularını bul
+      final bugunSifir = DateTime(simdi.year, simdi.month, simdi.day);
+      final bekleyenler = hepsi.where((r) {
+        if (islenenRandevuIdleri.contains(r.id)) return false;
+        if (r.durum != 'Onaylandı' && r.durum != 'Onay bekliyor') return false;
+        if (r.tarih.isBefore(bugunSifir)) return false;
+        
+        String rKanal = (r.randevuKanali ?? "").trim().toLowerCase();
+        return rKanal == plaka || rKanal == (arac['ad'] ?? "").toString().toLowerCase();
+      }).toList();
+
+      for (var r in bekleyenler) {
+        islenenRandevuIdleri.add(r.id);
+        alarmlar.add(_pasifAracUyariKarti(r, arac, hepsi));
       }
     }
 
     if (alarmlar.isEmpty) return const SizedBox.shrink();
     return Column(children: alarmlar);
+  }
+
+  Widget _pasifAracUyariKarti(RandevuModeli r, Map<String, dynamic> arac, List<RandevuModeli> hepsi) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 15),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.orange.shade50,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.orange, width: 2.5),
+        boxShadow: [BoxShadow(color: Colors.orange.withValues(alpha: 0.1), blurRadius: 10)],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: const BoxDecoration(color: Colors.orange, shape: BoxShape.circle),
+                child: const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 24),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text("ARAÇ KULLANIM DIŞI!", style: TextStyle(fontWeight: FontWeight.w900, color: Colors.orange.shade900, fontSize: 16)),
+                    Text("${r.randevuKanali} şu an pasif durumda!", style: const TextStyle(fontSize: 13, color: Colors.black87, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.orange.shade100)),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.person_outline, size: 16, color: Colors.indigo),
+                    const SizedBox(width: 8),
+                    Text("Müşteri: ${r.kullaniciAd} (${r.saat})", style: TextStyle(color: Colors.indigo.shade900, fontSize: 13, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                TextButton(
+                  onPressed: () => _kiraDetayiniGoster(r),
+                  child: const Text("İncele", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 15),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () => _muadilAracaKaydir(r, hepsi),
+                  icon: const Icon(Icons.alt_route_rounded, size: 18),
+                  label: const Text("MUADİLE KAYDIR", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue.shade700,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () => _aramaYap(r.kullaniciTel),
+                  icon: const Icon(Icons.phone_forwarded, size: 18),
+                  label: const Text("BİLGİ VER", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange.shade700,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _kritikAlarmKarti(RandevuModeli gecikenR, RandevuModeli? tehlikedekiR, List<RandevuModeli> hepsi) {
@@ -4091,10 +4228,37 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
   }
 
   void _muadilAracaKaydir(RandevuModeli r, List<RandevuModeli> hepsi) async {
-    List<String> bosAraclar = [];
+    // 1. Önce bekleyen randevudaki (geciken) aracın tüm özelliklerini bul
+    Map<String, dynamic>? gecikenAracData;
+    try {
+      gecikenAracData = kiralikAraclar.firstWhere((a) => a['ad'] == r.randevuKanali);
+    } catch (_) {}
+
+    if (gecikenAracData == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Orijinal araç bilgileri bulunamadı."), backgroundColor: Colors.red));
+      return;
+    }
+
+    final String gTip = (gecikenAracData['aracTuru'] ?? "").toString().toLowerCase();
+    final String gSinif = (gecikenAracData['sinif'] ?? "").toString().toLowerCase();
+    final String gYakit = (gecikenAracData['yakit'] ?? "").toString().toLowerCase();
+    final String gVites = (gecikenAracData['vites'] ?? "").toString().toLowerCase();
+
+    List<Map<String, dynamic>> muadilBosAraclar = [];
+    
     for (var k in kiralikAraclar) {
       String ad = k['ad']?.toString() ?? "";
       if (ad == r.randevuKanali || ad.isEmpty) continue;
+
+      // 2. [KRİTİK]: Sadece AYNI özelliklere sahip araçları filtrele (Filtreleme mantığıyla birebir aynı)
+      final String kTip = (k['aracTuru'] ?? "").toString().toLowerCase();
+      final String kSinif = (k['sinif'] ?? "").toString().toLowerCase();
+      final String kYakit = (k['yakit'] ?? "").toString().toLowerCase();
+      final String kVites = (k['vites'] ?? "").toString().toLowerCase();
+
+      bool ozelliklerAyniMi = kTip == gTip && kSinif == gSinif && kYakit == gYakit && kVites == gVites;
+      if (!ozelliklerAyniMi) continue;
 
       bool dolu = false;
       final rBas = DateTime(r.tarih.year, r.tarih.month, r.tarih.day,
@@ -4102,7 +4266,6 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
       final rBit = rBas.add(Duration(minutes: r.sure));
 
       for (var checkR in hepsi) {
-        // [İYİLEŞTİRME] Boş araç aranırken 'Onay bekliyor' durumundaki randevular da araçları meşgul göstermeli
         if (checkR.randevuKanali != ad || (checkR.durum != 'Onaylandı' && checkR.durum != 'Onay bekliyor')) continue;
         final cBas = DateTime(checkR.tarih.year, checkR.tarih.month, checkR.tarih.day,
             int.parse(checkR.saat.split(':')[0]), int.parse(checkR.saat.split(':')[1]));
@@ -4112,32 +4275,35 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
           dolu = true; break;
         }
       }
-      if (!dolu) bosAraclar.add(ad);
+      if (!dolu) muadilBosAraclar.add(k);
     }
 
-    if (bosAraclar.isEmpty) {
+    if (muadilBosAraclar.isEmpty) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Üzgünüz, şu an kaydırılabilecek boşta muadil araç bulunamadı."), backgroundColor: Colors.red));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Müşteri beklentisine uygun (aynı özelliklerde) boşta muadil araç bulunamadı."), backgroundColor: Colors.orange));
       return;
     }
 
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text("Randevuyu Kaydır"),
+        title: const Text("Randevuyu Muadile Kaydır"),
         content: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text("Lütfen aktarmak istediğiniz müsait aracı seçin:"),
+            Text("${r.kullaniciAd} için aynı özelliklerdeki boş araçlar:", style: const TextStyle(fontSize: 12, color: Colors.grey)),
             const SizedBox(height: 15),
-            ...bosAraclar.map((plaka) => ListTile(
-              leading: const Icon(Icons.directions_car, color: Colors.blue),
-              title: Text(plaka),
+            ...muadilBosAraclar.map((a) => ListTile(
+              leading: const Icon(Icons.swap_horiz_rounded, color: Colors.blue),
+              title: Text(a['ad'] ?? ""),
+              subtitle: Text("${a['yakit']} • ${a['vites']}", style: const TextStyle(fontSize: 11)),
               onTap: () async {
                 Navigator.pop(ctx);
+                final String plaka = a['ad'] ?? "";
                 await _firestoreServisi.randevuyuMuadilAracaKaydir(r.id, plaka);
                 if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Randevu başarıyla $plaka plakalı araca kaydırıldı."), backgroundColor: Colors.green));
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Randevu başarıyla muadil ($plaka) araca kaydırıldı."), backgroundColor: Colors.green));
               },
             )),
           ],

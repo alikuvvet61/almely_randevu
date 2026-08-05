@@ -81,7 +81,7 @@ class _MedyaGoruntuleyiciState extends State<MedyaGoruntuleyici> {
                     children: [
                       if (widget.muhurRol != null)
                         Text(
-                          widget.muhurRol == "Musteri" ? "Müşteri" : widget.muhurRol!,
+                          (widget.muhurRol == "Musteri" || widget.muhurRol == "Müşteri") ? "Müşteri" : widget.muhurRol!,
                           style: const TextStyle(
                             color: Colors.white, 
                             fontSize: 16, 

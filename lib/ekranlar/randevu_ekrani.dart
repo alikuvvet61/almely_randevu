@@ -10,7 +10,14 @@ import '../widgets/ana_buton.dart';
 class RandevuEkrani extends StatefulWidget {
   final EsnafModeli esnaf;
   final String? kullaniciTel;
-  const RandevuEkrani({super.key, required this.esnaf, this.kullaniciTel});
+  final String? seciliAracAd; // [YENİ] Dışarıdan seçili gelen araç
+
+  const RandevuEkrani({
+    super.key, 
+    required this.esnaf, 
+    this.kullaniciTel,
+    this.seciliAracAd,
+  });
 
   @override
   State<RandevuEkrani> createState() => _RandevuEkraniState();
@@ -83,6 +90,12 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
 
     if (widget.kullaniciTel != null) {
       _telController.text = widget.kullaniciTel!;
+    }
+
+    // [YENİ] Dışarıdan araç seçili geldiyse ata ve mühürle
+    if (widget.seciliAracAd != null && widget.seciliAracAd!.isNotEmpty) {
+      _seciliKanalNotifier.value = widget.seciliAracAd;
+      debugPrint("🚗 RandevuEkrani: Dışarıdan gelen araç mühürlendi: ${widget.seciliAracAd}");
     }
 
     _seciliKanalNotifier.addListener(_onKanalChanged);
@@ -657,16 +670,19 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
     final saat = _seciliSaatNotifier.value;
     final tarih = _seciliTarihNotifier.value;
     final personel = _seciliPersonelNotifier.value;
-    final kanal = _seciliKanalNotifier.value;
+    
+    // [KRİTİK DÜZELTME]: Araç bilgisini hem notifierdan hem de widget parametresinden garantiye al
+    final String? kanal = _seciliKanalNotifier.value ?? widget.seciliAracAd;
 
     if (_adController.text.trim().isEmpty ||
         _telController.text.trim().isEmpty ||
         (hizmetler.isEmpty && !_isAracKiralama) ||
         saat == null ||
-        tarih == null) {
+        tarih == null ||
+        (_isAracKiralama && (kanal == null || kanal.isEmpty))) {
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Lütfen tüm alanları doldurun.")));
-      _islemYapiliyorNotifier.value = false; // [KRİTİK] Hata durumunda butonu tekrar aktif et
+          const SnackBar(content: Text("Lütfen tüm alanları (Zaman ve Araç) eksiksiz doldurun.")));
+      _islemYapiliyorNotifier.value = false;
       return;
     }
 
@@ -1034,78 +1050,102 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                     ],
 
                     if (_isAracKiralama) ...[
-                      SliverToBoxAdapter(
-                        child: Column(
-                          children: [
+                      SliverPadding(
+                        padding: const EdgeInsets.all(20),
+                        sliver: SliverList(
+                          delegate: SliverChildListDelegate([
                             _adimBasligi("1", "Alış ve İade Bilgileri"),
                             _aracKiralamaZamanSecici(esnaf),
-                          ],
+                          ]),
                         ),
                       ),
-                      ValueListenableBuilder<String?>(
-                          valueListenable: _seciliBitisSaatiNotifier,
-                          builder: (context, bitSaat, _) {
-                            if (bitSaat == null || bitSaat.isEmpty) return const SliverToBoxAdapter(child: SizedBox.shrink());
-                            return SliverToBoxAdapter(
-                              child: Column(
-                                children: [
-                                  _adimBasligi("2", "Araç Seçiniz"),
-                                  _kanalSeciciWidget(esnaf),
-                                ],
-                              ),
-                            );
-                          }),
+                      
+                      SliverPadding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        sliver: SliverToBoxAdapter(
+                          child: ValueListenableBuilder<String?>(
+                              valueListenable: _seciliBitisSaatiNotifier,
+                              builder: (context, bitSaat, _) {
+                                bool zamanSecili = bitSaat != null && bitSaat.isNotEmpty;
+                                if (!zamanSecili) return const SizedBox.shrink();
+                                
+                                // Eğer dışarıdan araç seçili geldiyse "Araç Seçiniz" adımını tamamen atla
+                                if (widget.seciliAracAd != null) return const SizedBox.shrink();
+                                
+                                return Column(
+                                  children: [
+                                    _adimBasligi("2", "Araç Seçiniz"),
+                                    _kanalSeciciWidget(esnaf),
+                                  ],
+                                );
+                              }),
+                        ),
+                      ),
                     ],
 
-                    ValueListenableBuilder<String?>(
-                      valueListenable: _seciliSaatNotifier,
-                      builder: (context, seciliSaat, _) {
-                        return ValueListenableBuilder<String?>(
-                          valueListenable: _seciliKanalNotifier,
-                          builder: (context, seciliKanal, _) {
-                            bool gorunur = false;
-                            if (_isAracKiralama) {
-                              gorunur = seciliKanal != null && seciliKanal.isNotEmpty;
-                            } else {
-                              gorunur = seciliSaat != null;
-                            }
-                            if (!gorunur) return const SliverToBoxAdapter(child: SizedBox.shrink());
-                            return SliverToBoxAdapter(
-                              child: Column(
-                                children: [
-                                  const SizedBox(height: 30),
-                                  _adimBasligi(_isAracKiralama ? "3" : "5", "İletişim Bilgileri"),
-                                  Container(
-                                    padding: const EdgeInsets.all(20),
-                                    decoration: BoxDecoration(
-                                        color: Colors.white,
-                                        borderRadius: BorderRadius.circular(15),
-                                        border: Border.all(color: Colors.grey.shade200)),
-                                    child: Column(
+                    SliverPadding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      sliver: SliverToBoxAdapter(
+                        child: ValueListenableBuilder<String?>(
+                          valueListenable: _seciliSaatNotifier,
+                          builder: (context, seciliSaat, _) {
+                            return ValueListenableBuilder<String?>(
+                              valueListenable: _seciliKanalNotifier,
+                              builder: (context, seciliKanal, _) {
+                                return ValueListenableBuilder<String?>(
+                                  valueListenable: _seciliBitisSaatiNotifier,
+                                  builder: (context, bitisSaati, _) {
+                                    bool zamanAraligiTamam = bitisSaati != null && bitisSaati.isNotEmpty;
+                                    // [KESİN ÇÖZÜM]: Dışarıdan araç seçili geldiyse veya içeriden kanal seçildiyse araç tamamdır
+                                    bool aracTamam = (seciliKanal != null && seciliKanal.isNotEmpty) || (widget.seciliAracAd != null && widget.seciliAracAd!.isNotEmpty);
+                                    
+                                    bool gorunur = false;
+                                    if (_isAracKiralama) {
+                                      gorunur = zamanAraligiTamam && aracTamam;
+                                    } else {
+                                      gorunur = seciliSaat != null;
+                                    }
+                                    
+                                    if (!gorunur) return const SizedBox.shrink();
+                                    
+                                    return Column(
                                       children: [
-                                        TextField(
-                                            controller: _adController,
-                                            decoration: const InputDecoration(
-                                                labelText: "Ad Soyad",
-                                                prefixIcon: Icon(Icons.person_outline),
-                                                border: OutlineInputBorder())),
-                                        const SizedBox(height: 15),
-                                        TextField(
-                                            controller: _telController,
-                                            keyboardType: TextInputType.phone,
-                                            decoration: const InputDecoration(
-                                                labelText: "Telefon Numarası",
-                                                prefixIcon: Icon(Icons.phone_outlined),
-                                                border: OutlineInputBorder())),
+                                        const SizedBox(height: 30),
+                                        _adimBasligi(widget.seciliAracAd != null ? "2" : "3", "İletişim Bilgileri"),
+                                        Container(
+                                          padding: const EdgeInsets.all(20),
+                                          decoration: BoxDecoration(
+                                              color: Colors.white,
+                                              borderRadius: BorderRadius.circular(15),
+                                              border: Border.all(color: Colors.grey.shade200)),
+                                          child: Column(
+                                            children: [
+                                              TextField(
+                                                  controller: _adController,
+                                                  decoration: const InputDecoration(
+                                                      labelText: "Ad Soyad",
+                                                      prefixIcon: Icon(Icons.person_outline),
+                                                      border: OutlineInputBorder())),
+                                              const SizedBox(height: 15),
+                                              TextField(
+                                                  controller: _telController,
+                                                  keyboardType: TextInputType.phone,
+                                                  decoration: const InputDecoration(
+                                                      labelText: "Telefon Numarası",
+                                                      prefixIcon: Icon(Icons.phone_outlined),
+                                                      border: OutlineInputBorder())),
+                                            ],
+                                          ),
+                                        ),
                                       ],
-                                    ),
-                                  ),
-                                ],
-                              ),
+                                    );
+                                  }
+                                );
+                              },
                             );
                           },
-                        );
-                      },
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -1135,24 +1175,36 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                                         valueListenable: _seciliKanalNotifier,
                                         builder: (context, kanal, _) {
                                           final toplamSure = _getToplamSure(hizmetler, widget.esnaf);
+                                          
+                                          // [KESİN DÜZELTME]: Müsaitlik kontrolüne kanal filtresini (içeriden veya dışarıdan seçilen) mutlaka ekle
                                           bool musait = saat != null &&
-                                              _saatMusaitMi(widget.esnaf, saat, _sonRandevular, toplamSure, ajandaVerisi: _gununAjandaVerisi);
-                                          bool butonAktif = saat != null && (_isAracKiralama || hizmetler.isNotEmpty) && musait;
-
-                                          if (_isAracKiralama) {
-                                            if (kanal == null || kanal.isEmpty) butonAktif = false;
-                                            if (toplamSure <= 0) butonAktif = false;
-                                          }
-
+                                              _saatMusaitMi(widget.esnaf, saat, _sonRandevular, toplamSure, 
+                                                ajandaVerisi: _gununAjandaVerisi,
+                                                kanalFiltresi: kanal ?? widget.seciliAracAd);
+                                          
+                                          // [KESİN DÜZELTME]: Butonun aktifleşme ve metin mantığını kökten revize ediyoruz
+                                          bool butonAktif = false;
                                           String butonMetni = "RANDEVUYU TAMAMLA";
+
                                           if (_isAracKiralama) {
-                                            if (toplamSure <= 0) {
+                                            bool zamanTamam = toplamSure > 0;
+                                            bool aracTamam = (kanal != null && kanal.isNotEmpty) || widget.seciliAracAd != null;
+                                            
+                                            if (!zamanTamam) {
                                               butonMetni = "ZAMAN ARALIĞI SEÇİN";
-                                            } else if (kanal == null || kanal.isEmpty) {
+                                              butonAktif = false;
+                                            } else if (!aracTamam) {
                                               butonMetni = "ARAÇ SEÇİNİZ";
+                                              butonAktif = false;
                                             } else if (!musait) {
-                                              butonMetni = "SEÇİLEN ARAÇ KİRALANDI";
+                                              butonMetni = "SEÇİLEN ARAÇ DOLU";
+                                              butonAktif = false;
+                                            } else {
+                                              butonMetni = "RANDEVUYU TAMAMLA";
+                                              butonAktif = true;
                                             }
+                                          } else {
+                                            butonAktif = saat != null && hizmetler.isNotEmpty && musait;
                                           }
 
                                           return Container(
@@ -1272,6 +1324,11 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                 ),
                 child: Column(
                   children: [
+                    // [YENİ]: Akıllı Bilgilendirme - Aracın Dolu Saatlerini Göster
+                    if (esnaf.kategori == 'Araç Kiralama' && (basT != null))
+                      _aracDoluSaatleriCubugu(basT),
+                      
+                    const SizedBox(height: 15),
                     Stack(
                       alignment: Alignment.center,
                       children: [
@@ -1282,57 +1339,64 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                           child: Container(height: 2, color: Colors.orange.withValues(alpha: 0.3)),
                         ),
                         Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                           children: [
-                            _eliteTarihKarti("ALIŞ TARİHİ", basT, basS, true),
-                            Column(
-                              children: [
-                                Container(
-                                  width: 110,
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 15),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(20),
-                                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 15)],
+                            Flexible(child: _eliteTarihKarti("ALIŞ TARİHİ", basT, basS, true)),
+                            const SizedBox(width: 5),
+                            Flexible(
+                              child: Column(
+                                children: [
+                                  Container(
+                                    width: 100,
+                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 15),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(20),
+                                      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 15)],
+                                    ),
+                                    child: Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        const Text("TOPLAM SÜRE",
+                                            textAlign: TextAlign.center,
+                                            style: TextStyle(color: Colors.indigo, fontSize: 8, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+                                        const SizedBox(height: 10),
+                                        if (!hataVar && dGun > 0) ...[
+                                          Text(dGun.toString(), style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: Colors.black, height: 1.0)),
+                                          const Text("GÜN", style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.grey)),
+                                        ],
+                                        if (!hataVar && dGun > 0 && dSaat > 0)
+                                          const Padding(
+                                            padding: EdgeInsets.symmetric(vertical: 2),
+                                            child: Text("ve", style: TextStyle(color: Colors.orange, fontSize: 10, fontWeight: FontWeight.bold, fontStyle: FontStyle.italic)),
+                                          ),
+                                        if (!hataVar && dSaat > 0) ...[
+                                          Text(dSaat.toString(), style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: Colors.black, height: 1.0)),
+                                          const Text("SAAT", style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.grey)),
+                                        ],
+                                        if (!hataVar && dSaat > 0 && dDakika > 0)
+                                          const Padding(
+                                            padding: EdgeInsets.symmetric(vertical: 2),
+                                            child: Text("ve", style: TextStyle(color: Colors.orange, fontSize: 10, fontWeight: FontWeight.bold, fontStyle: FontStyle.italic)),
+                                          ),
+                                        if (!hataVar && dDakika > 0 && dGun == 0) ...[
+                                          Text(dDakika.toString(), style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: Colors.black, height: 1.0)),
+                                          const Text("DAKİKA", style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.grey)),
+                                        ],
+                                        if (hataVar || (dGun == 0 && dSaat == 0 && dDakika == 0))
+                                          const Text("--", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.grey)),
+                                      ],
+                                    ),
                                   ),
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      const Text("TOPLAM SÜRE",
-                                          style: TextStyle(color: Colors.indigo, fontSize: 9, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
-                                      const SizedBox(height: 10),
-                                      if (!hataVar && dGun > 0) ...[
-                                        Text(dGun.toString(), style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: Colors.black, height: 1.0)),
-                                        const Text("GÜN", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
-                                      ],
-                                      if (!hataVar && dGun > 0 && dSaat > 0)
-                                        const Padding(
-                                          padding: EdgeInsets.symmetric(vertical: 4),
-                                          child: Text("ve", style: TextStyle(color: Colors.orange, fontSize: 12, fontWeight: FontWeight.bold, fontStyle: FontStyle.italic)),
-                                        ),
-                                      if (!hataVar && dSaat > 0) ...[
-                                        Text(dSaat.toString(), style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: Colors.black, height: 1.0)),
-                                        const Text("SAAT", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
-                                      ],
-                                      if (!hataVar && dSaat > 0 && dDakika > 0)
-                                        const Padding(
-                                          padding: EdgeInsets.symmetric(vertical: 4),
-                                          child: Text("ve", style: TextStyle(color: Colors.orange, fontSize: 12, fontWeight: FontWeight.bold, fontStyle: FontStyle.italic)),
-                                        ),
-                                      if (!hataVar && dDakika > 0 && dGun == 0) ...[
-                                        Text(dDakika.toString(), style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: Colors.black, height: 1.0)),
-                                        const Text("DAKİKA", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
-                                      ],
-                                      if (hataVar || (dGun == 0 && dSaat == 0 && dDakika == 0))
-                                        const Text("--", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.grey)),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(height: 10),
-                                Text(hataVar ? "Geçersiz aralık!" : "Lütfen süreyi onaylayın.", style: const TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.w500)),
-                              ],
+                                  const SizedBox(height: 10),
+                                  Text(hataVar ? "Geçersiz aralık!" : "Lütfen süreyi onaylayın.", 
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(color: Colors.white70, fontSize: 9, fontWeight: FontWeight.w500)),
+                                ],
+                              ),
                             ),
-                            _eliteTarihKarti("İADE TARİHİ", bitT, bitS, false),
+                            const SizedBox(width: 5),
+                            Flexible(child: _eliteTarihKarti("İADE TARİHİ", bitT, bitS, false)),
                           ],
                         ),
                       ],
@@ -1394,6 +1458,72 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
           ),
         ),
       ],
+    );
+  }
+
+  // [YENİ] Akıllı Bilgilendirme Çubuğu: Seçilen aracın o günkü tüm rezervasyonlarını listeler
+  Widget _aracDoluSaatleriCubugu(DateTime seciliTarih) {
+    final String? seciliArac = _seciliKanalNotifier.value ?? widget.seciliAracAd;
+    if (seciliArac == null || seciliArac.isEmpty) return const SizedBox.shrink();
+
+    // Seçilen güne ve araca ait aktif randevuları bul
+    final gunlukRandevular = _sonRandevular.where((r) {
+      bool ayniGun = r.tarih.year == seciliTarih.year && r.tarih.month == seciliTarih.month && r.tarih.day == seciliTarih.day;
+      if (!ayniGun) return false;
+
+      String rKanal = (r.randevuKanali ?? "").trim().toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+      String temizSecili = seciliArac.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+      return rKanal == temizSecili;
+    }).toList();
+
+    if (gunlukRandevular.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(10)),
+        child: const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.check_circle_outline, color: Colors.green, size: 14),
+            SizedBox(width: 8),
+            Text("Bu araç seçilen gün için tamamen müsait.", style: TextStyle(color: Colors.white70, fontSize: 11)),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(color: Colors.white12, borderRadius: BorderRadius.circular(15)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.info_outline, color: Colors.orange, size: 14),
+              SizedBox(width: 8),
+              Text("ARACIN DOLU SAATLERİ", style: TextStyle(color: Colors.orange, fontSize: 10, fontWeight: FontWeight.bold)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: gunlukRandevular.map((r) {
+                final DateTime rBas = DateTime(r.tarih.year, r.tarih.month, r.tarih.day, int.parse(r.saat.split(':')[0]), int.parse(r.saat.split(':')[1]));
+                final DateTime rBit = rBas.add(Duration(minutes: r.sure));
+                final String aralik = "${DateFormat('HH:mm').format(rBas)} - ${DateFormat('HH:mm').format(rBit)}";
+                
+                return Container(
+                  margin: const EdgeInsets.only(right: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(color: Colors.orange.shade800, borderRadius: BorderRadius.circular(8)),
+                  child: Text(aralik, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                );
+              }).toList(),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1522,109 +1652,122 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
     return ValueListenableBuilder<String?>(
       valueListenable: _seciliKanalNotifier,
       builder: (context, seciliKanal, _) {
-        // [GÜNCELLEME] Pasif (aktif olmayan) araçları listeden çıkarıyoruz
-        List<dynamic> kanallar = esnaf.kanallar ?? [];
-        if (esnaf.kategori == 'Araç Kiralama') {
-          kanallar = kanallar.where((k) {
-            if (k is Map) return k["aktif"] ?? true;
-            return true;
-          }).toList();
+        return ValueListenableBuilder<String?>(
+          valueListenable: _seciliSaatNotifier,
+          builder: (context, basSaat, _) {
+            return ValueListenableBuilder<String?>(
+              valueListenable: _seciliBitisSaatiNotifier,
+              builder: (context, bitSaat, _) {
+                // [GÜNCELLEME]: Pasif (aktif olmayan) araçları listeden çıkarıyoruz
+                List<dynamic> kanallar = esnaf.kanallar ?? [];
+                if (esnaf.kategori == 'Araç Kiralama') {
+                  kanallar = kanallar.where((k) {
+                    if (k is Map) return k["aktif"] ?? true;
+                    return true;
+                  }).toList();
 
-          final hizmetler = _seciliHizmetlerNotifier.value;
-          final toplamSure = _getToplamSure(hizmetler, esnaf);
-          final basSaat = _seciliSaatNotifier.value;
+                  final hizmetler = _seciliHizmetlerNotifier.value;
+                  final toplamSure = _getToplamSure(hizmetler, esnaf);
 
-          return Column(
-            children: kanallar.map((k) {
-              String ad = ""; String resim = ""; String plaka = "";
-              if (k is Map) {
-                ad = k['ad']?.toString() ?? k['plaka']?.toString() ?? k['marka']?.toString() ?? "İsimsiz Araç";
-                resim = k['resim']?.toString() ?? ""; plaka = k['plaka']?.toString() ?? "";
-              } else {
-                ad = k.toString();
-              }
-              bool secili = seciliKanal == ad;
-              String? nedenKapali; bool blocked = false;
-              String iadeBilgisi = "";
+                  return Column(
+                    children: kanallar.map((k) {
+                      String ad = ""; String resim = ""; String plaka = "";
+                      if (k is Map) {
+                        ad = k['ad']?.toString() ?? k['plaka']?.toString() ?? k['marka']?.toString() ?? "İsimsiz Araç";
+                        resim = k['resim']?.toString() ?? ""; plaka = k['plaka']?.toString() ?? "";
+                      } else {
+                        ad = k.toString();
+                      }
+                      bool secili = seciliKanal == ad;
+                      String? nedenKapali; bool blocked = false;
+                      String iadeBilgisi = "";
 
-              if (basSaat != null && toplamSure > 0) {
-                nedenKapali = _saatNedenKapali(esnaf, basSaat, _sonRandevular, toplamSure, ajandaVerisi: _gununAjandaVerisi, kanalFiltresi: ad);
-                blocked = nedenKapali != null;
-                if (nedenKapali == "Bakım ve Temizlik Sürecinde" && esnaf.bakimSurecindeRandevuAlinsin) blocked = false;
+                      if (basSaat != null && toplamSure > 0) {
+                        nedenKapali = _saatNedenKapali(esnaf, basSaat, _sonRandevular, toplamSure, ajandaVerisi: _gununAjandaVerisi, kanalFiltresi: ad);
+                        blocked = nedenKapali != null;
+                        if (nedenKapali == "Bakım ve Temizlik Sürecinde" && esnaf.bakimSurecindeRandevuAlinsin) blocked = false;
 
-                // [YENİ] İade saatini hesapla
-                if (blocked) {
-                  final iadeZamani = _getAracIadeZamani(ad, basSaat, toplamSure);
-                  if (iadeZamani != null) {
-                    iadeBilgisi = "İade: ${DateFormat('dd MMM HH:mm', 'tr_TR').format(iadeZamani)}";
-                  }
-                }
-              }
-              return GestureDetector(
-                onTap: blocked ? null : () => _seciliKanalNotifier.value = ad,
-                child: Opacity(
-                  opacity: blocked ? 0.6 : 1.0,
-                  child: Container(
-                    margin: const EdgeInsets.only(bottom: 12), padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.white, borderRadius: BorderRadius.circular(15),
-                      border: Border.all(color: secili ? Colors.orange : Colors.grey.shade200, width: secili ? 2 : 1),
-                    ),
-                    child: Row(
-                      children: [
-                        Stack(
-                          children: [
-                            GestureDetector(onTap: resim.isNotEmpty ? () => _resimGoster(resim, ad) : null, child: ClipRRect(borderRadius: BorderRadius.circular(10), child: resim.isNotEmpty ? Image.network(resim, width: 100, height: 70, fit: BoxFit.cover) : Container(width: 100, height: 70, color: Colors.grey.shade100, child: const Icon(Icons.directions_car)))),
-                            if (nedenKapali != null) Positioned.fill(child: Container(decoration: BoxDecoration(color: blocked ? Colors.black54 : Colors.blue.withValues(alpha: 0.7), borderRadius: BorderRadius.circular(10)), child: Center(child: Text(nedenKapali.toUpperCase(), textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 8))))),
-                          ],
-                        ),
-                        const SizedBox(width: 15),
-                        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Text(ad, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)), 
-                          const SizedBox(height: 4), 
-                          Row(
-                            children: [
-                              Text(plaka, style: const TextStyle(color: Colors.blue, fontSize: 12, fontWeight: FontWeight.bold)),
-                              if (iadeBilgisi.isNotEmpty) ...[
-                                const SizedBox(width: 10),
-                                const Icon(Icons.access_time, size: 12, color: Colors.red),
-                                const SizedBox(width: 4),
-                                Text(iadeBilgisi, style: const TextStyle(color: Colors.red, fontSize: 11, fontWeight: FontWeight.bold)),
+                        // [YENİ] İade saatini hesapla
+                        if (blocked) {
+                          final iadeZamani = _getAracIadeZamani(ad, basSaat, toplamSure);
+                          if (iadeZamani != null) {
+                            iadeBilgisi = "İade: ${DateFormat('dd MMM HH:mm', 'tr_TR').format(iadeZamani)}";
+                          }
+                        }
+                      }
+                      return GestureDetector(
+                        onTap: blocked ? null : () => _seciliKanalNotifier.value = ad,
+                        child: Opacity(
+                          opacity: blocked ? 0.6 : 1.0,
+                          child: Container(
+                            margin: const EdgeInsets.only(bottom: 12), padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.white, borderRadius: BorderRadius.circular(15),
+                              border: Border.all(color: (blocked && nedenKapali != "Geçmiş saat") ? Colors.orange.shade300 : (secili ? Colors.blue : Colors.grey.shade200), width: secili || blocked ? 2 : 1),
+                              boxShadow: (blocked && nedenKapali != "Geçmiş saat") ? [BoxShadow(color: Colors.orange.withValues(alpha: 0.1), blurRadius: 10)] : null,
+                            ),
+                            child: Row(
+                              children: [
+                                Stack(
+                                  children: [
+                                    GestureDetector(onTap: resim.isNotEmpty ? () => _resimGoster(resim, ad) : null, child: ClipRRect(borderRadius: BorderRadius.circular(10), child: resim.isNotEmpty ? Image.network(resim, width: 100, height: 70, fit: BoxFit.cover) : Container(width: 100, height: 70, color: Colors.grey.shade100, child: const Icon(Icons.directions_car)))),
+                                    if (nedenKapali != null && nedenKapali != "Geçmiş saat") 
+                                       Positioned.fill(child: Container(decoration: BoxDecoration(color: Colors.orange.withValues(alpha: 0.7), borderRadius: BorderRadius.circular(10)), child: Center(child: Text("REZERVE", textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10))))),
+                                    if (nedenKapali == "Geçmiş saat")
+                                       Positioned.fill(child: Container(decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(10)), child: const Center(child: Icon(Icons.block, color: Colors.white, size: 20)))),
+                                  ],
+                                ),
+                                const SizedBox(width: 15),
+                                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                  Text(ad, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)), 
+                                  const SizedBox(height: 4), 
+                                  Row(
+                                    children: [
+                                      Text(plaka, style: const TextStyle(color: Colors.blue, fontSize: 12, fontWeight: FontWeight.bold)),
+                                      if (iadeBilgisi.isNotEmpty) ...[
+                                        const SizedBox(width: 10),
+                                        const Icon(Icons.access_time, size: 12, color: Colors.red),
+                                        const SizedBox(width: 4),
+                                        Text(iadeBilgisi, style: const TextStyle(color: Colors.red, fontSize: 11, fontWeight: FontWeight.bold)),
+                                      ],
+                                    ],
+                                  )
+                                ])),
+                                if (secili) const Icon(Icons.check_circle, color: Colors.blue),
                               ],
-                            ],
-                          )
-                        ])),
-                        if (secili) const Icon(Icons.check_circle, color: Colors.orange),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            }).toList(),
-          );
-        }
-
-        final List<dynamic> liste = personelModu ? (esnaf.personeller ?? []) : (aracModu ? esnaf.araclar : (esnaf.kanallar ?? []));
-        return Wrap(
-          spacing: 10, runSpacing: 10,
-          children: liste.map((item) {
-            String ad = ""; String kanalDegeri = "";
-            if (personelModu) { ad = item['isim']?.toString() ?? ""; kanalDegeri = item['kanal']?.toString() ?? ""; }
-            else if (aracModu) { ad = item['plaka']?.toString() ?? ""; kanalDegeri = ad; }
-            else { ad = item is Map ? (item['ad'] ?? item['plaka'] ?? "") : item.toString(); kanalDegeri = ad; }
-            bool secili = personelModu ? (_seciliPersonelNotifier.value == ad) : (seciliKanal == kanalDegeri);
-            return ChoiceChip(
-              label: Text(ad), selected: secili,
-              onSelected: (val) {
-                if (val) {
-                  _aramaYapiliyorNotifier.value = true;
-                  if (personelModu) { _seciliPersonelNotifier.value = ad; _seciliKanalNotifier.value = kanalDegeri; }
-                  else { _seciliKanalNotifier.value = kanalDegeri; }
-                  _seciliSaatNotifier.value = null; _sonrakiAdimaGit(100);
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  );
                 }
-              },
+
+                final List<dynamic> liste = personelModu ? (esnaf.personeller ?? []) : (aracModu ? esnaf.araclar : (esnaf.kanallar ?? []));
+                return Wrap(
+                  spacing: 10, runSpacing: 10,
+                  children: liste.map((item) {
+                    String ad = ""; String kanalDegeri = "";
+                    if (personelModu) { ad = item['isim']?.toString() ?? ""; kanalDegeri = item['kanal']?.toString() ?? ""; }
+                    else if (aracModu) { ad = item['plaka']?.toString() ?? ""; kanalDegeri = ad; }
+                    else { ad = item is Map ? (item['ad'] ?? item['plaka'] ?? "") : item.toString(); kanalDegeri = ad; }
+                    bool secili = personelModu ? (_seciliPersonelNotifier.value == ad) : (seciliKanal == kanalDegeri);
+                    return ChoiceChip(
+                      label: Text(ad), selected: secili,
+                      onSelected: (val) {
+                        if (val) {
+                          _aramaYapiliyorNotifier.value = true;
+                          if (personelModu) { _seciliPersonelNotifier.value = ad; _seciliKanalNotifier.value = kanalDegeri; }
+                          else { _seciliKanalNotifier.value = kanalDegeri; }
+                          _seciliSaatNotifier.value = null; _sonrakiAdimaGit(100);
+                        }
+                      },
+                    );
+                  }).toList(),
+                );
+              }
             );
-          }).toList(),
+          }
         );
       },
     );
