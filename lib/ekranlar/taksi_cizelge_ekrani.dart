@@ -28,6 +28,7 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
   String? operasyonModu; // 'ekle' veya 'sil'
   Set<String> seciliGunler = {};
   DateTime seciliGun = DateTime.now();
+  String _seciliKapsam = "AY"; // HAFTA, AY, YIL
 
   final TextEditingController _aracAramaController = TextEditingController();
   String _aracAramaFiltresi = "";
@@ -238,32 +239,72 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
 
 
 
-  void _topluIslemUygula() {
-    // 1-1 durumunda _uygula1e1() kullanıldığı için buraya normalde gelmemeli ama güvenlik için kontrol
-    if (seciliDurum == '1-1') {
-      _uygula1e1('ay');
-      return;
-    }
-
-    setState(() {
-      int baslangicGun = seciliGun.day;
+  void _executePlanLoop(void Function(DateTime tarih, String ayKey) action) {
+    if (_seciliKapsam == "GÜN") {
+      String ayKey = DateFormat('yyyy-MM').format(seciliGun);
+      action(seciliGun, ayKey);
+    } else if (_seciliKapsam == "HAFTA") {
+      for (int i = 0; i < 7; i++) {
+        DateTime tarih = seciliGun.add(Duration(days: i));
+        String ayKey = DateFormat('yyyy-MM').format(tarih);
+        action(tarih, ayKey);
+      }
+    } else if (_seciliKapsam == "AY") {
       int gunSayisi = DateTime(seciliAy.year, seciliAy.month + 1, 0).day;
+      for (int i = seciliGun.day; i <= gunSayisi; i++) {
+        DateTime tarih = DateTime(seciliAy.year, seciliAy.month, i);
+        String ayKey = DateFormat('yyyy-MM').format(tarih);
+        action(tarih, ayKey);
+      }
+    } else if (_seciliKapsam == "YIL") {
+      for (int m = seciliAy.month; m <= 12; m++) {
+        int gunSayisi = DateTime(seciliAy.year, m + 1, 0).day;
+        int basDay = (m == seciliAy.month) ? seciliGun.day : 1;
+        for (int i = basDay; i <= gunSayisi; i++) {
+          DateTime tarih = DateTime(seciliAy.year, m, i);
+          String ayKey = DateFormat('yyyy-MM').format(tarih);
+          action(tarih, ayKey);
+        }
+      }
+    }
+  }
 
-      // Diğer modlar (Ekle-C, Ekle-N, Ekle-I veya Sil) için baslangicGun'den sonrasını güncelle
-      for (int i = baslangicGun; i <= gunSayisi; i++) {
-        String tKey = DateFormat('yyyy-MM-dd').format(DateTime(seciliAy.year, seciliAy.month, i));
-        String ayKey = tKey.substring(0, 7);
-        
+  void _topluIslemUygula() {
+    setState(() {
+      _executePlanLoop((tarih, ayKey) {
+        String tKey = DateFormat('yyyy-MM-dd').format(tarih);
         final gunMap = Map<String, dynamic>.from(aylikVeri[tKey] ?? {});
         bool degisti = false;
 
         if (operasyonModu == 'ekle' && seciliDurum != null) {
           for (var p in seciliAraclar) {
-            // Nöbetçi (N) olan günler korunur (Eğer atanan durum N değilse)
-            if (gunMap[p] == 'N' && seciliDurum != 'N') continue;
-            if (gunMap[p] != seciliDurum) {
-              gunMap[p] = seciliDurum!;
-              degisti = true;
+            String mevcut = gunMap[p]?.toString() ?? "";
+            if (seciliDurum == 'I') {
+              if (mevcut != 'I') {
+                gunMap[p] = 'I';
+                degisti = true;
+              }
+            } else {
+              // Eklenecek durum (seciliDurum) 'C', 'N' veya 'CN' olabilir (>> butonu durumunda)
+              String yeni = mevcut;
+              if (mevcut == 'I') {
+                yeni = seciliDurum!;
+              } else {
+                // seciliDurum içindeki her bir karakteri (C, N) mevcut duruma ekle (yoksa)
+                for (var char in seciliDurum!.split('')) {
+                  if (!yeni.contains(char)) yeni += char;
+                }
+              }
+              
+              // Alfabetik sırala (CN)
+              List<String> chars = yeni.split('');
+              chars.sort();
+              String siraliYeni = chars.join('');
+              
+              if (mevcut != siraliYeni) {
+                gunMap[p] = siraliYeni;
+                degisti = true;
+              }
             }
           }
         } else if (operasyonModu == 'sil') {
@@ -283,7 +324,7 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
             aylikVeri[tKey] = gunMap;
           }
         }
-      }
+      });
       seciliGunler.clear(); 
     });
   }
@@ -388,7 +429,7 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 7, 
-          childAspectRatio: 1.1,
+          childAspectRatio: 1.6,
         ),
         itemCount: gunSayisi + baslangicBosluk,
         itemBuilder: (context, index) {
@@ -463,7 +504,7 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
 
     // Seçili günde 'N' (Nöbet) olarak işaretlenmiş plakaları bul
     final nobetliPlakalar = gunData.entries
-        .where((e) => e.value == 'N')
+        .where((e) => e.value?.toString().contains('N') == true)
         .map((e) => e.key)
         .toList();
 
@@ -478,9 +519,15 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
                    sofor.contains(_aracAramaFiltresi.toLowerCase());
           }).map((a) => a['plaka']?.toString()).toSet();
 
-    final bool gundeDurumVar = gunData.entries.any((e) => 
-      hedefPlakalar.contains(e.key) && (e.value == 'C' || e.value == 'N' || e.value == 'I')
-    );
+    final bool gundeDurumVar = gunData.entries.any((e) {
+      final v = e.value?.toString() ?? "";
+      return hedefPlakalar.contains(e.key) && (v.contains('C') || v.contains('N') || v.contains('I'));
+    });
+
+    final calisanPlakalar = gunData.entries
+        .where((e) => e.value?.toString().contains('C') == true)
+        .map((e) => e.key)
+        .toList();
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -491,7 +538,40 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Nöbet Planlama Butonu (Sadece nöbet seçili araç varsa görünür)
+          // 1. Seçili Araçlara Plan Oluştur (Sadece Çalışan araçlar varsa görünür)
+          if (calisanPlakalar.isNotEmpty) ...[
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        seciliAraclar = calisanPlakalar.toSet();
+                        seciliDurum = 'C';
+                        operasyonModu = 'ekle';
+                      });
+                      _planOlusturOnayiAl(calisanPlakalar.length);
+                    },
+                    icon: const Icon(Icons.calendar_today, size: 18),
+                    label: const Text(
+                      "Seçili Araçlara Plan Oluştur",
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: Colors.blue.shade700,
+                      side: BorderSide(color: Colors.blue.shade700, width: 1.5),
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+          ],
+
+          // 2. Nöbet Planlama Butonu (Sadece nöbet seçili araç varsa görünür)
           if (nobetliPlakalar.isNotEmpty) ...[
             Row(
               children: [
@@ -507,14 +587,14 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
                       backgroundColor: Colors.white,
                       foregroundColor: Colors.orange.shade700,
                       side: BorderSide(color: Colors.orange.shade700, width: 1.5),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      padding: const EdgeInsets.symmetric(vertical: 8),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                     ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
           ],
 
           // 1-1 Çalışma Düzeni Butonu
@@ -527,6 +607,7 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
                       setState(() {
                         seciliDurum = '1-1';
                         operasyonModu = 'ekle';
+                        if (_seciliKapsam == "GÜN") _seciliKapsam = "AY";
                       });
                       _topluIslemOnayiAl();
                     },
@@ -536,14 +617,14 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
                       backgroundColor: Colors.white,
                       foregroundColor: Colors.teal.shade600,
                       side: BorderSide(color: Colors.teal.shade600, width: 1.5),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      padding: const EdgeInsets.symmetric(vertical: 8),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                     ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
           ],
 
           // Kaydet Butonu
@@ -559,7 +640,7 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green.shade700,
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
                 ),
@@ -574,81 +655,60 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
   void _nobetSirasiniOnayla(List<String> nobetliPlakalar) {
     if (nobetliPlakalar.isEmpty) return;
     final seciliPlaka = nobetliPlakalar.first;
-    String seciliKapsam = 'ay';
 
     showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) {
-          String kapsamMetni = seciliKapsam == 'hafta' ? "hafta sonuna kadar" : (seciliKapsam == 'yil' ? "yıl sonuna kadar" : "ay sonuna kadar");
-          
+          String kapsamText = _seciliKapsam == "GÜN" ? "sadece bugün" : (_seciliKapsam == "HAFTA" ? "1 hafta boyunca" : (_seciliKapsam == "AY" ? "ay sonuna kadar" : "yıl sonuna kadar"));
+
           return AlertDialog(
             title: const Text("Nöbet Planı Oluştur"),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text("${DateFormat('dd MMMM').format(seciliGun)} için nöbetçi seçildi.", style: const TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 12),
-                  const Text("Önce planlama kapsamını seçin:", style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.blue)),
-                  RadioListTile(
-                    title: const Text("Hafta Sonuna kadar"),
-                    value: 'hafta',
-                    groupValue: seciliKapsam,
-                    onChanged: (v) => setDialogState(() => seciliKapsam = v.toString()),
-                  ),
-                  RadioListTile(
-                    title: const Text("Ay sonuna kadar"),
-                    value: 'ay',
-                    groupValue: seciliKapsam,
-                    onChanged: (v) => setDialogState(() => seciliKapsam = v.toString()),
-                  ),
-                  RadioListTile(
-                    title: const Text("Yıl Sonuna kadar"),
-                    value: 'yil',
-                    groupValue: seciliKapsam,
-                    onChanged: (v) => setDialogState(() => seciliKapsam = v.toString()),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _kapsamSeciciWidget(setDialogState),
+                const SizedBox(height: 20),
+                Text("${DateFormat('dd MMMM').format(seciliGun)} için nöbetçi seçildi.", style: const TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 12),
+                Text("Nasıl bir nöbet çizelgesi oluşturulsun? ($kapsamText)", style: const TextStyle(fontSize: 13)),
+                const SizedBox(height: 8),
+                if (nobetliPlakalar.length == 1) ...[
+                  _nobetSecenekButonu(
+                    icon: Icons.pin_drop,
+                    color: Colors.orange,
+                    baslik: "$seciliPlaka Aracını Sabitle",
+                    altBaslik: "$kapsamText her gün bu araç nöbetçi olur.",
+                    onTap: () {
+                      Navigator.pop(context);
+                      _nobetSirasiniUygula(mode: 'SABITLE', plakalar: nobetliPlakalar);
+                    },
                   ),
                   const Divider(),
-                  const Text("Nasıl bir nöbet çizelgesi oluşturulsun?", style: TextStyle(fontSize: 13)),
-                  const SizedBox(height: 8),
-                  if (nobetliPlakalar.length == 1) ...[
-                    _nobetSecenekButonu(
-                      icon: Icons.pin_drop,
-                      color: Colors.orange,
-                      baslik: "$seciliPlaka Aracını Sabitle",
-                      altBaslik: "$kapsamMetni her gün bu araç nöbetçi olur.",
-                      onTap: () {
-                        Navigator.pop(context);
-                        _nobetSirasiniUygula(mode: 'SABITLE', plakalar: nobetliPlakalar, kapsam: seciliKapsam);
-                      },
-                    ),
-                    const Divider(),
-                    _nobetSecenekButonu(
-                      icon: Icons.format_list_numbered,
-                      color: Colors.blue,
-                      baslik: "Tüm Filoyu Nöbet Sırasına Göre Ata",
-                      altBaslik: "$seciliPlaka'dan başlayarak tüm araçları № sırasına göre $kapsamMetni dağıtır.",
-                      onTap: () {
-                        Navigator.pop(context);
-                        _nobetSirasiniUygula(mode: 'TUMU_SIRALI', plakalar: nobetliPlakalar, kapsam: seciliKapsam);
-                      },
-                    ),
-                  ] else ...[
-                    _nobetSecenekButonu(
-                      icon: Icons.loop,
-                      color: Colors.green,
-                      baslik: "Seçilileri Kendi Arasında Döndür",
-                      altBaslik: "Bugün seçilen ${nobetliPlakalar.length} aracı № sırasına göre $kapsamMetni sırayla dağıtır.",
-                      onTap: () {
-                        Navigator.pop(context);
-                        _nobetSirasiniUygula(mode: 'SECILILERI_DONDUR', plakalar: nobetliPlakalar, kapsam: seciliKapsam);
-                      },
-                    ),
-                  ],
+                  _nobetSecenekButonu(
+                    icon: Icons.format_list_numbered,
+                    color: Colors.blue,
+                    baslik: "Tüm Filoyu Sırayla Ata",
+                    altBaslik: "$seciliPlaka'dan başlayarak tüm araçları № sırasına göre $kapsamText dağıtır.",
+                    onTap: () {
+                      Navigator.pop(context);
+                      _nobetSirasiniUygula(mode: 'TUMU_SIRALI', plakalar: nobetliPlakalar);
+                    },
+                  ),
+                ] else ...[
+                  _nobetSecenekButonu(
+                    icon: Icons.loop,
+                    color: Colors.green,
+                    baslik: "Seçilileri Kendi Arasında Döndür",
+                    altBaslik: "Bugün seçilen ${nobetliPlakalar.length} aracı № sırasına göre $kapsamText sırayla dağıtır.",
+                    onTap: () {
+                      Navigator.pop(context);
+                      _nobetSirasiniUygula(mode: 'SECILILERI_DONDUR', plakalar: nobetliPlakalar);
+                    },
+                  ),
                 ],
-              ),
+              ],
             ),
             actions: [
               TextButton(onPressed: () => Navigator.pop(context), child: const Text("İptal")),
@@ -695,17 +755,8 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
     );
   }
 
-  void _nobetSirasiniUygula({required String mode, required List<String> plakalar, required String kapsam}) {
+  void _nobetSirasiniUygula({required String mode, required List<String> plakalar}) {
     if (plakalar.isEmpty) return;
-
-    DateTime bitisTarihi;
-    if (kapsam == 'hafta') {
-      bitisTarihi = seciliGun.add(Duration(days: 7 - seciliGun.weekday));
-    } else if (kapsam == 'yil') {
-      bitisTarihi = DateTime(seciliGun.year, 12, 31);
-    } else { // ay
-      bitisTarihi = DateTime(seciliGun.year, seciliGun.month + 1, 0);
-    }
 
     setState(() {
       List<String> havuz = [];
@@ -746,25 +797,32 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
 
       if (havuz.isEmpty) return;
 
-      DateTime suan = seciliGun;
-      while (!suan.isAfter(bitisTarihi)) {
-        String tKey = DateFormat('yyyy-MM-dd').format(suan);
-        String ayKey = tKey.substring(0, 7);
-        
+      int dayIndex = 0;
+      _executePlanLoop((tarih, ayKey) {
+        String tKey = DateFormat('yyyy-MM-dd').format(tarih);
         final gunMap = Map<String, dynamic>.from(aylikVeri[tKey] ?? {});
         
-        // O günkü mevcut nöbetçiyi temizle
-        gunMap.removeWhere((k, v) => v == 'N');
-        
-        int offset = suan.difference(seciliGun).inDays;
-        String atanacakPlaka = havuz[offset % havuz.length];
-        gunMap[atanacakPlaka] = 'N';
-        
-        aylikVeri[tKey] = gunMap;
-        degisenAylar.add(ayKey);
+        // 1. O günkü mevcut nöbetçileri bu gruptan temizle (Diğer durumları koruyarak)
+        Map<String, dynamic> yeniGunMap = {};
+        gunMap.forEach((plaka, durum) {
+          String s = durum.toString().replaceAll('N', '');
+          if (s.isNotEmpty) yeniGunMap[plaka] = s;
+        });
 
-        suan = suan.add(const Duration(days: 1));
-      }
+        // 2. Yeni nöbetçiyi ata (Mevcut durumuna ekle)
+        String atanacakPlaka = havuz[dayIndex % havuz.length];
+        String mevcut = yeniGunMap[atanacakPlaka]?.toString() ?? "";
+        if (!mevcut.contains('N')) {
+          String birlesik = mevcut + 'N';
+          List<String> chars = birlesik.split('');
+          chars.sort();
+          yeniGunMap[atanacakPlaka] = chars.join('');
+        }
+        
+        aylikVeri[tKey] = yeniGunMap;
+        degisenAylar.add(ayKey);
+        dayIndex++;
+      });
     });
 
     ScaffoldMessenger.of(context).showSnackBar(
@@ -775,75 +833,47 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
 
 
   void _topluIslemOnayiAl() {
-    String seciliKapsam = 'ay';
     if (seciliDurum == '1-1') {
       final gunKey = DateFormat('yyyy-MM-dd').format(seciliGun);
       final gunData = aylikVeri[gunKey] ?? {};
 
-      final hedefPlakalar = seciliAraclar.isNotEmpty
-          ? seciliAraclar.toSet() 
-          : araclar.where((a) {
-              if (_aracAramaFiltresi.isEmpty) return true;
-              final plaka = (a['plaka'] ?? "").toString().toLowerCase();
-              final sofor = (a['soforAd'] ?? a['sofor'] ?? "").toString().toLowerCase();
-              return plaka.contains(_aracAramaFiltresi.toLowerCase()) || 
-                     sofor.contains(_aracAramaFiltresi.toLowerCase());
-            }).map((a) => a['plaka']?.toString()).toSet();
-
-      final etkilenenler = hedefPlakalar.where((p) {
-        final d = gunData[p];
-        return d == 'C' || d == 'N' || d == 'I';
-      }).toList();
+      // Bugün 'Çalış' (C) olarak işaretlenen araçları belirle
+      final calisanPlakalar = gunData.entries
+          .where((e) => e.value?.toString().contains('C') == true)
+          .map((e) => e.key)
+          .toList();
 
       showDialog(
         context: context,
         builder: (context) => StatefulBuilder(
           builder: (context, setDialogState) {
-            String kapsamMetni = seciliKapsam == 'hafta' ? "hafta sonuna kadar" : (seciliKapsam == 'yil' ? "yıl sonuna kadar" : "ay sonuna kadar");
+            String kapsamText = _seciliKapsam == "HAFTA" ? "1 hafta boyunca" : (_seciliKapsam == "AY" ? "ay sonuna kadar" : "yıl sonuna kadar");
             String mesaj;
-            if (etkilenenler.length == 1) {
-              mesaj = "${etkilenenler.first} plakalı aracın, seçili günden itibaren $kapsamMetni 'bir gün çalışma, bir gün istirahat' düzeninde çalıştırılmasını uygun görüyor musunuz?";
-            } else if (etkilenenler.isNotEmpty) {
-              mesaj = "Seçili ${etkilenenler.length} aracın seçili günden itibaren $kapsamMetni 'bir gün çalışma, bir gün istirahat' düzeninde çalıştırılmasını uygun görüyor musunuz?";
+            
+            if (calisanPlakalar.isEmpty) {
+              mesaj = "Bugün için hiçbir araç 'Çalış' (Mavi) olarak seçilmemiş. Lütfen önce bugünkü çalışma düzenini belirleyin.";
             } else {
-              mesaj = "Tüm araçların seçili günden itibaren $kapsamMetni 'bir gün çalışma, bir gün istirahat' düzeninde çalıştırılmasını uygun görüyor musunuz?";
+              mesaj = "Seçili ${calisanPlakalar.length} aracın bugün çalışacağı, diğer tüm araçların istirahat edeceği şekilde $kapsamText '1 gün çalış 1 gün istirahat' düzeni uygulansın mı?";
             }
 
             return AlertDialog(
-              title: const Text("1-1 Düzeni Uygula"),
+              title: const Text("1 Gün Çalış 1 Gün İstirahat"),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(mesaj),
-                  const SizedBox(height: 15),
-                  RadioListTile(
-                    title: const Text("Hafta Sonuna kadar"),
-                    value: 'hafta',
-                    groupValue: seciliKapsam,
-                    onChanged: (v) => setDialogState(() => seciliKapsam = v.toString()),
-                  ),
-                  RadioListTile(
-                    title: const Text("Ay sonuna kadar"),
-                    value: 'ay',
-                    groupValue: seciliKapsam,
-                    onChanged: (v) => setDialogState(() => seciliKapsam = v.toString()),
-                  ),
-                  RadioListTile(
-                    title: const Text("Yıl Sonuna kadar"),
-                    value: 'yil',
-                    groupValue: seciliKapsam,
-                    onChanged: (v) => setDialogState(() => seciliKapsam = v.toString()),
-                  ),
+                  _kapsamSeciciWidget(setDialogState, showDay: false),
+                  const SizedBox(height: 20),
+                  Text(mesaj, textAlign: TextAlign.center),
                 ],
               ),
               actions: [
                 TextButton(onPressed: () => Navigator.pop(context), child: const Text("Vazgeç")),
+                if (calisanPlakalar.isNotEmpty)
                 ElevatedButton(
                   onPressed: () {
                     Navigator.pop(context);
                     setState(() {
-                      _uygula1e1(seciliKapsam);
+                      _uygula1e1();
                     });
                   },
                   child: const Text("Uygula"),
@@ -876,6 +906,163 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
     );
   }
 
+  void _planOlusturOnayiAl(int aracSayisi) {
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          String mesaj;
+          if (_seciliKapsam == "GÜN") {
+            mesaj = "Seçili $aracSayisi aracın sadece bugün için çalıştırılmasını uygun görüyor musunuz?";
+          } else {
+            String kapsamText = _seciliKapsam == "HAFTA" ? "1 hafta boyunca" : (_seciliKapsam == "AY" ? "ay sonuna kadar" : "yıl sonuna kadar");
+            mesaj = "Seçili $aracSayisi aracın seçili günden itibaren $kapsamText çalıştırılmasını uygun görüyor musunuz?";
+          }
+
+          return AlertDialog(
+            title: const Text("Plan oluştur"),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _kapsamSeciciWidget(setDialogState),
+                const SizedBox(height: 20),
+                Text(mesaj),
+              ],
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context), child: const Text("Vazgeç")),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _topluIslemUygula();
+                },
+                child: const Text("Uygula"),
+              ),
+            ],
+          );
+        }
+      ),
+    );
+  }
+
+  Widget _kapsamSeciciWidget(StateSetter setDialogState, {bool showDay = true}) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      padding: const EdgeInsets.all(4),
+      child: Row(
+        children: [
+          if (showDay) _kapsamButonu("GÜN", "Gün", setDialogState),
+          _kapsamButonu("HAFTA", "Hafta", setDialogState),
+          _kapsamButonu("AY", "Ay", setDialogState),
+          _kapsamButonu("YIL", "Yıl", setDialogState),
+        ],
+      ),
+    );
+  }
+
+  Widget _kapsamButonu(String kapsam, String etiket, StateSetter setDialogState) {
+    bool secili = _seciliKapsam == kapsam;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          setState(() => _seciliKapsam = kapsam);
+          setDialogState(() {});
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: secili ? Colors.white : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: secili ? [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 4)] : [],
+          ),
+          child: Text(
+            etiket,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: secili ? FontWeight.bold : FontWeight.normal,
+              color: secili ? Colors.blue.shade700 : Colors.grey.shade600,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _kayitSilOnayiAl() {
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          String kapsamText = _seciliKapsam == "GÜN" ? "sadece bugün için" : (_seciliKapsam == "HAFTA" ? "1 hafta boyunca" : (_seciliKapsam == "AY" ? "ay sonuna kadar" : "yıl sonuna kadar"));
+          String baslangicText = _seciliKapsam == "GÜN" ? "" : "seçili günden itibaren ";
+
+          return AlertDialog(
+            title: const Text("Kayıtları Sil"),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.all(4),
+                  child: Row(
+                    children: [
+                      _kapsamButonu("GÜN", "Gün", setDialogState),
+                      _kapsamButonu("HAFTA", "Hafta", setDialogState),
+                      _kapsamButonu("AY", "Ay", setDialogState),
+                      _kapsamButonu("YIL", "Yıl", setDialogState),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  "$baslangicText$kapsamText tüm çalışma ve nöbet kayıtlarının silinmesini onaylıyor musunuz?",
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context), child: const Text("VAZGEÇ")),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _topluKayitTemizle();
+                },
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+                child: const Text("SİL"),
+              ),
+            ],
+          );
+        }
+      ),
+    );
+  }
+
+  void _topluKayitTemizle() {
+    setState(() {
+      operasyonModu = 'sil';
+      // Tüm araçları etkilemesi için seciliAraclar'ı geçici olarak doldur
+      final hamAraclar = araclar.map((a) => a['plaka']?.toString() ?? "").where((p) => p.isNotEmpty).toSet();
+      seciliAraclar = hamAraclar;
+      
+      _executePlanLoop((tarih, ayKey) {
+        String tKey = DateFormat('yyyy-MM-dd').format(tarih);
+        aylikVeri[tKey] = {}; // Günü boşalt
+        degisenAylar.add(ayKey);
+      });
+      
+      seciliAraclar.clear();
+      operasyonModu = null;
+    });
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Kayıtlar temizlendi. Kaydetmeyi unutmayın."), backgroundColor: Colors.orange),
+    );
+  }
+
   Widget _seciliGunDetayPaneli(String tarihKey) {
     DateTime tarih = DateFormat('yyyy-MM-dd').parse(tarihKey);
     final gunData = aylikVeri[tarihKey] ?? {};
@@ -892,7 +1079,7 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
     return Column(
       children: [
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
           color: Colors.blue.shade50,
           child: Column(
             children: [
@@ -906,61 +1093,15 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
                     ),
                   ),
                   TextButton.icon(
-                    onPressed: () {
-                      showDialog(
-                        context: context,
-                        builder: (context) => AlertDialog(
-                          title: const Text("Günü Temizle"),
-                          content: Text("${DateFormat('dd MMMM').format(tarih)} tarihindeki tüm kayıtlar silinecek. Emin misiniz?"),
-                          actions: [
-                            TextButton(onPressed: () => Navigator.pop(context), child: const Text("Vazgeç")),
-                            TextButton(
-                              onPressed: () {
-                                setState(() {
-                                  aylikVeri[tarihKey] = {}; // Günü boşalt
-                                  degisenAylar.add(tarihKey.substring(0, 7));
-                                });
-                                Navigator.pop(context);
-                              },
-                              child: const Text("Temizle", style: TextStyle(color: Colors.red)),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                    icon: const Icon(Icons.delete_sweep, size: 16, color: Colors.red),
-                    label: const Text("Seçili Gün Temizle", style: TextStyle(fontSize: 12, color: Colors.red)),
-                    style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(50, 30), tapTargetSize: MaterialTapTargetSize.shrinkWrap),
-                  ),
-                  const SizedBox(width: 8),
-                  TextButton.icon(
-                    onPressed: () {
-                      String ayAdi = DateFormat('MMMM yyyy', 'tr_TR').format(tarih);
-                      showDialog(
-                        context: context,
-                        builder: (context) => AlertDialog(
-                          title: const Text("Tüm Ayı Temizle"),
-                          content: Text("$ayAdi dönemine ait tüm kayıtlar silinecek. Emin misiniz?"),
-                          actions: [
-                            TextButton(onPressed: () => Navigator.pop(context), child: const Text("Vazgeç")),
-                            TextButton(
-                              onPressed: () {
-                                setState(() {
-                                  String ayKey = tarihKey.substring(0, 7);
-                                  aylikVeri.removeWhere((key, _) => key.startsWith(ayKey));
-                                  degisenAylar.add(ayKey);
-                                });
-                                Navigator.pop(context);
-                              },
-                              child: const Text("Hepsini Sil", style: TextStyle(color: Colors.red)),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                    icon: Icon(Icons.delete_forever, size: 16, color: Colors.red.shade900),
-                    label: Text("Tüm Ayı Temizle", style: TextStyle(fontSize: 12, color: Colors.red.shade900)),
-                    style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(50, 30), tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                    onPressed: () => _kayitSilOnayiAl(),
+                    icon: const Icon(Icons.delete_forever, size: 16, color: Colors.red),
+                    label: const Text("Kayıt Sil", style: TextStyle(fontSize: 12, color: Colors.red, fontWeight: FontWeight.bold)),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 12), 
+                      minimumSize: const Size(80, 32),
+                      backgroundColor: Colors.red.shade50,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
                   ),
                   const SizedBox(width: 8),
                   Text("${filtrelenmisAraclar.length}/${araclar.length} Araç", style: const TextStyle(fontSize: 12, color: Colors.blueGrey)),
@@ -968,7 +1109,7 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
               ),
               const SizedBox(height: 8),
               Container(
-                height: 36,
+                height: 32,
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(8),
@@ -1054,12 +1195,12 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        _durumButonu(tarihKey, plaka, 'C', 'Çalış', Colors.blue, mevcutDurum == 'C'),
+                        _durumButonu(tarihKey, plaka, 'C', 'Çalış', Colors.blue, mevcutDurum?.toString().contains('C') == true),
                         const SizedBox(width: 3),
-                        _durumButonu(tarihKey, plaka, 'N', 'Nöbet', Colors.orange, mevcutDurum == 'N'),
+                        _durumButonu(tarihKey, plaka, 'N', 'Nöbet', Colors.orange, mevcutDurum?.toString().contains('N') == true),
                         const SizedBox(width: 3),
-                        _durumButonu(tarihKey, plaka, 'I', 'İst.', Colors.purple, mevcutDurum == 'I'),
-                        if (mevcutDurum != null && (mevcutDurum == 'C' || mevcutDurum == 'N' || mevcutDurum == 'I')) ...[
+                        _durumButonu(tarihKey, plaka, 'I', 'İst.', Colors.purple, mevcutDurum?.toString().contains('I') == true),
+                        if (mevcutDurum != null && mevcutDurum.toString().isNotEmpty) ...[
                           const SizedBox(width: 6),
                           IconButton(
                             icon: const Icon(Icons.fast_forward, size: 20, color: Colors.blue),
@@ -1106,7 +1247,7 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
                 seciliAraclar.clear();
                 seciliAraclar.add(plaka);
                 if (is1e1) {
-                  _uygula1e1('ay');
+                  _uygula1e1();
                 } else {
                   seciliDurum = durum;
                   operasyonModu = 'ekle';
@@ -1177,7 +1318,37 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
 
         setState(() {
           final gunMap = Map<String, dynamic>.from(aylikVeri[tarihKey] ?? {});
-          gunMap[plaka] = deger;
+          String mevcut = gunMap[plaka]?.toString() ?? "";
+
+          if (deger == 'I') {
+            // İstirahat tekildir ve diğerlerini siler
+            if (mevcut == 'I') {
+              gunMap.remove(plaka);
+            } else {
+              gunMap[plaka] = 'I';
+            }
+          } else {
+            // Çalış (C) veya Nöbet (N)
+            if (mevcut == 'I') {
+              gunMap[plaka] = deger;
+            } else if (mevcut.contains(deger)) {
+              // Zaten varsa çıkar
+              String yeni = mevcut.replaceAll(deger, '');
+              if (yeni.isEmpty) {
+                gunMap.remove(plaka);
+              } else {
+                gunMap[plaka] = yeni;
+              }
+            } else {
+              // Diğerini de ekle (C + N = CN)
+              String yeni = mevcut + deger;
+              // Her zaman alfabetik sırada tutalım (CN)
+              List<String> chars = yeni.split('');
+              chars.sort();
+              gunMap[plaka] = chars.join('');
+            }
+          }
+
           aylikVeri[tarihKey] = gunMap;
           degisenAylar.add(tarihKey.substring(0, 7));
         });
@@ -1221,90 +1392,78 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
     );
   }
 
-  void _uygula1e1(String kapsam) {
-    DateTime bitisTarihi;
-    if (kapsam == 'hafta') {
-      // Haftanın Pazar gününü bul (Pazartesi=1, Pazar=7)
-      bitisTarihi = seciliGun.add(Duration(days: 7 - seciliGun.weekday));
-    } else if (kapsam == 'yil') {
-      bitisTarihi = DateTime(seciliGun.year, 12, 31);
-    } else { // ay
-      bitisTarihi = DateTime(seciliGun.year, seciliGun.month + 1, 0);
+  void _uygula1e1() {
+    final gunKey = DateFormat('yyyy-MM-dd').format(seciliGun);
+    final gunData = aylikVeri[gunKey] ?? {};
+
+    // 1. Seçili günde 'C' (Çalış) olarak işaretlenmiş plakaları ve durumlarını belirle
+    final Map<String, String> baslangicDurumlari = {};
+    for (var entry in gunData.entries) {
+      if (entry.value?.toString().contains('C') == true) {
+        baslangicDurumlari[entry.key] = entry.value.toString();
+      }
     }
 
-    // Nöbet sıralarını topla ve sırala (Tüm araçlar üzerinden)
-    List<int> siralar = araclar
-        .map((a) => a['nobetSirasi'] as int?)
-        .where((s) => s != null)
-        .cast<int>()
-        .toList();
-    
-    if (siralar.isEmpty) {
+    // 2. Tüm araç listesini al (Plaka bazlı)
+    final tumPlakalar = araclar
+        .map((a) => a['plaka']?.toString() ?? "")
+        .where((p) => p.isNotEmpty)
+        .toSet();
+
+    if (baslangicDurumlari.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Araçların nöbet sıraları tanımlanmamış!"), backgroundColor: Colors.orange),
+        const SnackBar(content: Text("Bu düzeni başlatmak için önce bugün çalışacak araçları seçmelisiniz!"), backgroundColor: Colors.orange),
       );
       return;
     }
-    
-    siralar.sort();
-    // Medyan değeri bul (Filoyu ikiye bölecek eşik)
-    int ortaIndex = (siralar.length / 2).ceil() - 1;
-    int esikSira = siralar[ortaIndex];
 
-    final benzersizPlakalar = araclar
-        .map((a) => (a['plaka'] ?? "").toString())
-        .where((p) => p.isNotEmpty)
-        .toSet();
-    
-    // İşlem yapılacak araçlar: Ya sadece seçilenler ya da hiçbiri seçilmediyse hepsi.
-    final hedefAraclar = seciliAraclar.isEmpty ? benzersizPlakalar : Set<String>.from(seciliAraclar);
+    setState(() {
+      int dayIndex = 0;
+      _executePlanLoop((tarih, ayKey) {
+        String tKey = DateFormat('yyyy-MM-dd').format(tarih);
+        final gunMap = Map<String, dynamic>.from(aylikVeri[tKey] ?? {});
+        bool siraACalissin = (dayIndex % 2 == 0);
+        bool degisti = false;
 
-    Map<String, int> plakaToSira = {
-      for (var a in araclar)
-        if (a['plaka'] != null && a['nobetSirasi'] != null)
-          a['plaka'].toString(): a['nobetSirasi'] as int
-    };
+        for (var p in tumPlakalar) {
+          // Mevcut durumdan NÖBET bilgisini asla silme, aynen al
+          String mevcut = gunMap[p]?.toString() ?? "";
+          bool nobetiVar = mevcut.contains('N');
 
-    DateTime suan = seciliGun;
-    while (!suan.isAfter(bitisTarihi)) {
-      String tKey = DateFormat('yyyy-MM-dd').format(suan);
-      String ayKey = tKey.substring(0, 7);
-      
-      final gunMap = Map<String, dynamic>.from(aylikVeri[tKey] ?? {});
-      // suan == seciliGun -> fark 0 -> true (Grup A Çalışır)
-      int gunFarki = suan.difference(seciliGun).inDays;
-      bool siraACalissin = (gunFarki % 2 == 0);
-      bool degisti = false;
+          String yeniHal;
+          if (baslangicDurumlari.containsKey(p)) {
+            // Grup A: Bugün 'Çalış' seçilenler -> C, I, C, I...
+            yeniHal = siraACalissin ? 'C' : 'I';
+          } else {
+            // Grup B: Bugün seçilmeyenler -> I, C, I, C...
+            yeniHal = siraACalissin ? 'I' : 'C';
+          }
 
-      for (var p in hedefAraclar) {
-        if (gunMap[p] == 'N') continue; // Nöbetçiler korunur
-        
-        int? sira = plakaToSira[p];
-        if (sira == null) continue; // Sırası olmayan araçları atla
+          // [KRİTİK]: Eğer o gün Nöbeti varsa, yeni durumla birleştir
+          if (nobetiVar) {
+            if (yeniHal == 'I') {
+              // İstirahat sırası gelse bile nöbeti olduğu için N kalmalı
+              yeniHal = 'N';
+            } else if (yeniHal == 'C') {
+              // Çalışma sırası ve nöbeti varsa CN olmalı
+              yeniHal = 'CN';
+            }
+          }
 
-        String yeniDurum;
-        if (sira <= esikSira) {
-          // Grup A: Seçili gün Çalış (C), ertesi gün İst (I)
-          yeniDurum = siraACalissin ? 'C' : 'I';
-        } else {
-          // Grup B: Seçili gün İst (I), ertesi gün Çalış (C)
-          yeniDurum = siraACalissin ? 'I' : 'C';
+          if (mevcut != yeniHal) {
+            gunMap[p] = yeniHal;
+            degisti = true;
+          }
         }
 
-        if (gunMap[p] != yeniDurum) {
-          gunMap[p] = yeniDurum;
-          degisti = true;
+        if (degisti) {
+          aylikVeri[tKey] = gunMap;
+          degisenAylar.add(ayKey);
         }
-      }
-
-      if (degisti) {
-        aylikVeri[tKey] = gunMap;
-        degisenAylar.add(ayKey);
-      }
-
-      suan = suan.add(const Duration(days: 1));
-    }
-    seciliGunler.clear(); 
+        dayIndex++;
+      });
+      seciliGunler.clear(); 
+    });
   }
 
   List<Widget> _ozetGostergeleriOlustur(Map<String, dynamic> gunData) {
@@ -1313,11 +1472,14 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
     int nobetci = 0;
 
     gunData.forEach((key, value) {
-      if (value == 'C') {
+      String status = value?.toString() ?? "";
+      if (status.contains('C')) {
         calisan++;
-      } else if (value == 'I') {
+      }
+      if (status.contains('I')) {
         istirahat++;
-      } else if (value == 'N') {
+      }
+      if (status.contains('N')) {
         nobetci++;
       }
     });
@@ -1341,6 +1503,4 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
       ),
     );
   }
-
-
 }

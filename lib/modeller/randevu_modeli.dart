@@ -28,6 +28,8 @@ class RandevuModeli {
   final List<String> teslimatGorselleri; // [YENİ] Teslimat anı fotoğraf/video linkleri
   final List<String> iadeGorselleri;     // [YENİ] İade anı fotoğraf/video linkleri
   final Map<String, dynamic>? kazaVerisi; // [YENİ] Hasar/Kaza anındaki tüm detaylar (konum, gorseller, notlar)
+  final String? nereden; // [YENİ] Taksi için başlangıç noktası
+  final String? nereye;  // [YENİ] Taksi için varış noktası
 
   RandevuModeli({
     required this.id,
@@ -57,6 +59,8 @@ class RandevuModeli {
     this.teslimatGorselleri = const [],
     this.iadeGorselleri = const [],
     this.kazaVerisi,
+    this.nereden,
+    this.nereye,
   });
 
   factory RandevuModeli.fromFirestore(DocumentSnapshot doc) {
@@ -100,6 +104,8 @@ class RandevuModeli {
       teslimatGorselleri: List<String>.from(data['teslimatGorselleri'] ?? []),
       iadeGorselleri: List<String>.from(data['iadeGorselleri'] ?? []),
       kazaVerisi: data['kazaVerisi'] != null ? Map<String, dynamic>.from(data['kazaVerisi']) : null,
+      nereden: data['nereden'],
+      nereye: data['nereye'],
     );
   }
 
@@ -135,6 +141,8 @@ class RandevuModeli {
       'teslimatGorselleri': teslimatGorselleri,
       'iadeGorselleri': iadeGorselleri,
       'kazaVerisi': kazaVerisi,
+      'nereden': nereden,
+      'nereye': nereye,
     };
   }
 
@@ -166,6 +174,8 @@ class RandevuModeli {
     List<String>? teslimatGorselleri,
     List<String>? iadeGorselleri,
     Map<String, dynamic>? kazaVerisi,
+    String? nereden,
+    String? nereye,
   }) {
     return RandevuModeli(
       id: id ?? this.id,
@@ -195,6 +205,8 @@ class RandevuModeli {
       teslimatGorselleri: teslimatGorselleri ?? this.teslimatGorselleri,
       iadeGorselleri: iadeGorselleri ?? this.iadeGorselleri,
       kazaVerisi: kazaVerisi ?? this.kazaVerisi,
+      nereden: nereden ?? this.nereden,
+      nereye: nereye ?? this.nereye,
     );
   }
 }

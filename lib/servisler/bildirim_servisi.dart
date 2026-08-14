@@ -99,6 +99,22 @@ class BildirimServisi {
     );
   }
 
+  static Future<void> acilDurumBildirimiGonder({
+    required String baslik,
+    required String icerik,
+    required String hedefTel,
+    Map<String, dynamic>? ekVeri,
+    BuildContext? context,
+  }) async {
+    await OneSignalServisi.bildirimGonderAnlik(
+      baslik: baslik,
+      icerik: icerik,
+      telefon: hedefTel,
+      ekVeri: ekVeri,
+      context: context,
+    );
+  }
+
   static String _numaraTemizle(String tel) {
     String temiz = tel.replaceAll(RegExp(r'[^0-9]'), '');
     if (temiz.length > 10) temiz = temiz.substring(temiz.length - 10);

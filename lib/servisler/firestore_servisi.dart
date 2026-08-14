@@ -952,4 +952,68 @@ else if (yeniDurum == 'Reddedildi' || yeniDurum == 'İptal Edildi' || yeniDurum 
   Future<void> randevuGuncelle(String randevuId, Map<String, dynamic> veri) async {
     await _randevularRef.doc(randevuId).update(veri);
   }
+
+  // --- SÜRÜCÜ VE SOS İŞLEMLERİ ---
+  Future<void> surucuBelgeleriniGuncelle(String esnafId, Map<String, String> belgeler) async {
+    await _esnaflarRef.doc(esnafId).update({
+      'surucuBelgeleri': belgeler,
+      'surucuOnayDurumu': 'Beklemede',
+      'surucuBelgeleriYuklenmeTarihi': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<void> acilDurumTalebiOlustur({
+    required String randevuId,
+    required String esnafId,
+    required String kullaniciTel,
+    required GeoPoint konum,
+    required String baslatanRol,
+    bool isMockedLocation = false,
+  }) async {
+    await _db.collection('acil_durumlar').add({
+      'randevuId': randevuId,
+      'esnafId': esnafId,
+      'kullaniciTel': kullaniciTel,
+      'konum': konum,
+      'baslatanRol': baslatanRol,
+      'isMockedLocation': isMockedLocation,
+      'durum': 'Aktif',
+      'olusturulmaTarihi': FieldValue.serverTimestamp(),
+    });
+
+    // Eğer sahte konum ise esnaf profilini de işaretle
+    if (isMockedLocation) {
+      await _esnaflarRef.doc(esnafId).update({
+        'isMockedLocation': true,
+        'sonSahteKonumTarihi': FieldValue.serverTimestamp(),
+      });
+    }
+  }
+
+  Future<void> sahteKonumGuncelle(String esnafId, bool isMocked) async {
+    await _esnaflarRef.doc(esnafId).update({
+      'isMockedLocation': isMocked,
+      'sonKonumKontrolTarihi': FieldValue.serverTimestamp(),
+    });
+  }
+
+  // --- RANDEVU EKRANI İÇİN YARDIMCI STREAM'LER ---
+  Stream<Map<String, dynamic>?> ajandaGetir(String esnafId, DateTime tarih) {
+    return gunlukAjandaSnapStream(esnafId, tarih, null).map((snap) => snap.data() as Map<String, dynamic>?);
+  }
+
+  Stream<Map<String, dynamic>?> taksiCizelgesiGetir(String esnafId) {
+    return taksiAjandasiSnapStream(esnafId, DateTime.now()).map((snap) => snap.data() as Map<String, dynamic>?);
+  }
+
+  Stream<List<Map<String, dynamic>>> tumKullanicilariGetir() {
+    return _kullanicilarRef.snapshots().map((snap) => snap.docs.map((doc) => {
+      'tel': doc.id,
+      ...doc.data() as Map<String, dynamic>
+    }).toList());
+  }
+
+  Future<void> kullaniciProfiliniGuncelle(String tel, Map<String, dynamic> veri) async {
+    await _kullanicilarRef.doc(tel).set(veri, SetOptions(merge: true));
+  }
 }

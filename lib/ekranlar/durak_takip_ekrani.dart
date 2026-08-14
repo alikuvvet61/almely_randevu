@@ -4,6 +4,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import '../modeller/esnaf_modeli.dart';
+import '../servisler/firestore_servisi.dart';
+import 'surucu_dogrulama_ekrani.dart';
+import 'surucu_profil_detay_ekrani.dart';
 
 class DurakTakipEkrani extends StatefulWidget {
   final EsnafModeli esnaf;
@@ -74,7 +77,7 @@ class _DurakTakipEkraniState extends State<DurakTakipEkrani> {
     // Manuel durum kontrolü
     if (arac['durum'] == 'İstirahatte') return true;
     // Çizelge (Ajanda Defteri) kontrolü
-    if (gunlukAjanda.containsKey(plaka) && gunlukAjanda[plaka] == 'I') return true;
+    if (gunlukAjanda.containsKey(plaka) && gunlukAjanda[plaka]?.toString().contains('I') == true) return true;
     
     // Haftalık şablon kontrolü
     String gunAdi = DateFormat('EEEE', 'tr_TR').format(DateTime.now());
@@ -122,9 +125,9 @@ class _DurakTakipEkraniState extends State<DurakTakipEkrani> {
 
     // 1. Öncelik: Aylık Ajanda (Özel Gün Tanımı)
     if (gunlukAjanda.containsKey(plaka)) {
-      String durum = gunlukAjanda[plaka];
-      if (durum == 'I') return "İSTİRAHAT";
-      if (durum == 'N') return "NÖBETÇİ";
+      String durum = gunlukAjanda[plaka].toString();
+      if (durum.contains('I')) return "İSTİRAHAT";
+      if (durum.contains('N')) return "NÖBETÇİ";
       return ""; // 'C' ise ekstra etiket gösterme
     }
 
@@ -159,6 +162,15 @@ class _DurakTakipEkraniState extends State<DurakTakipEkrani> {
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
         elevation: 0,
+        actions: [
+          if (_isSofor)
+            IconButton(
+              icon: const Icon(Icons.account_circle, size: 28, color: Colors.indigo),
+              onPressed: () => _profilGoster(),
+              tooltip: "Profilim",
+            ),
+          const SizedBox(width: 8),
+        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1),
           child: Container(color: Colors.grey.withValues(alpha: 0.1), height: 1),
@@ -337,10 +349,14 @@ class _DurakTakipEkraniState extends State<DurakTakipEkrani> {
                                       padding: EdgeInsets.zero,
                                       icon: const Icon(Icons.more_vert, color: Colors.grey, size: 32),
                                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                      onSelected: (String yeniDurum) async {
+                                      onSelected: (String action) async {
+                                        if (action == 'DOGRULAMA') {
+                                          Navigator.push(context, MaterialPageRoute(builder: (c) => SurucuDogrulamaEkrani(esnaf: widget.esnaf)));
+                                          return;
+                                        }
                                         setState(() {
-                                          araclar[idx]['durum'] = yeniDurum;
-                                          if (yeniDurum == 'İstirahatte') {
+                                          araclar[idx]['durum'] = action;
+                                          if (action == 'İstirahatte') {
                                             araclar[idx]['durakta'] = false;
                                           }
                                         });
@@ -352,6 +368,19 @@ class _DurakTakipEkraniState extends State<DurakTakipEkrani> {
                                         const PopupMenuItem(value: 'Meşgul', child: Text("Meşgul", style: TextStyle(fontSize: 16))),
                                         const PopupMenuItem(value: 'Mola', child: Text("Mola", style: TextStyle(fontSize: 16))),
                                         const PopupMenuItem(value: 'İstirahatte', child: Text("İstirahatte", style: TextStyle(fontSize: 16))),
+                                        if (kendiAraci) ...[
+                                          const PopupMenuDivider(),
+                                          const PopupMenuItem(
+                                            value: 'DOGRULAMA', 
+                                            child: Row(
+                                              children: [
+                                                Icon(Icons.verified_user, color: Colors.indigo, size: 20),
+                                                SizedBox(width: 8),
+                                                Text("Güvenlik Doğrulaması", style: TextStyle(fontSize: 14, color: Colors.indigo, fontWeight: FontWeight.bold)),
+                                              ],
+                                            )
+                                          ),
+                                        ]
                                       ],
                                     ),
                                   ),
@@ -479,5 +508,180 @@ class _DurakTakipEkraniState extends State<DurakTakipEkrani> {
     });
     _sirala(); // Anlık sıralama
     await _kaydet();
+  }
+
+  void _profilGoster() {
+    final kendiAracim = araclar.firstWhere((a) => a['soforTel'] == widget.soforTel, orElse: () => {});
+    if (kendiAracim.isEmpty) return;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 30),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: Colors.indigo.shade50,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.person, size: 50, color: Colors.indigo.shade700),
+            ),
+            const SizedBox(height: 15),
+            Text(
+              kendiAracim['soforAd'] ?? "İsimsiz Şoför",
+              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+            ),
+            Text(
+              kendiAracim['plaka'] ?? "",
+              style: TextStyle(fontSize: 16, color: Colors.grey.shade600, fontWeight: FontWeight.w500),
+            ),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.green.shade50,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                widget.soforTel ?? "",
+                style: TextStyle(color: Colors.green.shade800, fontWeight: FontWeight.bold),
+              ),
+            ),
+            const SizedBox(height: 30),
+            const Divider(),
+            const SizedBox(height: 10),
+            ListTile(
+              leading: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(10)),
+                child: const Icon(Icons.account_box_rounded, color: Colors.blue),
+              ),
+              title: const Text("Gelişmiş Sürücü Paneli", style: TextStyle(fontWeight: FontWeight.bold)),
+              subtitle: const Text("Kimlik, Araç ve Finans Bilgileri"),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(context, MaterialPageRoute(builder: (c) => SurucuProfilDetayEkrani(esnaf: widget.esnaf, arac: kendiAracim)));
+              },
+            ),
+            const SizedBox(height: 10),
+            ListTile(
+              leading: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(10)),
+                child: const Icon(Icons.edit, color: Colors.blue),
+              ),
+              title: const Text("Temel Bilgileri Güncelle", style: TextStyle(fontWeight: FontWeight.bold)),
+              subtitle: const Text("Ad, Soyad ve Telefon"),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () {
+                Navigator.pop(context);
+                _aracDuzenle(kendiAracim);
+              },
+            ),
+            const SizedBox(height: 10),
+            ListTile(
+              leading: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(color: Colors.indigo.shade50, borderRadius: BorderRadius.circular(10)),
+                child: const Icon(Icons.verified_user, color: Colors.indigo),
+              ),
+              title: const Text("Güvenlik Doğrulaması", style: TextStyle(fontWeight: FontWeight.bold)),
+              subtitle: const Text("Ehliyet, Ruhsat ve Sigorta Belgeleri"),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(context, MaterialPageRoute(builder: (c) => SurucuDogrulamaEkrani(esnaf: widget.esnaf)));
+              },
+            ),
+            const SizedBox(height: 10),
+            ListTile(
+              leading: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(10)),
+                child: const Icon(Icons.logout, color: Colors.red),
+              ),
+              title: const Text("Çıkış Yap", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+              onTap: () => Navigator.of(context).popUntil((route) => route.isFirst),
+            ),
+            const SizedBox(height: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _aracDuzenle(Map<String, dynamic> arac) {
+    final pController = TextEditingController(text: arac['plaka']);
+    final sAdController = TextEditingController(text: arac['soforAd']);
+    final sTelController = TextEditingController(text: arac['soforTel']);
+    
+    // Plaka eğer zaten doluysa pasif kalmalı, boşsa şoför kendi girebilmeli
+    bool plakaPasif = (arac['plaka'] != null && arac['plaka'].toString().isNotEmpty);
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text("Bilgilerimi Güncelle"),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: pController, 
+                  decoration: const InputDecoration(labelText: "Plaka"), 
+                  textCapitalization: TextCapitalization.characters,
+                  enabled: true, 
+                ),
+                TextField(controller: sAdController, decoration: const InputDecoration(labelText: "Ad Soyad")),
+                TextField(controller: sTelController, decoration: const InputDecoration(labelText: "Telefon"), keyboardType: TextInputType.phone),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("Vazgeç"),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                String yeniPlaka = pController.text.trim().toUpperCase();
+                String yeniAd = sAdController.text.trim();
+                String yeniTel = sTelController.text.trim();
+
+                setState(() {
+                  arac['plaka'] = yeniPlaka;
+                  arac['soforAd'] = yeniAd;
+                  arac['soforTel'] = yeniTel;
+                });
+
+                // 1. Esnaf belgesini güncelle
+                await _kaydet();
+
+                // 2. Global kullanıcı profilini de mühürle (Manager'ın seçebilmesi için)
+                await FirestoreServisi().kullaniciProfiliniGuncelle(yeniTel, {
+                  'plaka': yeniPlaka,
+                  'adSoyad': yeniAd,
+                });
+
+                if (mounted) Navigator.pop(context);
+              },
+              child: const Text("Güncelle"),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

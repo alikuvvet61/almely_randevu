@@ -7,7 +7,7 @@ class KonumServisi {
   final String _googleApiKey = "AIzaSyC55S5CY0E_WxTmwq-TvpF2Tp_yrBdrQb8";
 
   /// Google Geocoding API kullanarak profesyonel konum ve adres getirir.
-  Future<Map<String, String>?> konumuVeAdresiGetir() async {
+  Future<Map<String, dynamic>?> konumuVeAdresiGetir() async {
     try {
       // 1. İzin Kontrolü
       LocationPermission permission = await Geolocator.checkPermission();
@@ -64,6 +64,7 @@ class KonumServisi {
             'il': il,
             'ilce': ilce,
             'tamAdres': tamAdres,
+            'isMocked': position.isMocked,
           };
         } else {
           return {'hata': 'Google Adres Bulunamadı: ${data['status']}'};

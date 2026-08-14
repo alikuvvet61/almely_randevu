@@ -9,8 +9,7 @@ import '../servisler/firestore_servisi.dart';
 import '../modeller/randevu_modeli.dart';
 import '../modeller/esnaf_modeli.dart';
 import '../widgets/medya_goruntuleyici.dart';
-import 'package:almely_randevu/ekranlar/kira_teslimat_ekrani.dart';
-import 'package:almely_randevu/ekranlar/kaza_bildirim_ekrani.dart';
+import 'kaza_bildirim_ekrani.dart';
 
 class KullaniciRandevuEkrani extends StatefulWidget {
   final String telefon;
@@ -95,22 +94,16 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
               DateTime rBas = _randevuZamaniHesapla(r);
               final rBit = rBas.add(Duration(minutes: r.sure));
               
-              // [GÜNCELLEME]: Rent-a-Car hariç, süresi geçenler geçmişe düşsün
-              bool isAracKiralama = r.hizmetAdi.toLowerCase().contains("kiralama") || 
-                                   (r.randevuKanali != null && r.randevuKanali!.contains(RegExp(r'[0-9]{2}\s[A-Z]+\s[0-9]+')));
-              
+              // [GÜNCELLEME]: Esnaf tarafıyla tam senkronize arşivleme mantığı
+              // 'Onaylandı', 'Kullanımda' veya 'Kaza' olan randevular teslim alınana kadar (Tamamlandı olana kadar) 
+              // GEÇMİŞ değil MEVCUT sayılmalı.
               bool teslimAlindiMi = r.durum == 'Tamamlandı' || r.durum == 'İptal Edildi' || r.durum == 'Reddedildi';
               bool zamanGectiMi = rBit.isBefore(simdi);
               bool isDosyaAcik = r.durum == 'KAZA BİLDİRİLDİ' || r.durum == 'Kullanımda' || r.durum == 'Onaylandı';
               
-              bool gecmisMi;
-              if (isAracKiralama) {
-                // Rent-a-Car ise: Esnaf kapatana kadar Mevcut'ta kalır
-                gecmisMi = teslimAlindiMi || (zamanGectiMi && !isDosyaAcik);
-              } else {
-                // Diğer tüm kategoriler: Süresi geçtiyse otomatik Geçmiş'e düşer
-                gecmisMi = teslimAlindiMi || zamanGectiMi;
-              }
+              // Sadece süreci tamamen bitmiş kayıtlar geçmişe gider. 
+              // Diğerleri (Gecikse bile) esnaf kapatana kadar Mevcut sekmesinde kalır.
+              bool gecmisMi = teslimAlindiMi || (zamanGectiMi && !isDosyaAcik);
 
               if (gecmisMi) {
                 gecmisler.add(r);
@@ -299,51 +292,7 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
                     children: [
                       _akilliTakipButonu(context, r),
                       const SizedBox(height: 8),
-
-                      // [TAŞINDI]: Kiralama Kanıtları Yükle (Randevu İptal'in Üstüne Geldi)
-                      if (r.durum == 'Onaylandı' || r.durum == 'Kullanımda') ...[
-                        const Row(
-                          children: [
-                            Icon(Icons.camera_enhance_outlined, size: 18, color: Colors.blueGrey),
-                            SizedBox(width: 10),
-                            Text("Kiralama Kanıtları Yükle", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            if (r.durum == 'Onaylandı')
-                              Expanded(
-                                child: ElevatedButton.icon(
-                                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (c) => KiraTeslimatEkrani(randevu: r, isTeslimat: true, isEsnaf: false, telefon: widget.telefon))),
-                                  icon: const Icon(Icons.camera_alt, size: 16),
-                                  label: const Text("ALIŞ FOTOĞRAFI YÜKLE", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.indigo.shade700,
-                                    foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(vertical: 12),
-                                  ),
-                                ),
-                              ),
-                            if (r.durum == 'Kullanımda')
-                              Expanded(
-                                child: ElevatedButton.icon(
-                                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (c) => KiraTeslimatEkrani(randevu: r, isTeslimat: false, isEsnaf: false, telefon: widget.telefon))),
-                                  icon: const Icon(Icons.check_circle_outline, size: 16),
-                                  label: const Text("İADE FOTOĞRAFI YÜKLE", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.teal.shade700,
-                                    foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(vertical: 12),
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                      ],
-
-                      // [YENİ] ACİL KAZA / HASAR BİLDİRİM BUTONU
+                      // [YENİ] ACİL KAZA / HASAR BİLDİRİM BUTONU (Onaylı veya Kirada Olan Araçlar İçin)
                       if ((r.durum == 'Onaylandı' || r.durum == 'Kullanımda') && r.randevuKanali != null && r.randevuKanali!.contains(RegExp(r'[0-9]{2}\s[A-Z]+\s[0-9]+')))
                         Padding(
                           padding: const EdgeInsets.only(bottom: 8),
@@ -687,7 +636,7 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
   }
 
   void _randevuIptalDialog(BuildContext context, RandevuModeli r) {
-    // Randevuyu iptal etme işlemi (kod içeriği gizlendi)
+    // ... mevcut kod ...
   }
 
   Widget _kanitGalerisi(BuildContext context, RandevuModeli r) {
@@ -705,19 +654,19 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
         if (r.teslimatGorselleri.isNotEmpty) ...[
           const Text("🚗 Teslimat Anı", style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.w600)),
           const SizedBox(height: 8),
-          _medyaYatayListe(r, r.teslimatGorselleri),
+          _medyaYatayListe(r.teslimatGorselleri),
           const SizedBox(height: 15),
         ],
         if (r.iadeGorselleri.isNotEmpty) ...[
           const Text("✅ İade Anı", style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.w600)),
           const SizedBox(height: 8),
-          _medyaYatayListe(r, r.iadeGorselleri),
+          _medyaYatayListe(r.iadeGorselleri),
         ],
       ],
     );
   }
 
-  Widget _medyaYatayListe(RandevuModeli r, List<String> urls) {
+  Widget _medyaYatayListe(List<String> urls) {
     return SizedBox(
       height: 100,
       child: ListView.builder(
@@ -727,7 +676,7 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
           final url = urls[i];
           bool isVideo = url.contains('.mp4') || url.contains('.mov') || url.contains('video');
           return GestureDetector(
-            onTap: () => _kanitGoster(r, urls, i),
+            onTap: () => _kanitGoster(urls, i),
             child: Container(
               width: 100,
               margin: const EdgeInsets.only(right: 10),
@@ -748,18 +697,11 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
     );
   }
 
-  void _kanitGoster(RandevuModeli r, List<String> tumu, int index) {
-    // [İYİLEŞTİRME]: Kimin kanıtına bakılıyorsa ona göre mühür bilgisini otomatik belirleyelim
-    // Şimdilik randevu sahibinin bilgilerini geçiyoruz (Çünkü müşteri kendi ekranında kendi/esnaf kanıtlarına bakıyor)
+  void _kanitGoster(List<String> tumu, int index) {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (c) => MedyaGoruntuleyici(
-          gorseller: tumu, 
-          baslangicIndex: index,
-          muhurRol: "Müşteri", // Bu ekran müşteriye ait
-          muhurTel: r.kullaniciTel,
-        ),
+        builder: (c) => MedyaGoruntuleyici(gorseller: tumu, baslangicIndex: index),
       ),
     );
   }
@@ -814,7 +756,7 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
           const SizedBox(height: 4),
           const Text("Gönderdiğiniz Fotoğraflar:", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
           const SizedBox(height: 8),
-          _medyaYatayListe(r, gorseller),
+          _medyaYatayListe(gorseller),
         ]
       ],
     );
