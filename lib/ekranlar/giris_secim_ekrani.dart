@@ -1,15 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:async';
-import 'kullanici_giris_ekrani.dart';
-import 'esnaf_giris_ekrani.dart';
-import 'admin_giris_ekrani.dart';
+import 'admin_ekrani.dart';
+import '../servisler/firestore_servisi.dart';
 import '../servisler/versiyon_servisi.dart';
-import '../servisler/bildirim_servisi.dart';
-import 'package:permission_handler/permission_handler.dart';
 import '../servisler/onesignal_servisi.dart';
+import '../servisler/bildirim_servisi.dart';
+import '../modeller/esnaf_modeli.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'kullanici_randevu_ekrani.dart';
+import 'rehber_ekrani.dart';
 import '../main.dart'; // navigatorKey için
+
+
+import 'mod_secim_ekrani.dart';
+import 'ana_ekran.dart';
 
 class GirisSecimSayfasi extends StatefulWidget {
   const GirisSecimSayfasi({super.key});
@@ -19,6 +24,11 @@ class GirisSecimSayfasi extends StatefulWidget {
 }
 
 class _GirisSecimSayfasiState extends State<GirisSecimSayfasi> {
+  final TextEditingController _telController = TextEditingController();
+  bool _loading = false;
+  int _logoTiklamaSayisi = 0;
+  final _firestoreServisi = FirestoreServisi();
+
   @override
   void initState() {
     super.initState();
@@ -83,61 +93,202 @@ class _GirisSecimSayfasiState extends State<GirisSecimSayfasi> {
     });
   }
 
+  void _girisYap() async {
+    String tel = _telController.text.trim();
+    // Test aşaması için kısa numara (örn: 113) kısıtlaması geçici olarak esnetildi
+    if (tel.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Lütfen bir telefon numarası girin."))
+      );
+      return;
+    }
+
+    setState(() => _loading = true);
+
+    try {
+      // 1. Bildirim Kayıtlarını Başlat
+      BildirimServisi.bildirimDinle(tel, context: context);
+      await OneSignalServisi.kullaniciyiKaydet(tel);
+
+      // 2. Rol Sorgula
+      final esnaf = await _firestoreServisi.telefonIleEsnafGetir(tel);
+
+      if (!mounted) return;
+      setState(() => _loading = false);
+
+      if (esnaf != null) {
+        // ESNAF/ŞOFÖR: Seçim ekranına gönder
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (c) => ModSecimEkrani(esnaf: esnaf, girisTel: tel))
+        );
+      } else {
+        // NORMAL MÜŞTERİ: Doğrudan ana ekrana
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (c) => AnaEkran(kullaniciTel: tel))
+        );
+      }
+    } catch (e) {
+      if (mounted) setState(() => _loading = false);
+      debugPrint("Giriş Hatası: $e");
+    }
+  }
+
+  void _adminGirisiniAc() {
+    final passC = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Yönetici Doğrulaması"),
+        content: TextField(
+          controller: passC,
+          obscureText: true,
+          decoration: const InputDecoration(labelText: "Yönetici Şifresi"),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("İptal")),
+          ElevatedButton(
+            onPressed: () {
+              if (passC.text == "6161") {
+                Navigator.pop(ctx);
+                // Ara ekranı atlayıp doğrudan AdminEkrani'na gidiyoruz
+                Navigator.push(context, MaterialPageRoute(builder: (c) => const AdminEkrani()));
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Hatalı Şifre!")));
+              }
+            },
+            child: const Text("Giriş Yap"),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
       body: Center(
         child: SingleChildScrollView(
+          padding: const EdgeInsets.all(30),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Image.asset(
-                'assets/AlmEly.png',
-                width: 220,
-                errorBuilder: (context, error, stackTrace) =>
-                const Icon(Icons.business_center, size: 80, color: Colors.blue),
+              // Logo (5 Tıklama ile Admin Paneli)
+              GestureDetector(
+                onTap: () {
+                  _logoTiklamaSayisi++;
+                  if (_logoTiklamaSayisi >= 5) {
+                    _logoTiklamaSayisi = 0;
+                    _adminGirisiniAc();
+                  }
+                },
+                child: Image.asset(
+                  'assets/AlmEly.png',
+                  width: 220,
+                  errorBuilder: (context, error, stackTrace) =>
+                  const Icon(Icons.business_center, size: 80, color: Colors.blue),
+                ),
               ),
               const SizedBox(height: 40),
-              _anaButon(context, "Müşteri Girişi", Colors.blue, Colors.white, () {
-                Navigator.push(context, MaterialPageRoute(builder: (c) => const KullaniciGirisSayfasi()));
-              }),
+              
+              const Text(
+                "Hoş Geldiniz",
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                "İşlemlerinize devam etmek için telefon numaranızla giriş yapın.",
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey, fontSize: 13),
+              ),
+              const SizedBox(height: 40),
+
+              TextField(
+                controller: _telController,
+                keyboardType: TextInputType.phone,
+                decoration: InputDecoration(
+                  labelText: 'Telefon Numaranız', 
+                  hintText: '05xx xxx xx xx',
+                  prefixIcon: const Icon(Icons.phone, color: Colors.blue),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(15),
+                    borderSide: const BorderSide(color: Colors.blue, width: 2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 25),
+
+              if (_loading)
+                const CircularProgressIndicator()
+              else
+                ElevatedButton(
+                  onPressed: _girisYap,
+                  style: ElevatedButton.styleFrom(
+                    minimumSize: const Size(double.infinity, 55),
+                    backgroundColor: Colors.blue.shade700,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                    elevation: 3,
+                  ),
+                  child: const Text("Giriş Yap", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                ),
+              
               const SizedBox(height: 15),
-              _anaButon(context, "Esnaf Paneli", Colors.indigo, Colors.white, () {
-                Navigator.push(context, MaterialPageRoute(builder: (c) => const EsnafGirisEkrani()));
-              }),
-              const SizedBox(height: 15),
-              _anaButon(context, "Yönetici Girişi", Colors.white, Colors.blue, () {
-                Navigator.push(context, MaterialPageRoute(builder: (c) => const AdminGirisSayfasi()));
-              }, kenar: true),
+              TextButton.icon(
+                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (c) => const RehberEkrani())),
+                icon: const Icon(Icons.help_outline_rounded, color: Colors.blueGrey),
+                label: const Text("Kullanım Rehberi & Yardım", style: TextStyle(color: Colors.blueGrey, fontWeight: FontWeight.bold)),
+              ),
+              
+              const SizedBox(height: 50),
+              Text(
+                "© 2026 AlmEly Randevu Portalı",
+                style: TextStyle(color: Colors.grey.shade400, fontSize: 11),
+              ),
+              
+              const SizedBox(height: 30),
+              const Divider(),
+              const Text(
+                "Hızlı Giriş (Geliştirme Modu)", 
+                style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 12)
+              ),
+              const SizedBox(height: 10),
+              StreamBuilder<List<EsnafModeli>>(
+                stream: _firestoreServisi.esnaflariGetir(),
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData) return const SizedBox();
+                  final esnaflar = snapshot.data!;
+                  return ListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: esnaflar.length,
+                    itemBuilder: (context, index) {
+                      final e = esnaflar[index];
+                      return Card(
+                        elevation: 0,
+                        color: Colors.grey.shade50,
+                        margin: const EdgeInsets.only(bottom: 8),
+                        child: ListTile(
+                          dense: true,
+                          title: Text(e.isletmeAdi, style: const TextStyle(fontWeight: FontWeight.bold)),
+                          subtitle: Text(e.telefon),
+                          leading: const Icon(Icons.business, color: Colors.blueGrey, size: 20),
+                          onTap: () {
+                            _telController.text = e.telefon;
+                            _girisYap();
+                          },
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _anaButon(BuildContext context, String m, Color r, Color y, VoidCallback t, {bool kenar = false}) {
-    IconData icon = Icons.person;
-    if (m.contains("Esnaf")) icon = Icons.business;
-    if (m.contains("Yönetici")) icon = Icons.admin_panel_settings;
-    
-    return ElevatedButton(
-      style: ElevatedButton.styleFrom(
-        minimumSize: const Size(280, 60),
-        backgroundColor: r,
-        side: kenar ? const BorderSide(color: Colors.blue, width: 2) : null,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-      onPressed: t,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: y, size: 24),
-          const SizedBox(width: 10),
-          Text(m, style: TextStyle(color: y, fontWeight: FontWeight.bold, fontSize: 16)),
-        ],
       ),
     );
   }

@@ -36,17 +36,13 @@ class OneSignalServisi {
   static String _numaraTemizle(String tel) {
     // Temizle: +90, +, -, (), boşluk vb. kaldır
     String temiz = tel.replaceAll(RegExp(r'[^0-9]'), '');
-    // Başında 0 varsa kaldır (0532 -> 532)
+    // Başında 0 varsa kaldır
     if (temiz.startsWith('0')) {
       temiz = temiz.substring(1);
     }
-    // Son 10 rakam (ulusal formatta 10 rakam = XXXXXXXXXX)
+    // Geliştirme modu kısa numara desteği
     if (temiz.length > 10) {
       temiz = temiz.substring(temiz.length - 10);
-    }
-    // Kontrol: en az 10 karakter olmalı (doğru format için)
-    if (temiz.length != 10) {
-      debugPrint("Uyarı: Telefon numarası şüpheli ($tel -> $temiz, ${temiz.length} kar)");
     }
     return temiz;
   }

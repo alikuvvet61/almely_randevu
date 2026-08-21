@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'rehber_ekrani.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
@@ -2194,7 +2195,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                         .toList();
                     
                     return DropdownButtonFormField<String>(
-                      value: kullanicilar.any((u) => u['tel'] == sTelController.text) ? sTelController.text : null,
+                      initialValue: kullanicilar.any((u) => u['tel'] == sTelController.text) ? sTelController.text : null,
                       decoration: const InputDecoration(labelText: "Kayıtlı Şoförlerden Seç"),
                       hint: const Text("Şoför Seçiniz"),
                       items: kullanicilar.map((u) => DropdownMenuItem(
@@ -2246,9 +2247,39 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
               child: const Text("Vazgeç"),
             ),
             ElevatedButton(
-              onPressed: () {
+              onPressed: () async {
+                String eskiPlaka = (arac['plaka'] ?? "").toString().trim().toUpperCase();
+                String yeniPlaka = pController.text.trim().toUpperCase();
+
+                if (eskiPlaka.isNotEmpty && yeniPlaka != eskiPlaka) {
+                  bool? devamEt = await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: const Text("Plaka Değişikliği Onayı"),
+                      content: Text(
+                        "Bilgilendirme: Yapılan değişiklik sistem üzerinde '$eskiPlaka' geçen yerleri '$yeniPlaka' e çevirecektir. Devam etmek istiyor musunuz?"
+                      ),
+                      actions: [
+                        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("İptal")),
+                        ElevatedButton(
+                          onPressed: () => Navigator.pop(ctx, true),
+                          child: const Text("Devam Et"),
+                        ),
+                      ],
+                    ),
+                  );
+
+                  if (devamEt != true) return;
+
+                  await FirestoreServisi().globalPlakaGuncelle(
+                    esnafId: widget.esnaf.id,
+                    eskiPlaka: eskiPlaka,
+                    yeniPlaka: yeniPlaka,
+                  );
+                }
+
                 setState(() {
-                  araclar[index]['plaka'] = pController.text.trim().toUpperCase();
+                  araclar[index]['plaka'] = yeniPlaka;
                   araclar[index]['soforAd'] = sAdController.text.trim();
                   araclar[index]['soforTel'] = sTelController.text.trim();
                   _degisiklikVar = true;
@@ -2256,7 +2287,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                 pController.dispose();
                 sAdController.dispose();
                 sTelController.dispose();
-                Navigator.pop(context);
+                if (context.mounted) Navigator.pop(context);
               },
               child: const Text("Güncelle"),
             ),
@@ -3352,6 +3383,11 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
       appBar: AppBar(
         title: Text(_adController.text, style: const TextStyle(fontWeight: FontWeight.bold)),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.help_outline_rounded, color: Colors.blueGrey),
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (c) => const RehberEkrani(mod: 'esnaf'))),
+            tooltip: "Kullanım Rehberi",
+          ),
           IconButton(
             icon: const Icon(Icons.logout, color: Colors.redAccent),
             onPressed: () => _cikisYap(context),

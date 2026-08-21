@@ -2,9 +2,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
 import 'package:intl/intl.dart';
 import '../modeller/esnaf_modeli.dart';
 import '../servisler/firestore_servisi.dart';
+import '../servisler/konum_servisi.dart';
+import '../main.dart'; // navigatorKey için
 import 'surucu_dogrulama_ekrani.dart';
 import 'surucu_profil_detay_ekrani.dart';
 
@@ -21,8 +25,10 @@ class DurakTakipEkrani extends StatefulWidget {
 class _DurakTakipEkraniState extends State<DurakTakipEkrani> {
   List<Map<String, dynamic>> araclar = [];
   Map<String, dynamic> gunlukAjanda = {};
+  Map<String, Map<String, dynamic>> kullaniciProfilleri = {}; // Profil önbelleği
   StreamSubscription? _aracSubscription;
   StreamSubscription? _ajandaSubscription;
+  StreamSubscription? _kullaniciSubscription;
 
   @override
   void initState() {
@@ -34,6 +40,7 @@ class _DurakTakipEkraniState extends State<DurakTakipEkrani> {
   void dispose() {
     _aracSubscription?.cancel();
     _ajandaSubscription?.cancel();
+    _kullaniciSubscription?.cancel();
     super.dispose();
   }
 
@@ -49,6 +56,7 @@ class _DurakTakipEkraniState extends State<DurakTakipEkrani> {
         if (data != null) {
           List<Map<String, dynamic>> hamListe = List<Map<String, dynamic>>.from(data['araclar'] ?? []);
           araclar = hamListe;
+          _kullanicilariDinle(); // Araç listesi değişince kullanıcıları da dinle
           _sirala();
         }
       }
@@ -68,6 +76,33 @@ class _DurakTakipEkraniState extends State<DurakTakipEkrani> {
       if (snapshot.exists && mounted) {
         gunlukAjanda = Map<String, dynamic>.from(snapshot.data()?[gunKey] ?? {});
         _sirala();
+      }
+    });
+  }
+
+  void _kullanicilariDinle() {
+    _kullaniciSubscription?.cancel();
+    
+    final telefonlar = araclar
+        .map((a) => a['soforTel']?.toString())
+        .where((t) => t != null && t.isNotEmpty)
+        .toSet()
+        .toList();
+
+    if (telefonlar.isEmpty) return;
+
+    // Tüm şoförleri tek bir toplu sorguda dinle (Performans artışı sağlar)
+    _kullaniciSubscription = FirebaseFirestore.instance
+        .collection('kullanicilar')
+        .where(FieldPath.documentId, whereIn: telefonlar.take(30).toList())
+        .snapshots()
+        .listen((snapshot) {
+      if (mounted) {
+        setState(() {
+          for (var doc in snapshot.docs) {
+            kullaniciProfilleri[doc.id] = Map<String, dynamic>.from(doc.data());
+          }
+        });
       }
     });
   }
@@ -240,41 +275,81 @@ class _DurakTakipEkraniState extends State<DurakTakipEkrani> {
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                         child: Row(
                           children: [
-                            Stack(
-                              clipBehavior: Clip.none,
-                              children: [
-                                Container(
-                                  width: 50,
-                                  height: 50,
-                                  decoration: BoxDecoration(
-                                    // İkon kutusu istirahatte ise gri, değilse durum rengi (veya sıra rengi)
-                                    color: durakta ? Colors.blue.withValues(alpha: 0.1) : (durum == 'İstirahatte' ? Colors.grey : durumRengi).withValues(alpha: 0.1),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Center(
-                                    child: durakta
-                                        ? Text(
-                                            siraNo.toString(),
-                                            style: TextStyle(color: Colors.blue.shade800, fontSize: 22, fontWeight: FontWeight.bold),
-                                          )
-                                        : Icon(durumIkonu, color: durum == 'İstirahatte' ? Colors.grey : durumRengi, size: 28),
-                                  ),
-                                ),
-                                if (isNobetci)
-                                  Positioned(
-                                    top: -6,
-                                    right: -6,
-                                    child: Container(
-                                      padding: const EdgeInsets.all(3),
-                                      decoration: const BoxDecoration(
-                                        color: Colors.orange,
-                                        shape: BoxShape.circle,
-                                        boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 2))],
+                            Builder(
+                              builder: (context) {
+                                final String tel = (arac['soforTel'] ?? "").toString();
+                                final userData = kullaniciProfilleri[tel] ?? {};
+                                final belgeler = userData['belgeler'] ?? {};
+                                
+                                // Öncelik: Onaylı selfie, yoksa profil fotosu
+                                String? fotoUrl = userData['fotoUrl'];
+                                if (belgeler['selfie']?['status'] == 'Onaylandı') {
+                                  fotoUrl = belgeler['selfie']['url'];
+                                }
+
+                                return Stack(
+                                  clipBehavior: Clip.none,
+                                  children: [
+                                    Container(
+                                      width: 50,
+                                      height: 50,
+                                      decoration: BoxDecoration(
+                                        // İkon kutusu istirahatte ise gri, değilse durum rengi (veya sıra rengi)
+                                        color: durakta ? Colors.blue.withValues(alpha: 0.1) : (durum == 'İstirahatte' ? Colors.grey : durumRengi).withValues(alpha: 0.1),
+                                        borderRadius: BorderRadius.circular(12),
+                                        image: fotoUrl != null 
+                                            ? DecorationImage(
+                                                image: NetworkImage(fotoUrl), 
+                                                fit: BoxFit.cover,
+                                              ) 
+                                            : null,
                                       ),
-                                      child: const Icon(Icons.star_rounded, color: Colors.white, size: 14),
+                                      child: fotoUrl == null 
+                                          ? Center(
+                                              child: durakta
+                                                  ? Text(
+                                                      siraNo.toString(),
+                                                      style: TextStyle(color: Colors.blue.shade800, fontSize: 22, fontWeight: FontWeight.bold),
+                                                    )
+                                                  : Icon(durumIkonu, color: durum == 'İstirahatte' ? Colors.grey : durumRengi, size: 28),
+                                            )
+                                          : null,
                                     ),
-                                  ),
-                              ],
+                                    if (isNobetci)
+                                      Positioned(
+                                        top: -6,
+                                        right: -6,
+                                        child: Container(
+                                          padding: const EdgeInsets.all(3),
+                                          decoration: const BoxDecoration(
+                                            color: Colors.orange,
+                                            shape: BoxShape.circle,
+                                            boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 2))],
+                                          ),
+                                          child: const Icon(Icons.star_rounded, color: Colors.white, size: 14),
+                                        ),
+                                      ),
+                                    // [YENİ] Fotoğraf varsa sıra numarasını sağ alta küçük rozet olarak ekleyelim
+                                    if (fotoUrl != null && durakta)
+                                      Positioned(
+                                        bottom: -4,
+                                        right: -4,
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: Colors.blue,
+                                            borderRadius: BorderRadius.circular(8),
+                                            border: Border.all(color: Colors.white, width: 1.5),
+                                          ),
+                                          child: Text(
+                                            siraNo.toString(),
+                                            style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                );
+                              }
                             ),
                             const SizedBox(width: 16),
                             Expanded(
@@ -511,154 +586,259 @@ class _DurakTakipEkraniState extends State<DurakTakipEkrani> {
   }
 
   void _profilGoster() {
-    final kendiAracim = araclar.firstWhere((a) => a['soforTel'] == widget.soforTel, orElse: () => {});
-    if (kendiAracim.isEmpty) return;
+    // Telefon numaralarını normalize ederek karşılaştır (Başındaki 0 ve boşlukları temizle)
+    String normalize(String? tel) {
+      if (tel == null) return "";
+      String temiz = tel.replaceAll(RegExp(r'[^0-9]'), '');
+      // Geliştirme modu için kısa numara desteği: 
+      // Eğer numara 10 haneden kısaysa (örn: 113), olduğu gibi kullan.
+      if (temiz.length >= 10) {
+        temiz = temiz.substring(temiz.length - 10);
+      }
+      return temiz;
+    }
+
+    final girisTelTemiz = normalize(widget.soforTel);
+    
+    final kendiAracim = araclar.firstWhere(
+      (a) => normalize(a['soforTel']?.toString()) == girisTelTemiz, 
+      orElse: () => {}
+    );
+    
+    if (kendiAracim.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Sürücü profil bilgileriniz bulunamadı. Lütfen yönetici ile iletişime geçin."))
+      );
+      return;
+    }
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 30),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                color: Colors.indigo.shade50,
-                shape: BoxShape.circle,
-              ),
-              child: Icon(Icons.person, size: 50, color: Colors.indigo.shade700),
+      builder: (context) => StreamBuilder<Map<String, dynamic>?>(
+        stream: FirestoreServisi().kullaniciGetir(widget.soforTel ?? ""),
+        builder: (context, snapshot) {
+          final userData = snapshot.data ?? {};
+          final belgeler = userData['belgeler'] ?? {};
+          
+          // Profil Resmi Mantığı: Onaylı selfie varsa onu kullan, yoksa profil fotosunu
+          String? profilFotoUrl = userData['fotoUrl'];
+          final selfieDoc = belgeler['selfie'];
+          if (selfieDoc != null && selfieDoc['status'] == 'Onaylandı' && selfieDoc['url'] != null) {
+            profilFotoUrl = selfieDoc['url'];
+          }
+
+          return Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
             ),
-            const SizedBox(height: 15),
-            Text(
-              kendiAracim['soforAd'] ?? "İsimsiz Şoför",
-              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 30),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    color: Colors.indigo.shade50,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.indigo.shade100, width: 2),
+                    image: profilFotoUrl != null 
+                        ? DecorationImage(image: NetworkImage(profilFotoUrl), fit: BoxFit.cover) 
+                        : null,
+                  ),
+                  child: profilFotoUrl == null ? const Icon(Icons.person, size: 50, color: Colors.indigo) : null,
+                ),
+                const SizedBox(height: 15),
+                Text(
+                  userData['adSoyad'] ?? kendiAracim['soforAd'] ?? "İsimsiz Şoför",
+                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  kendiAracim['plaka'] ?? "",
+                  style: TextStyle(fontSize: 16, color: Colors.grey.shade600, fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    widget.soforTel ?? "",
+                    style: TextStyle(color: Colors.green.shade800, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                const SizedBox(height: 30),
+                const Divider(),
+                const SizedBox(height: 10),
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(10)),
+                    child: const Icon(Icons.account_box_rounded, color: Colors.blue),
+                  ),
+                  title: const Text("Gelişmiş Sürücü Paneli", style: TextStyle(fontWeight: FontWeight.bold)),
+                  subtitle: const Text("Kimlik, Araç ve Finans Bilgileri"),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(context, MaterialPageRoute(builder: (c) => SurucuProfilDetayEkrani(esnaf: widget.esnaf, arac: kendiAracim)));
+                  },
+                ),
+                const SizedBox(height: 10),
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(10)),
+                    child: const Icon(Icons.edit, color: Colors.blue),
+                  ),
+                  title: const Text("Profil Bilgilerim", style: TextStyle(fontWeight: FontWeight.bold)),
+                  subtitle: const Text("Ad, Soyad ve Telefon"),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _aracDuzenle(kendiAracim);
+                  },
+                ),
+                const SizedBox(height: 10),
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(10)),
+                    child: const Icon(Icons.logout, color: Colors.red),
+                  ),
+                  title: const Text("Çıkış Yap", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                  onTap: () => Navigator.of(context).popUntil((route) => route.isFirst),
+                ),
+                const SizedBox(height: 20),
+              ],
             ),
-            Text(
-              kendiAracim['plaka'] ?? "",
-              style: TextStyle(fontSize: 16, color: Colors.grey.shade600, fontWeight: FontWeight.w500),
-            ),
-            const SizedBox(height: 10),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.green.shade50,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                widget.soforTel ?? "",
-                style: TextStyle(color: Colors.green.shade800, fontWeight: FontWeight.bold),
-              ),
-            ),
-            const SizedBox(height: 30),
-            const Divider(),
-            const SizedBox(height: 10),
-            ListTile(
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(10)),
-                child: const Icon(Icons.account_box_rounded, color: Colors.blue),
-              ),
-              title: const Text("Gelişmiş Sürücü Paneli", style: TextStyle(fontWeight: FontWeight.bold)),
-              subtitle: const Text("Kimlik, Araç ve Finans Bilgileri"),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(context, MaterialPageRoute(builder: (c) => SurucuProfilDetayEkrani(esnaf: widget.esnaf, arac: kendiAracim)));
-              },
-            ),
-            const SizedBox(height: 10),
-            ListTile(
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(10)),
-                child: const Icon(Icons.edit, color: Colors.blue),
-              ),
-              title: const Text("Temel Bilgileri Güncelle", style: TextStyle(fontWeight: FontWeight.bold)),
-              subtitle: const Text("Ad, Soyad ve Telefon"),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () {
-                Navigator.pop(context);
-                _aracDuzenle(kendiAracim);
-              },
-            ),
-            const SizedBox(height: 10),
-            ListTile(
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(color: Colors.indigo.shade50, borderRadius: BorderRadius.circular(10)),
-                child: const Icon(Icons.verified_user, color: Colors.indigo),
-              ),
-              title: const Text("Güvenlik Doğrulaması", style: TextStyle(fontWeight: FontWeight.bold)),
-              subtitle: const Text("Ehliyet, Ruhsat ve Sigorta Belgeleri"),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(context, MaterialPageRoute(builder: (c) => SurucuDogrulamaEkrani(esnaf: widget.esnaf)));
-              },
-            ),
-            const SizedBox(height: 10),
-            ListTile(
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(10)),
-                child: const Icon(Icons.logout, color: Colors.red),
-              ),
-              title: const Text("Çıkış Yap", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
-              onTap: () => Navigator.of(context).popUntil((route) => route.isFirst),
-            ),
-            const SizedBox(height: 20),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
 
-  void _aracDuzenle(Map<String, dynamic> arac) {
-    final pController = TextEditingController(text: arac['plaka']);
-    final sAdController = TextEditingController(text: arac['soforAd']);
-    final sTelController = TextEditingController(text: arac['soforTel']);
-    
-    // Plaka eğer zaten doluysa pasif kalmalı, boşsa şoför kendi girebilmeli
-    bool plakaPasif = (arac['plaka'] != null && arac['plaka'].toString().isNotEmpty);
+  void _aracDuzenle(Map<String, dynamic> arac) async {
+    // Önce güncel profil verilerini al
+    final userSnap = await FirebaseFirestore.instance.collection('kullanicilar').doc(widget.soforTel).get();
+    final userData = userSnap.data() ?? {};
+
+    final pController = TextEditingController(text: arac['plaka'] ?? userData['plaka']);
+    final sAdController = TextEditingController(text: arac['soforAd'] ?? userData['adSoyad'] ?? userData['ad']);
+    final sTelController = TextEditingController(text: arac['soforTel'] ?? widget.soforTel);
+    final adresController = TextEditingController(text: userData['adres'] ?? "");
+    final konumServisi = KonumServisi();
+    File? secilenResim;
+
+    if (!mounted) return;
 
     showDialog(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text("Bilgilerimi Güncelle"),
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (builderContext, setDialogState) => AlertDialog(
+          title: const Text("Profil Bilgilerim"),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                GestureDetector(
+                  onTap: () async {
+                    final picker = ImagePicker();
+                    final XFile? image = await picker.pickImage(source: ImageSource.gallery, imageQuality: 50);
+                    if (image != null) {
+                      setDialogState(() => secilenResim = File(image.path));
+                    }
+                  },
+                  child: CircleAvatar(
+                    radius: 40,
+                    backgroundColor: Colors.indigo.shade50,
+                    backgroundImage: secilenResim != null 
+                        ? FileImage(secilenResim!) 
+                        : (userData['fotoUrl'] != null ? NetworkImage(userData['fotoUrl']) : null) as ImageProvider?,
+                    child: secilenResim == null && userData['fotoUrl'] == null 
+                        ? const Icon(Icons.camera_alt, color: Colors.indigo) 
+                        : null,
+                  ),
+                ),
+                const SizedBox(height: 15),
                 TextField(
                   controller: pController, 
                   decoration: const InputDecoration(labelText: "Plaka"), 
                   textCapitalization: TextCapitalization.characters,
-                  enabled: true, 
                 ),
                 TextField(controller: sAdController, decoration: const InputDecoration(labelText: "Ad Soyad")),
-                TextField(controller: sTelController, decoration: const InputDecoration(labelText: "Telefon"), keyboardType: TextInputType.phone),
+                TextField(
+                  controller: sTelController, 
+                  decoration: const InputDecoration(labelText: "Telefon"), 
+                  enabled: true, 
+                ),
+                TextField(
+                  controller: adresController, 
+                  maxLines: 2,
+                  decoration: InputDecoration(
+                    labelText: "Adres",
+                    suffixIcon: IconButton(
+                      icon: const Icon(Icons.my_location, color: Colors.blue),
+                      onPressed: () async {
+                        final konum = await konumServisi.konumuVeAdresiGetir();
+                        if (konum != null && konum['tamAdres'] != null) {
+                          setDialogState(() {
+                            adresController.text = konum['tamAdres']!;
+                          });
+                        }
+                      },
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () => Navigator.pop(builderContext),
               child: const Text("Vazgeç"),
             ),
             ElevatedButton(
               onPressed: () async {
+                String eskiPlaka = (arac['plaka'] ?? "").toString().trim().toUpperCase();
                 String yeniPlaka = pController.text.trim().toUpperCase();
                 String yeniAd = sAdController.text.trim();
                 String yeniTel = sTelController.text.trim();
+                String yeniAdres = adresController.text.trim();
+
+                // Plaka değişmişse onay al
+                if (eskiPlaka.isNotEmpty && yeniPlaka != eskiPlaka) {
+                  bool? devamEt = await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: const Text("Plaka Değişikliği Onayı"),
+                      content: Text(
+                        "Bilgilendirme: Yapılan değişiklik sistem üzerinde '$eskiPlaka' geçen yerleri '$yeniPlaka' e çevirecektir. Devam etmek istiyor musunuz?"
+                      ),
+                      actions: [
+                        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("İptal")),
+                        ElevatedButton(
+                          onPressed: () => Navigator.pop(ctx, true),
+                          child: const Text("Devam Et"),
+                        ),
+                      ],
+                    ),
+                  );
+
+                  if (devamEt != true) return;
+
+                  // Global plaka güncelleme (Nöbet çizelgesi)
+                  await FirestoreServisi().globalPlakaGuncelle(
+                    esnafId: widget.esnaf.id,
+                    eskiPlaka: eskiPlaka,
+                    yeniPlaka: yeniPlaka,
+                  );
+                }
 
                 setState(() {
                   arac['plaka'] = yeniPlaka;
@@ -669,15 +849,21 @@ class _DurakTakipEkraniState extends State<DurakTakipEkrani> {
                 // 1. Esnaf belgesini güncelle
                 await _kaydet();
 
-                // 2. Global kullanıcı profilini de mühürle (Manager'ın seçebilmesi için)
-                await FirestoreServisi().kullaniciProfiliniGuncelle(yeniTel, {
+                // 2. Global kullanıcı profilini de mühürle
+                Map<String, dynamic> guncelProfil = {
                   'plaka': yeniPlaka,
                   'adSoyad': yeniAd,
-                });
+                  'adres': yeniAdres,
+                };
+                if (secilenResim != null) {
+                  // guncelProfil['fotoUrl'] = ...
+                }
 
-                if (mounted) Navigator.pop(context);
+                await FirestoreServisi().kullaniciProfiliniGuncelle(yeniTel, guncelProfil);
+
+                navigatorKey.currentState?.pop();
               },
-              child: const Text("Güncelle"),
+              child: const Text("Kaydet"),
             ),
           ],
         ),

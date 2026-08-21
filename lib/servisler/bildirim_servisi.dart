@@ -117,7 +117,9 @@ class BildirimServisi {
 
   static String _numaraTemizle(String tel) {
     String temiz = tel.replaceAll(RegExp(r'[^0-9]'), '');
-    if (temiz.length > 10) temiz = temiz.substring(temiz.length - 10);
+    if (temiz.length >= 10) {
+      temiz = temiz.substring(temiz.length - 10);
+    }
     return temiz;
   }
 

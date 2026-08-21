@@ -37,7 +37,9 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
   final TextEditingController _yorumController = TextEditingController();
   StreamSubscription? _esnafSub;
   StreamSubscription? _ajandaSub;
+  StreamSubscription? _kullaniciSub;
   Map<String, dynamic> _gunlukAjanda = {};
+  final Map<String, Map<String, dynamic>> _kullaniciProfilleri = {}; // Profil önbelleği
   double _secilenPuan = 0.0;
   bool _yorumGonderiliyor = false;
   bool _taksiYukleniyor = false;
@@ -71,6 +73,7 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
   void dispose() {
     _esnafSub?.cancel();
     _ajandaSub?.cancel();
+    _kullaniciSub?.cancel();
     _filoController.dispose();
     _yorumController.dispose();
     super.dispose();
@@ -142,6 +145,31 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
     return simdiDakika >= basDakika && simdiDakika < bitDakika;
   }
 
+  void _kullanicilariDinle() {
+    _kullaniciSub?.cancel();
+    final telefonlar = _guncelEsnaf.araclar
+        .map((a) => a['soforTel']?.toString())
+        .where((t) => t != null && t.isNotEmpty)
+        .toSet()
+        .toList();
+
+    if (telefonlar.isEmpty) return;
+
+    _kullaniciSub = FirebaseFirestore.instance
+        .collection('kullanicilar')
+        .where(FieldPath.documentId, whereIn: telefonlar.take(30).toList())
+        .snapshots()
+        .listen((snapshot) {
+      if (mounted) {
+        setState(() {
+          for (var doc in snapshot.docs) {
+            _kullaniciProfilleri[doc.id] = Map<String, dynamic>.from(doc.data());
+          }
+        });
+      }
+    });
+  }
+
   void _esnafDinle() {
     _esnafSub = FirebaseFirestore.instance
         .collection('esnaflar')
@@ -151,6 +179,7 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
       if (snapshot.exists && mounted) {
         setState(() {
           _guncelEsnaf = EsnafModeli.fromFirestore(snapshot);
+          _kullanicilariDinle(); // Araçlar değişirse kullanıcıları da dinle
         });
       }
     });
@@ -603,14 +632,48 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
                                         ],
                                       ),
                                       const SizedBox(height: 6),
-                                      Text(
-                                        arac['soforAd'] ?? "Belirtilmemiş",
-                                        style: TextStyle(
-                                            color: Colors.white
-                                                .withValues(alpha: 0.8),
-                                            fontSize: 12),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
+                                      Builder(
+                                        builder: (context) {
+                                          final String tel = (arac['soforTel'] ?? "").toString();
+                                          final userData = _kullaniciProfilleri[tel] ?? {};
+                                          final belgeler = userData['belgeler'] ?? {};
+                                          
+                                          // Öncelik: Onaylı selfie, yoksa profil fotosu
+                                          String? fotoUrl = userData['fotoUrl'];
+                                          if (belgeler['selfie']?['status'] == 'Onaylandı') {
+                                            fotoUrl = belgeler['selfie']['url'];
+                                          }
+
+                                          return Row(
+                                            children: [
+                                              Container(
+                                                width: 32,
+                                                height: 32,
+                                                decoration: BoxDecoration(
+                                                  color: Colors.white.withValues(alpha: 0.1),
+                                                  shape: BoxShape.circle,
+                                                  border: Border.all(color: Colors.white24, width: 1),
+                                                  image: fotoUrl != null 
+                                                      ? DecorationImage(image: NetworkImage(fotoUrl), fit: BoxFit.cover) 
+                                                      : null,
+                                                ),
+                                                child: fotoUrl == null ? const Icon(Icons.person, size: 18, color: Colors.white54) : null,
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Expanded(
+                                                child: Text(
+                                                  arac['soforAd'] ?? "Belirtilmemiş",
+                                                  style: TextStyle(
+                                                      color: Colors.white.withValues(alpha: 0.9),
+                                                      fontSize: 12,
+                                                      fontWeight: FontWeight.w500),
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                            ],
+                                          );
+                                        }
                                       ),
                                       const SizedBox(height: 8),
                                       if (siraNo > 0)
@@ -1324,9 +1387,65 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
                   children: [
                     if (siradakiArac != null) ...[
                       const Text("SIRADAKİ ARAÇ", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
-                      const SizedBox(height: 8),
-                      Text(siradakiArac['plaka'] ?? "PLAKA YOK", style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w900, color: Colors.indigo)),
-                      Text((siradakiArac['soforAd'] ?? siradakiArac['sofor'] ?? "Şoför bilgisi yok").toString(), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 12),
+                      Builder(
+                        builder: (context) {
+                          final String tel = (siradakiArac['soforTel'] ?? "").toString();
+                          final userData = _kullaniciProfilleri[tel] ?? {};
+                          final belgeler = userData['belgeler'] ?? {};
+                          
+                          // Şoför Fotoğrafı (Onaylı Selfie öncelikli)
+                          String? soforFoto = userData['fotoUrl'];
+                          if (belgeler['selfie']?['status'] == 'Onaylandı') {
+                            soforFoto = belgeler['selfie']['url'];
+                          }
+
+                          // Araç Ön Görünüm Fotoğrafı
+                          String? aracOnFoto = belgeler['arac_on']?['url'];
+
+                          return Column(
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Container(
+                                    width: 60,
+                                    height: 60,
+                                    decoration: BoxDecoration(
+                                      color: Colors.grey.shade200,
+                                      shape: BoxShape.circle,
+                                      border: Border.all(color: Colors.indigo.shade100, width: 2),
+                                      image: soforFoto != null ? DecorationImage(image: NetworkImage(soforFoto), fit: BoxFit.cover) : null,
+                                    ),
+                                    child: soforFoto == null ? const Icon(Icons.person, size: 35, color: Colors.grey) : null,
+                                  ),
+                                  const SizedBox(width: 15),
+                                  Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(siradakiArac['plaka'] ?? "PLAKA YOK", style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: Colors.indigo)),
+                                      Text((siradakiArac['soforAd'] ?? siradakiArac['sofor'] ?? "Şoför").toString(), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                              if (aracOnFoto != null) ...[
+                                const SizedBox(height: 15),
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: Image.network(
+                                    aracOnFoto,
+                                    height: 120,
+                                    width: double.infinity,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (c, e, s) => const SizedBox.shrink(),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          );
+                        }
+                      ),
                       const SizedBox(height: 15),
                       const Divider(),
                     ],

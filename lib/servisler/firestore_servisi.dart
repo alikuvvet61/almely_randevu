@@ -1,4 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../modeller/esnaf_modeli.dart';
@@ -185,6 +188,17 @@ class FirestoreServisi {
         'favoriKategoriler': FieldValue.arrayRemove([kategoriId])
       });
     }
+  }
+
+  Stream<Map<String, dynamic>?> kullaniciGetir(String tel) {
+    return _kullanicilarRef.doc(tel).snapshots().map((doc) {
+      if (!doc.exists) return null;
+      try {
+        return Map<String, dynamic>.from(doc.data() as Map);
+      } catch (e) {
+        return doc.data() as Map<String, dynamic>?;
+      }
+    });
   }
 
   // --- ESNAF İŞLEMLERİ ---
@@ -999,11 +1013,25 @@ else if (yeniDurum == 'Reddedildi' || yeniDurum == 'İptal Edildi' || yeniDurum 
 
   // --- RANDEVU EKRANI İÇİN YARDIMCI STREAM'LER ---
   Stream<Map<String, dynamic>?> ajandaGetir(String esnafId, DateTime tarih) {
-    return gunlukAjandaSnapStream(esnafId, tarih, null).map((snap) => snap.data() as Map<String, dynamic>?);
+    return gunlukAjandaSnapStream(esnafId, tarih, null).map((snap) {
+      if (!snap.exists) return null;
+      try {
+        return Map<String, dynamic>.from(snap.data() as Map);
+      } catch (e) {
+        return snap.data() as Map<String, dynamic>?;
+      }
+    });
   }
 
   Stream<Map<String, dynamic>?> taksiCizelgesiGetir(String esnafId) {
-    return taksiAjandasiSnapStream(esnafId, DateTime.now()).map((snap) => snap.data() as Map<String, dynamic>?);
+    return taksiAjandasiSnapStream(esnafId, DateTime.now()).map((snap) {
+      if (!snap.exists) return null;
+      try {
+        return Map<String, dynamic>.from(snap.data() as Map);
+      } catch (e) {
+        return snap.data() as Map<String, dynamic>?;
+      }
+    });
   }
 
   Stream<List<Map<String, dynamic>>> tumKullanicilariGetir() {
@@ -1013,7 +1041,94 @@ else if (yeniDurum == 'Reddedildi' || yeniDurum == 'İptal Edildi' || yeniDurum 
     }).toList());
   }
 
+  Future<void> globalPlakaGuncelle({
+    required String esnafId,
+    required String eskiPlaka,
+    required String yeniPlaka,
+  }) async {
+    final ajandaRef = _esnaflarRef.doc(esnafId).collection('taksi_ajanda');
+    final querySnapshot = await ajandaRef.get();
+
+    final batch = _db.batch();
+    bool degisiklikVar = false;
+
+    for (var doc in querySnapshot.docs) {
+      Map<String, dynamic> data = Map<String, dynamic>.from(doc.data());
+      bool docDegisti = false;
+
+      data.forEach((tarih, gunlukVeri) {
+        if (gunlukVeri is Map && gunlukVeri.containsKey(eskiPlaka)) {
+          Map<String, dynamic> yeniGunlukVeri = Map<String, dynamic>.from(gunlukVeri);
+          final durum = yeniGunlukVeri.remove(eskiPlaka);
+          yeniGunlukVeri[yeniPlaka] = durum;
+          data[tarih] = yeniGunlukVeri;
+          docDegisti = true;
+          degisiklikVar = true;
+        }
+      });
+
+      if (docDegisti) {
+        batch.set(doc.reference, data, SetOptions(merge: false));
+      }
+    }
+
+    if (degisiklikVar) {
+      await batch.commit();
+    }
+  }
+
   Future<void> kullaniciProfiliniGuncelle(String tel, Map<String, dynamic> veri) async {
     await _kullanicilarRef.doc(tel).set(veri, SetOptions(merge: true));
+  }
+
+  Future<void> belgeYukle(String tel, String belgeTuru, String url) async {
+    await _kullanicilarRef.doc(tel).set({
+      'belgeler': {
+        belgeTuru: {
+          'url': url,
+          'status': 'Bekliyor',
+          'tarih': FieldValue.serverTimestamp(),
+        }
+      }
+    }, SetOptions(merge: true));
+  }
+
+  Future<void> belgeOnayla(String tel, String belgeTuru, bool onay) async {
+    await _kullanicilarRef.doc(tel).set({
+      'belgeler': {
+        belgeTuru: {
+          'status': onay ? 'Onaylandı' : 'Reddedildi',
+          'onayTarihi': FieldValue.serverTimestamp(),
+        }
+      }
+    }, SetOptions(merge: true));
+  }
+
+  Future<void> belgeSil(String tel, String belgeTuru) async {
+    await _kullanicilarRef.doc(tel).update({
+      'belgeler.$belgeTuru': FieldValue.delete(),
+    });
+  }
+
+  // --- STORAGE İŞLEMLERİ ---
+  Future<String?> dosyaYukle(dynamic dosyaVerisi, String path) async {
+    try {
+      final storageRef = FirebaseStorage.instance.ref().child(path);
+      UploadTask uploadTask;
+      
+      if (dosyaVerisi is File) {
+        uploadTask = storageRef.putFile(dosyaVerisi);
+      } else if (dosyaVerisi is Uint8List) {
+        uploadTask = storageRef.putData(dosyaVerisi);
+      } else {
+        return null;
+      }
+
+      final snapshot = await uploadTask;
+      return await snapshot.ref.getDownloadURL();
+    } catch (e) {
+      debugPrint("Storage Yükleme Hatası: $e");
+      return null;
+    }
   }
 }

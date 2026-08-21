@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:io';
 
 import '../modeller/esnaf_modeli.dart';
 import '../servisler/firestore_servisi.dart';
@@ -737,6 +739,149 @@ class _AdminEkraniState extends State<AdminEkrani> {
     );
   }
 
+  void _belgeOnaylariPanel() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        height: MediaQuery.of(context).size.height * 0.85,
+        decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
+        child: Column(
+          children: [
+            Container(margin: const EdgeInsets.only(top: 10), width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10))),
+            const Padding(
+              padding: EdgeInsets.all(20),
+              child: Text("Bekleyen Belge Onayları", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.teal)),
+            ),
+            Expanded(
+              child: StreamBuilder<List<Map<String, dynamic>>>(
+                stream: _firestoreServisi.tumKullanicilariGetir(),
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+                  
+                  final bekleyenler = <Map<String, dynamic>>[];
+                  for (var user in snapshot.data!) {
+                    final belgeler = user['belgeler'] as Map<String, dynamic>?;
+                    if (belgeler != null) {
+                      bool pending = false;
+                      belgeler.forEach((key, value) {
+                        if (value['status'] == 'Bekliyor') pending = true;
+                      });
+                      if (pending) bekleyenler.add(user);
+                    }
+                  }
+
+                  if (bekleyenler.isEmpty) return const Center(child: Text("Onay bekleyen belge bulunamadı."));
+
+                  return ListView.builder(
+                    itemCount: bekleyenler.length,
+                    itemBuilder: (context, index) {
+                      final user = bekleyenler[index];
+                      final belgeler = user['belgeler'] as Map<String, dynamic>;
+                      final pendingList = belgeler.entries.where((e) => e.value['status'] == 'Bekliyor').toList();
+
+                      return ExpansionTile(
+                        title: Text("${user['adSoyad'] ?? user['ad'] ?? 'İsimsiz'} (${user['tel']})"),
+                        subtitle: Text("${pendingList.length} belge onay bekliyor"),
+                        children: pendingList.map((belge) {
+                          String tur = belge.key;
+                          String url = belge.value['url'];
+                          return ListTile(
+                            leading: const Icon(Icons.description, color: Colors.orange),
+                            title: Text(_belgeTurMetni(tur)),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.visibility, color: Colors.blue),
+                                  onPressed: () => _belgeGoruntule(url, _belgeTurMetni(tur)),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.check_circle, color: Colors.green),
+                                  onPressed: () => _firestoreServisi.belgeOnayla(user['tel'], tur, true),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.cancel, color: Colors.red),
+                                  onPressed: () => _firestoreServisi.belgeOnayla(user['tel'], tur, false),
+                                ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _belgeTurMetni(String tur) {
+    switch (tur) {
+      case 'selfie': return "Canlı Yüz Doğrulama";
+      case 'ehliyet': return "Kimlik / Ehliyet";
+      case 'sofor_karti': return "Ticari Araç Kullanma Belgesi";
+      case 'adli_sicil': return "Adli Sicil Kaydı";
+      case 'psikoteknik': return "Psikoteknik Raporu";
+      case 'ruhsat': return "Ruhsat Bilgileri";
+      case 'sigorta': return "Trafik Sigortası";
+      case 'arac_foto': return "Araç Görselleri";
+      case 'arac_on': return "Araç Ön Görünüm";
+      case 'arac_arka': return "Araç Arka Görünüm";
+      case 'arac_sag': return "Araç Sağ Yan";
+      case 'arac_sol': return "Araç Sol Yan";
+      case 'saglik_raporu': return "Sağlık Raporu";
+      case 'alkol_testi': return "Alkol/Madde Testi";
+      case 'muayene_raporu': return "Muayene Raporu";
+      case 'belediye_ruhsat': return "Belediye Ruhsatı";
+      case 'ferdi_kaza': return "Ferdi Kaza Sigortası";
+      case 'taksimetre_belge': return "Taksimetre Belgesi";
+      case 'vergi_levhasi': return "Vergi Levhasi";
+      case 'ikametgah': return "İkametgah";
+      default: return tur;
+    }
+  }
+
+  void _belgeGoruntule(String url, String baslik) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(baslik),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (url.startsWith('http'))
+              Image.network(url, errorBuilder: (c, e, s) => const Icon(Icons.broken_image, size: 100))
+            else if (kIsWeb)
+              const Column(
+                children: [
+                  Icon(Icons.computer, color: Colors.blue, size: 50),
+                  SizedBox(height: 10),
+                  Text("Web tarayıcıda yerel dosya önizleme kısıtlıdır. Lütfen mobil cihazdan kontrol edin.", textAlign: TextAlign.center),
+                ],
+              )
+            else if (File(url).existsSync())
+              Image.file(File(url), height: 300, fit: BoxFit.contain)
+            else
+              const Column(
+                children: [
+                  Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 50),
+                  SizedBox(height: 10),
+                  Text("Görsel yerel cihazda bulunamadı.", textAlign: TextAlign.center),
+                ],
+              ),
+          ],
+        ),
+        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Kapat"))],
+      ),
+    );
+  }
+
   void _ajandalariSifirla() {
     showDialog(
       context: context,
@@ -783,6 +928,8 @@ class _AdminEkraniState extends State<AdminEkrani> {
                   _adminButonUst(Icons.directions_car, 'Araç Tür/Sınıf\nTanımı', Colors.blueGrey, () => _aracTuruYonetimi()),
                   const SizedBox(width: 8),
                   _adminButonUst(Icons.calendar_month, 'Defterleri\nSıfırla', Colors.red, () => _ajandalariSifirla()),
+                  const SizedBox(width: 8),
+                  _adminButonUst(Icons.verified_user, 'Belge\nOnayları', Colors.teal, () => _belgeOnaylariPanel()),
                   const SizedBox(width: 8),
                   _adminButonUst(Icons.people, 'Üyeler', Colors.purple, () {}),
                 ],

@@ -813,7 +813,7 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
         String atanacakPlaka = havuz[dayIndex % havuz.length];
         String mevcut = yeniGunMap[atanacakPlaka]?.toString() ?? "";
         if (!mevcut.contains('N')) {
-          String birlesik = mevcut + 'N';
+          String birlesik = "${mevcut}N";
           List<String> chars = birlesik.split('');
           chars.sort();
           yeniGunMap[atanacakPlaka] = chars.join('');
@@ -837,9 +837,8 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
       final gunKey = DateFormat('yyyy-MM-dd').format(seciliGun);
       final gunData = aylikVeri[gunKey] ?? {};
 
-      // Bugün 'Çalış' (C) olarak işaretlenen araçları belirle
       final calisanPlakalar = gunData.entries
-          .where((e) => e.value?.toString().contains('C') == true)
+          .where((e) => "${e.value}".contains('C'))
           .map((e) => e.key)
           .toList();
 
@@ -1149,10 +1148,19 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
             cacheExtent: 500.0,
             itemBuilder: (context, index) {
               final arac = filtrelenmisAraclar[index];
-              final plaka = (arac['plaka'] ?? "").toString();
+              final plaka = (arac['plaka'] ?? "").toString().trim();
               final sofor = (arac['soforAd'] ?? arac['sofor'] ?? "").toString();
               final nSira = arac['nobetSirasi'];
-              final mevcutDurum = gunData[plaka]; // Varsayılan 'C' kaldırıldı, null olabilir.
+              
+              // [ROBUST]: Hem tam eşleşme hem de trim'li eşleşme dene
+              var mevcutDurum = gunData[plaka];
+              if (mevcutDurum == null) {
+                // Eğer doğrudan plaka ile bulunamadıysa, gunData içindeki anahtarları normalize ederek ara
+                final match = gunData.entries.where((e) => e.key.toString().trim() == plaka);
+                if (match.isNotEmpty) {
+                  mevcutDurum = match.first.value;
+                }
+              }
 
               return Container(
                 margin: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
@@ -1218,7 +1226,60 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
             },
           ),
         ),
+        // [YENİ] Tanımsız/Eski Plaka Kayıtları (Eğer varsa)
+        _tanimsizKayitlarWidget(gunData),
       ],
+    );
+  }
+
+  Widget _tanimsizKayitlarWidget(Map<String, dynamic> gunData) {
+    final mevcutPlakalar = araclar.map((a) => (a['plaka'] ?? "").toString().trim()).toSet();
+    final tanimsizlar = gunData.entries
+        .where((e) => !mevcutPlakalar.contains(e.key.toString().trim()))
+        .toList();
+
+    if (tanimsizlar.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(8),
+      color: Colors.orange.shade50,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            "⚠️ Mevcut Filoda Olmayan Eski Kayıtlar",
+            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.orange),
+          ),
+          const SizedBox(height: 4),
+          ...tanimsizlar.map((e) => Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            child: Row(
+              children: [
+                Text("${e.key}: ", style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                Text(e.value.toString(), style: const TextStyle(fontSize: 10)),
+                const Spacer(),
+                InkWell(
+                  onTap: () {
+                    setState(() {
+                      final gunKey = DateFormat('yyyy-MM-dd').format(seciliGun);
+                      final gunMap = Map<String, dynamic>.from(aylikVeri[gunKey] ?? {});
+                      gunMap.remove(e.key);
+                      aylikVeri[gunKey] = gunMap;
+                      degisenAylar.add(gunKey.substring(0, 7));
+                    });
+                  },
+                  child: const Icon(Icons.delete_sweep, size: 14, color: Colors.red),
+                ),
+              ],
+            ),
+          )),
+          const Text(
+            "(Plaka değişikliği yapıldıysa bu kayıtları silip yeniden atayınız)",
+            style: TextStyle(fontSize: 9, color: Colors.grey),
+          ),
+        ],
+      ),
     );
   }
 
