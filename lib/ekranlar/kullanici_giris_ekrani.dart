@@ -25,11 +25,11 @@ class _KullaniciGirisSayfasiState extends State<KullaniciGirisSayfasi> {
     setState(() => _loading = true);
     
     // [YENİ] Bildirim dinleyicisini mühürleyelim (Web ve Mobil için)
-    BildirimServisi.bildirimDinle(tel, context: context);
+    BildirimServisi.bildirimDinle(tel);
 
     // [OPTİMİZASYON] Gereksiz çift çağrı ve uzun bekleyiş kaldırıldı.
     // BildirimServisi.tokenKaydet zaten içerde kullaniciyiKaydet çağırıyor.
-    await BildirimServisi.tokenKaydet(tel, role: 'kullanici', context: context);
+    await BildirimServisi.tokenKaydet(tel, role: 'kullanici');
     
     if (!mounted) return;
     

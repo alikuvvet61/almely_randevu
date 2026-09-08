@@ -14,7 +14,7 @@ import 'package:almely_randevu/servisler/firestore_servisi.dart';
 import 'package:almely_randevu/servisler/konum_servisi.dart';
 import 'package:almely_randevu/widgets/ana_buton.dart';
 import 'package:almely_randevu/widgets/sos_butonu.dart';
-import 'package:almely_randevu/ekranlar/randevu_ekrani.dart';
+import 'package:almely_randevu/ekranlar/taksi/taksi_yonlendirme.dart';
 import 'package:almely_randevu/ekranlar/tum_yorumlar_ekrani.dart';
 
 class EsnafDetayEkrani extends StatefulWidget {
@@ -51,7 +51,7 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
     
     // [YENİ] Web ve Mobil'de bu dükkanın canlı bildirim dinleyicisini başlatalım
     if (widget.kullaniciTel != null) {
-      BildirimServisi.bildirimDinle(widget.kullaniciTel!, context: context);
+      BildirimServisi.bildirimDinle(widget.kullaniciTel!);
     }
 
     _guncelEsnaf = widget.esnaf;
@@ -1096,7 +1096,15 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
                     }
                   }
                   if (ajandaVarMi) {
-                    Navigator.push(context, MaterialPageRoute(builder: (c) => RandevuEkrani(esnaf: _guncelEsnaf, kullaniciTel: widget.kullaniciTel)));
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (c) => TaksiYonlendirme.randevuEkrani(
+                          esnaf: _guncelEsnaf,
+                          kullaniciTel: widget.kullaniciTel,
+                        ),
+                      ),
+                    );
                   } else {
                     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Bu işletmenin henüz yayında olan bir ajanda defteri bulunmuyor."), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating));
                   }

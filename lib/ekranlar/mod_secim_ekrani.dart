@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../modeller/esnaf_modeli.dart';
 import 'ana_ekran.dart';
 import 'esnaf_paneli.dart';
-import 'durak_takip_ekrani.dart';
+import 'package:almely_randevu/ekranlar/taksi/taksi_durak_takip_ekrani.dart';
 
 class ModSecimEkrani extends StatelessWidget {
   final EsnafModeli esnaf;
@@ -66,7 +66,7 @@ class ModSecimEkrani extends StatelessWidget {
                 onTap: () {
                   Navigator.pushReplacement(
                     context,
-                    MaterialPageRoute(builder: (c) => DurakTakipEkrani(esnaf: esnaf, soforTel: girisTel))
+                    MaterialPageRoute(builder: (c) => TaksiDurakTakipEkrani(esnaf: esnaf, soforTel: girisTel))
                   );
                 },
               ),

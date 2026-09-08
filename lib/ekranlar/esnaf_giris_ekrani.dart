@@ -37,7 +37,7 @@ class _EsnafGirisEkraniState extends State<EsnafGirisEkrani> {
 
       if (esnaf != null) {
         // [YENİ] Bildirim dinleyicisini web ve mobil için başlatalım
-        BildirimServisi.bildirimDinle(tel, context: context);
+        BildirimServisi.bildirimDinle(tel);
 
         // [KRİTİK] Esnafı OneSignal'e telefon numarasıyla kaydet
         // Bu sayede "Kritik Gecikme" bildirimlerini alabilecek

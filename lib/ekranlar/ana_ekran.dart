@@ -13,10 +13,11 @@ import '../servisler/bildirim_servisi.dart';
 import '../servisler/onesignal_servisi.dart';
 import 'rehber_ekrani.dart';
 import 'mod_secim_ekrani.dart';
-import 'esnaf_detay_ekrani.dart';
+import 'taksi/taksi_yonlendirme.dart';
 import 'kullanici_randevu_ekrani.dart';
 import 'giris_secim_ekrani.dart';
 import 'surucu_profil_detay_ekrani.dart';
+import '../main.dart';
 
 
 class AnaEkran extends StatefulWidget {
@@ -44,12 +45,12 @@ class _AnaEkranState extends State<AnaEkran> {
        // Hem Mobil hem Web için ortak merkezi mantık çalışacak.
        WidgetsBinding.instance.addPostFrameCallback((_) {
          if (mounted) {
-           BildirimServisi.girisKontrolleri(widget.kullaniciTel!, context);
+           BildirimServisi.girisKontrolleri(widget.kullaniciTel!);
          }
        });
 
        // [YENİ] Canlı bildirim dinleyiciyi aktif tutalım
-       BildirimServisi.bildirimDinle(widget.kullaniciTel!, context: context);
+       BildirimServisi.bildirimDinle(widget.kullaniciTel!);
     }
   }
 
@@ -370,7 +371,17 @@ class _AnaEkranState extends State<AnaEkran> {
                             ],
                           ),
                           trailing: const Icon(Icons.chevron_right, color: Colors.grey),
-                          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (c) => EsnafDetayEkrani(esnaf: esnaf, kullaniciTel: widget.kullaniciTel))),
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (c) => TaksiYonlendirme.detayEkrani(
+                                  esnaf: esnaf,
+                                  kullaniciTel: widget.kullaniciTel,
+                                ),
+                              ),
+                            );
+                          },
                         );
                       },
                     );
@@ -838,12 +849,11 @@ class _AnaEkranState extends State<AnaEkran> {
 
                 await FirestoreServisi().kullaniciProfiliniGuncelle(widget.kullaniciTel!, guncelVeri);
 
-                if (mounted) {
-                  // ignore: use_build_context_synchronously
-                  Navigator.of(dialogContext).pop();
-                  // ignore: use_build_context_synchronously
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Profil güncellendi.")));
-                }
+                final globalCtx = navigatorKey.currentContext ?? context;
+                // ignore: use_build_context_synchronously
+                Navigator.of(globalCtx, rootNavigator: true).pop();
+                // ignore: use_build_context_synchronously
+                ScaffoldMessenger.of(globalCtx).showSnackBar(const SnackBar(content: Text("Profil güncellendi.")));
               },
               child: const Text("Kaydet"),
             ),

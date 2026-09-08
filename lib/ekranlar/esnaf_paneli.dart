@@ -20,12 +20,12 @@ import 'package:almely_randevu/servisler/firestore_servisi.dart';
 import 'package:almely_randevu/servisler/konum_servisi.dart';
 import 'package:almely_randevu/widgets/medya_goruntuleyici.dart';
 
-import 'package:almely_randevu/ekranlar/durak_takip_ekrani.dart';
+import 'package:almely_randevu/ekranlar/taksi/taksi_durak_takip_ekrani.dart';
+import 'package:almely_randevu/ekranlar/taksi/taksi_cizelge_ekrani.dart';
 import 'package:almely_randevu/ekranlar/esnaf_ajanda_ekrani.dart';
 import 'package:almely_randevu/ekranlar/esnaf_parametre_ekrani.dart';
 import 'package:almely_randevu/ekranlar/esnaf_randevu_onay_ekrani.dart';
 import 'package:almely_randevu/ekranlar/randevu_ekrani.dart';
-import 'package:almely_randevu/ekranlar/taksi_cizelge_ekrani.dart';
 import 'package:almely_randevu/ekranlar/kira_teslimat_ekrani.dart';
 
 class EsnafPaneli extends StatefulWidget {
@@ -99,23 +99,18 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
     // Hem Mobil hem Web için ortak merkezi mantık çalışacak.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        BildirimServisi.girisKontrolleri(
-          widget.soforTel ?? widget.esnaf.telefon, 
-          context, 
-          esnafMi: true, 
-          esnafId: widget.esnaf.id
-        );
+      BildirimServisi.girisKontrolleri(widget.soforTel ?? widget.esnaf.telefon, esnafMi: true, esnafId: widget.esnaf.id);
       }
     });
 
     // [YENİ] Web ve Mobil'de canlı bildirim dinleyiciyi mühürleyelim
-    BildirimServisi.bildirimDinle(widget.soforTel ?? widget.esnaf.telefon, context: context);
+    BildirimServisi.bildirimDinle(widget.soforTel ?? widget.esnaf.telefon);
 
     // TEŞHİS: Bildirim servisini bağla
-    BildirimServisi.tokenKaydet(widget.esnaf.telefon, role: 'esnaf', context: context);
+    BildirimServisi.tokenKaydet(widget.esnaf.telefon, role: 'esnaf');
 
     if (_isSofor) {
-      BildirimServisi.tokenKaydet(widget.soforTel!, role: 'esnaf', context: context);
+      BildirimServisi.tokenKaydet(widget.soforTel!, role: 'esnaf');
       _otomatikKonumPaylasiminiBaslat();
     }
 
@@ -1115,7 +1110,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
         onTap: () {
           final navigator = Navigator.of(context);
           navigator.push(
-            MaterialPageRoute(builder: (c) => DurakTakipEkrani(esnaf: _guncelEsnaf, soforTel: widget.soforTel)),
+            MaterialPageRoute(builder: (c) => TaksiDurakTakipEkrani(esnaf: _guncelEsnaf, soforTel: widget.soforTel)),
           );
         },
       );
@@ -1158,7 +1153,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
             baslik: "Durak Takip",
             altBaslik: "Sıra ve Konum",
             renk: Colors.teal,
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (c) => DurakTakipEkrani(esnaf: _guncelEsnaf, soforTel: widget.soforTel))),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (c) => TaksiDurakTakipEkrani(esnaf: _guncelEsnaf, soforTel: widget.soforTel))),
           ),
         ],
         _yonetimKarti(
@@ -3376,7 +3371,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
   @override
   Widget build(BuildContext context) {
     if (_isSofor) {
-      return DurakTakipEkrani(esnaf: _guncelEsnaf, soforTel: widget.soforTel);
+      return TaksiDurakTakipEkrani(esnaf: _guncelEsnaf, soforTel: widget.soforTel);
     }
 
     return Scaffold(

@@ -35,7 +35,7 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
     super.initState();
 
     // [YENİ] Web ve Mobil'de canlı bildirim dinleyiciyi mühürleyelim
-    BildirimServisi.bildirimDinle(widget.telefon, context: context);
+    BildirimServisi.bildirimDinle(widget.telefon);
 
     _merkeziTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted && _merkeziTimer != null && _merkeziTimer!.isActive) {

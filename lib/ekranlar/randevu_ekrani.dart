@@ -8,17 +8,27 @@ import '../servisler/bildirim_servisi.dart'; // [YENİ] Bildirim kontrolleri iç
 import '../widgets/ana_buton.dart';
 import '../widgets/sos_butonu.dart'; // [YENİ] SOS Butonu için gerekli
 
+enum RandevuModu { genel, taksi }
+
 class RandevuEkrani extends StatefulWidget {
   final EsnafModeli esnaf;
   final String? kullaniciTel;
+  final RandevuModu modu;
 
-  const RandevuEkrani({super.key, required this.esnaf, this.kullaniciTel});
+  const RandevuEkrani({
+    super.key,
+    required this.esnaf,
+    this.kullaniciTel,
+    this.modu = RandevuModu.genel,
+  });
 
   @override
   State<RandevuEkrani> createState() => _RandevuEkraniState();
 }
 
 class _RandevuEkraniState extends State<RandevuEkrani> {
+  bool get _isTaksiModu => widget.modu == RandevuModu.taksi || widget.esnaf.kategori == 'Taksi';
+
   final _firestoreServisi = FirestoreServisi();
   final _adController = TextEditingController();
   final _telController = TextEditingController();
@@ -56,7 +66,7 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
     super.initState();
     _esnafStream = _firestoreServisi.esnafGetir(widget.esnaf.id);
 
-    if (widget.esnaf.aracOdakliSistem && widget.esnaf.kategori == 'Taksi') {
+    if (widget.esnaf.aracOdakliSistem && _isTaksiModu) {
       if (widget.esnaf.araclar.length == 1) {
         final a = widget.esnaf.araclar.first;
         _seciliKanalNotifier.value = a['plaka']?.toString();
@@ -106,7 +116,7 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
   }
 
   void _otomatikTarihSec(EsnafModeli esnaf) {
-    if (esnaf.kategori == 'Taksi') {
+    if (_isTaksiModu) {
       _seciliTarihNotifier.value = DateTime.now();
       return;
     }

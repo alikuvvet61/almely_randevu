@@ -66,7 +66,7 @@ class OneSignalServisi {
     if (kIsWeb) {
       // Web'de: Push notification yok, ama Firestore listener başlat
       debugPrint("Web cihazda: OneSignal kaydetme (tarayıcı push yok), listener başlatılıyor: $temizTel");
-      BildirimServisi.bildirimDinle(temizTel, context: context);
+      BildirimServisi.bildirimDinle(temizTel);
       return;
     }
 

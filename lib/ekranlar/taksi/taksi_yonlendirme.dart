@@ -1,0 +1,43 @@
+import 'package:flutter/material.dart';
+
+import '../../modeller/esnaf_modeli.dart';
+import '../esnaf_detay_ekrani.dart';
+import '../randevu_ekrani.dart';
+import 'taksi_esnaf_detay_ekrani.dart';
+import 'taksi_randevu_ekrani.dart';
+
+class TaksiYonlendirme {
+  static Widget detayEkrani({
+    required EsnafModeli esnaf,
+    String? kullaniciTel,
+  }) {
+    if (esnaf.kategori == 'Taksi') {
+      return TaksiEsnafDetayEkrani(
+        esnaf: esnaf,
+        kullaniciTel: kullaniciTel,
+      );
+    }
+
+    return EsnafDetayEkrani(
+      esnaf: esnaf,
+      kullaniciTel: kullaniciTel,
+    );
+  }
+
+  static Widget randevuEkrani({
+    required EsnafModeli esnaf,
+    String? kullaniciTel,
+  }) {
+    if (esnaf.kategori == 'Taksi') {
+      return TaksiRandevuEkrani(
+        esnaf: esnaf,
+        kullaniciTel: kullaniciTel,
+      );
+    }
+
+    return RandevuEkrani(
+      esnaf: esnaf,
+      kullaniciTel: kullaniciTel,
+    );
+  }
+}

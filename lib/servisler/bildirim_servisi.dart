@@ -1,8 +1,11 @@
+// ignore_for_file: use_build_context_synchronously
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart'; // [YENİ] kIsWeb için gerekli
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'dart:async';
+import '../main.dart';
 import 'onesignal_servisi.dart';
 import '../modeller/randevu_modeli.dart';
 import '../modeller/esnaf_modeli.dart';
@@ -12,16 +15,115 @@ class BildirimServisi {
   static final Set<String> _syncedIds = {}; 
   static StreamSubscription? _randevuAboneligi; // Mevcut aboneliği takip etmek için
   static bool _isSyncing = false; // Senkronizasyon kilidi
+  static bool _dialogOpen = false; // Ensure only one modal at a time
 
   static Future<void> initialize({BuildContext? context}) async {
     await OneSignalServisi.initialize(context: context);
   }
 
-  /// [YENİ] Giriş kontrolleri ve kullanıcı bilgilendirme
-  static Future<void> girisKontrolleri(String telefon, BuildContext context, {bool esnafMi = false, String? esnafId}) async {
-    // 1. "Hoşgeldiniz..." mesajını ekranın ORTASINDA göster
+  // Helper to show a dialog only if none open
+  static void _safeShowDialog(BuildContext context, WidgetBuilder builder) {
+    if (_dialogOpen) {
+      debugPrint('ℹ️ BildirimServisi: Dialog zaten açık, yeni dialog atlandı.');
+      return;
+    }
+    _dialogOpen = true;
     showDialog(
       context: context,
+      barrierDismissible: false,
+      builder: builder,
+    ).then((_) {
+      _dialogOpen = false;
+      debugPrint('ℹ️ BildirimServisi: Dialog kapatıldı.');
+    }).catchError((e) {
+      _dialogOpen = false;
+      debugPrint('❌ Dialog then hatası: $e');
+    });
+  }
+
+  static void _safePopDialog(BuildContext context) {
+    if (!_dialogOpen) return;
+    try {
+      if (context.mounted) Navigator.of(context, rootNavigator: true).pop();
+    } catch (e) {
+      debugPrint('❌ Dialog pop hatası: $e');
+    }
+    // _dialogOpen will be reset in the showDialog.then callback
+  }
+
+  /// [YENİ] Giriş kontrolleri ve kullanıcı bilgilendirme
+  static Future<void> girisKontrolleri(String telefon, {BuildContext? context, bool esnafMi = false, String? esnafId}) async {
+    // Hızlı ön kontrol: eğer hiçbir randevu/taksi talebi yoksa dialog göstermeyelim.
+    String temizTel = _numaraTemizle(telefon);
+    bool hasPending = false;
+
+    try {
+      if (esnafMi) {
+        if (esnafId != null && esnafId.isNotEmpty) {
+          // 1) İşletmenin onaylı/bekleyen randevusu var mı?
+          final rSnap = await _db.collection('randevular')
+              .where('esnafId', isEqualTo: esnafId)
+              .where('durum', whereIn: ['Onaylandı', 'Onay bekliyor'])
+              .limit(1)
+              .get();
+          if (rSnap.docs.isNotEmpty) hasPending = true;
+
+          // 2) Taksi talepleri kontrolü (yeni talepler varsa göster)
+          if (!hasPending) {
+            final tSnap = await _db.collection('taksi_talepleri')
+              .where('esnafId', isEqualTo: esnafId)
+              .orderBy('olusturulmaTarihi', descending: true)
+              .limit(1)
+              .get();
+            if (tSnap.docs.isNotEmpty) hasPending = true;
+          }
+        }
+      } else {
+        // Kullanıcı için kendi randevusu veya taksi talebi var mı?
+        final rSnap = await _db.collection('randevular')
+            .where('kullaniciTel', isEqualTo: temizTel)
+            .where('durum', whereIn: ['Onaylandı', 'Onay bekliyor'])
+            .limit(1)
+            .get();
+        if (rSnap.docs.isNotEmpty) hasPending = true;
+
+        if (!hasPending) {
+          final tSnap = await _db.collection('taksi_talepleri')
+            .where('kullaniciTel', isEqualTo: temizTel)
+            .limit(1)
+            .get();
+          if (tSnap.docs.isNotEmpty) hasPending = true;
+        }
+      }
+    } catch (e) {
+      // Eğer sorgularda hata olursa konservatif davran ve modali göster
+      debugPrint('⚠️ Ön kontrol hatası: $e — dialog gösteriliyor.');
+      hasPending = true;
+    }
+
+    if (!hasPending) {
+      debugPrint('ℹ️ Ön kontrol: ilgili bildirim bulunamadı, dialog gösterilmeyecek. Arka planda sync başlatılıyor.');
+      // Yine de eş zamanlı olarak dinleyiciyi başlat (kullanıcı/işletme token kaydı yapılmış olmalı)
+      // Başlangıçta context gerekmez; arka planda sync yap
+      syncAkilliTakipBildirimleri(telefon, null, esnafMi: esnafMi, esnafId: esnafId)
+        .then((res) => debugPrint('📥 Arka plan sync tamamlandı: $res'))
+        .catchError((err) => debugPrint('❌ Arka plan sync hata: $err'));
+      return;
+    }
+
+    // 1. Hoşgeldiniz mesajını göstermek için navigatorKey üzerinden güvenli context al
+    final navCtx = navigatorKey.currentContext ?? context;
+    if (navCtx == null) {
+      // Eğer hiç context yoksa dialog gösterilemez; arka planda sessiz sync başlatıp çık
+      debugPrint('⚠️ BildirimServisi: context yok, dialog atlanıyor. Arka planda sync başlatılıyor.');
+      syncAkilliTakipBildirimleri(telefon, null, esnafMi: esnafMi, esnafId: esnafId)
+        .then((res) => debugPrint('📥 Arka plan sync tamamlandı: $res'))
+        .catchError((err) => debugPrint('❌ Arka plan sync hata: $err'));
+      return;
+    }
+
+    showDialog(
+      context: navCtx,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         content: Column(
@@ -41,25 +143,25 @@ class BildirimServisi {
       ),
     );
 
-    // 2. Arka planda senkronizasyonu başlat
-    // [HATA AYIKLAMA]: Sonucu açıkça loglayalım
+    // 2. Arka planda senkronizasyonu başlat (non-blocking, kısa süreli bekleyip dialog kapat)
     debugPrint("🚀 Senkronizasyon Başlatılıyor (Tel: $telefon)...");
-    final sonuc = await syncAkilliTakipBildirimleri(telefon, context, esnafMi: esnafMi, esnafId: esnafId);
-    debugPrint("🏁 Senkronizasyon Bitti. Sonuç: $sonuc");
+    final syncFuture = syncAkilliTakipBildirimleri(telefon, navCtx, esnafMi: esnafMi, esnafId: esnafId);
 
-    // 3. Diyaloğu kapat (context hala mounted ise)
-    if (context.mounted) {
-      Navigator.of(context, rootNavigator: true).pop();
-    }
+    try {
+      // Kısa bekleme: hızlı tamamlanırsa kullanıcı hemen bilgilendirilsin
+      final sonuc = await syncFuture.timeout(const Duration(seconds: 5));
+      debugPrint("🏁 Senkronizasyon Bitti (Hızlı): $sonuc");
 
-    // 4. Sonuca göre (özellikle ALICI_YOK veya hiç randevu olmama durumu) uyarı göster
-    // [YENİ]: Sadece Web üzerinde ALICI_YOK uyarısı gösterilsin (Telefonda zaten mühürleme yapılıyor)
-    if (sonuc == "ALICI_YOK" && context.mounted && kIsWeb) {
-      debugPrint("⚠️ ALICI_YOK Diyaloğu Tetikleniyor...");
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (ctx) => AlertDialog(
+      // 3. Diyaloğu kapat (navigatorKey üzerinden güvenli şekilde)
+      final currentNavCtx = navigatorKey.currentContext;
+      if (currentNavCtx != null) {
+        _safePopDialog(currentNavCtx);
+      }
+
+      // 4. Sonuca göre (özellikle ALICI_YOK veya hiç randevu olmama durumu) uyarı göster (sadece web için)
+      if (sonuc == "ALICI_YOK" && currentNavCtx != null && kIsWeb) {
+        debugPrint("⚠️ ALICI_YOK Diyaloğu Tetikleniyor...");
+        _safeShowDialog(currentNavCtx, (ctx) => AlertDialog(
           icon: const Icon(Icons.warning_amber_rounded, size: 50, color: Colors.orange),
           title: const Text("Bildirim Uyarısı", textAlign: TextAlign.center),
           content: Text(
@@ -76,8 +178,50 @@ class BildirimServisi {
               ),
             ),
           ],
-        ),
-      );
+        ));
+      }
+    } catch (e) {
+      // Timeout veya hata: dialog'ı kapat ve sync'i arka planda tamamlamaya bırak
+      debugPrint("⚠️ Senkronizasyon uzun sürüyor veya hataya uğradı: $e. Arka planda devam edecek.");
+      final navCtxCatch = navigatorKey.currentContext;
+      if (navCtxCatch != null) _safePopDialog(navCtxCatch);
+
+      // Arka planda tamamlandığında log bas
+      syncFuture.then((res) {
+        debugPrint("🏁 Senkronizasyon (arka plan) tamamlandı: $res");
+        // Eğer önemli bir uyarı varsa web üzerinde göster
+        if (res == "ALICI_YOK" && navigatorKey.currentContext != null && kIsWeb) {
+          final ctx = navigatorKey.currentContext!;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _safeShowDialog(ctx, (ctx2) => AlertDialog(
+              icon: const Icon(Icons.warning_amber_rounded, size: 50, color: Colors.orange),
+              title: const Text("Bildirim Uyarısı", textAlign: TextAlign.center),
+              content: Text(
+                esnafMi
+                  ? "Hoşgeldiniz\nBildirim kontrollerinin yapılabilmesi için\nTelefonunuzdan giriş yapmalısınız"
+                  : "Hoşgeldiniz\nBildirimlerinizin telefonunuza gelebilmesi için\nTelefonunuzdan giriş yapmalısınız",
+                textAlign: TextAlign.center,
+              ),
+              actions: [
+                Center(
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(ctx2),
+                    child: const Text("TAMAM"),
+                  ),
+                ),
+              ],
+            ));
+          });
+        }
+      }).catchError((err) { debugPrint("❌ Arka plan sync hatası: $err"); });
+
+      // Kullanıcıya kısa bilgi ver (snackbar)
+      if (navigatorKey.currentContext != null) {
+        final messenger = ScaffoldMessenger.maybeOf(navigatorKey.currentContext!);
+        messenger?.showSnackBar(
+          const SnackBar(content: Text('Bildirim kontrolü arka planda devam ediyor'), duration: Duration(seconds: 3))
+        );
+      }
     }
   }
 

@@ -6,7 +6,7 @@ import 'package:almely_randevu/servisler/bildirim_servisi.dart';
 import 'package:almely_randevu/servisler/firestore_servisi.dart';
 import 'package:almely_randevu/modeller/randevu_modeli.dart';
 import 'package:almely_randevu/modeller/esnaf_modeli.dart';
-import 'package:almely_randevu/ekranlar/taksi_cizelge_ekrani.dart';
+import 'package:almely_randevu/ekranlar/taksi/taksi_cizelge_ekrani.dart';
 
 class EsnafAjandaEkrani extends StatefulWidget {
   final EsnafModeli esnaf;
@@ -82,7 +82,7 @@ class _EsnafAjandaEkraniState extends State<EsnafAjandaEkrani> {
     _ajandaStreamGuncelle();
     
     // [YENİ] Esnaf için her sayfada canlı bildirim dinleyiciyi mühürleyelim
-    BildirimServisi.bildirimDinle(widget.esnaf.telefon, context: context);
+    BildirimServisi.bildirimDinle(widget.esnaf.telefon);
   }
 
   @override

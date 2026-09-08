@@ -107,7 +107,7 @@ class _GirisSecimSayfasiState extends State<GirisSecimSayfasi> {
 
     try {
       // 1. Bildirim Kayıtlarını Başlat
-      BildirimServisi.bildirimDinle(tel, context: context);
+      BildirimServisi.bildirimDinle(tel);
       await OneSignalServisi.kullaniciyiKaydet(tel);
 
       // 2. Rol Sorgula
