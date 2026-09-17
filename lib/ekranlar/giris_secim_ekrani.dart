@@ -13,7 +13,7 @@ import 'rehber_ekrani.dart';
 import '../main.dart'; // navigatorKey için
 
 
-import 'mod_secim_ekrani.dart';
+import 'taksi/taksi_mod_secim_ekrani.dart';
 import 'ana_ekran.dart';
 
 class GirisSecimSayfasi extends StatefulWidget {
@@ -28,6 +28,13 @@ class _GirisSecimSayfasiState extends State<GirisSecimSayfasi> {
   bool _loading = false;
   int _logoTiklamaSayisi = 0;
   final _firestoreServisi = FirestoreServisi();
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // [HIZLANDIRMA] Logo resmini önbelleğe alalım ki anında görünsün
+    precacheImage(const AssetImage('assets/AlmEly.png'), context);
+  }
 
   @override
   void initState() {
@@ -120,7 +127,7 @@ class _GirisSecimSayfasiState extends State<GirisSecimSayfasi> {
         // ESNAF/ŞOFÖR: Seçim ekranına gönder
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (c) => ModSecimEkrani(esnaf: esnaf, girisTel: tel))
+          MaterialPageRoute(builder: (c) => TaksiModSecimEkrani(esnaf: esnaf, girisTel: tel))
         );
       } else {
         // NORMAL MÜŞTERİ: Doğrudan ana ekrana
@@ -169,14 +176,17 @@ class _GirisSecimSayfasiState extends State<GirisSecimSayfasi> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(30),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // Logo (5 Tıklama ile Admin Paneli)
-              GestureDetector(
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(30),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.start, // [DÜZELTME] İçerik artık yukarıda sabit kalır, zıplama yapmaz
+          children: [
+            const SizedBox(height: 60), // [YENİ] En üstteki boşluk artık kalıcıdır (Resimdeki kırmızı alan)
+            
+            // Logo (5 Tıklama ile Admin Paneli)
+            SizedBox(
+              height: 180, // [GERİ ALINDI] Logo boyutu eski orijinal haline getirildi
+              child: GestureDetector(
                 onTap: () {
                   _logoTiklamaSayisi++;
                   if (_logoTiklamaSayisi >= 5) {
@@ -187,107 +197,109 @@ class _GirisSecimSayfasiState extends State<GirisSecimSayfasi> {
                 child: Image.asset(
                   'assets/AlmEly.png',
                   width: 220,
+                  fit: BoxFit.contain,
+                  gaplessPlayback: true,
                   errorBuilder: (context, error, stackTrace) =>
-                  const Icon(Icons.business_center, size: 80, color: Colors.blue),
+                  const Center(child: Icon(Icons.business_center, size: 80, color: Colors.blue)),
                 ),
               ),
-              const SizedBox(height: 40),
-              
-              const Text(
-                "Hoş Geldiniz",
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 10),
-              const Text(
-                "İşlemlerinize devam etmek için telefon numaranızla giriş yapın.",
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey, fontSize: 13),
-              ),
-              const SizedBox(height: 40),
+            ),
+            const SizedBox(height: 40),
+            
+            const Text(
+              "Hoş Geldiniz",
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              "İşlemlerinize devam etmek için telefon numaranızla giriş yapın.",
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey, fontSize: 13),
+            ),
+            const SizedBox(height: 40),
 
-              TextField(
-                controller: _telController,
-                keyboardType: TextInputType.phone,
-                decoration: InputDecoration(
-                  labelText: 'Telefon Numaranız', 
-                  hintText: '05xx xxx xx xx',
-                  prefixIcon: const Icon(Icons.phone, color: Colors.blue),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(15),
-                    borderSide: const BorderSide(color: Colors.blue, width: 2),
-                  ),
+            TextField(
+              controller: _telController,
+              keyboardType: TextInputType.phone,
+              decoration: InputDecoration(
+                labelText: 'Telefon Numaranız', 
+                hintText: '05xx xxx xx xx',
+                prefixIcon: const Icon(Icons.phone, color: Colors.blue),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(15),
+                  borderSide: const BorderSide(color: Colors.blue, width: 2),
                 ),
               ),
-              const SizedBox(height: 25),
+            ),
+            const SizedBox(height: 25),
 
-              if (_loading)
-                const CircularProgressIndicator()
-              else
-                ElevatedButton(
-                  onPressed: _girisYap,
-                  style: ElevatedButton.styleFrom(
-                    minimumSize: const Size(double.infinity, 55),
-                    backgroundColor: Colors.blue.shade700,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                    elevation: 3,
-                  ),
-                  child: const Text("Giriş Yap", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            if (_loading)
+              const CircularProgressIndicator()
+            else
+              ElevatedButton(
+                onPressed: _girisYap,
+                style: ElevatedButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 55),
+                  backgroundColor: Colors.blue.shade700,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                  elevation: 3,
                 ),
-              
-              const SizedBox(height: 15),
-              TextButton.icon(
-                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (c) => const RehberEkrani())),
-                icon: const Icon(Icons.help_outline_rounded, color: Colors.blueGrey),
-                label: const Text("Kullanım Rehberi & Yardım", style: TextStyle(color: Colors.blueGrey, fontWeight: FontWeight.bold)),
+                child: const Text("Giriş Yap", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               ),
-              
-              const SizedBox(height: 50),
-              Text(
-                "© 2026 AlmEly Randevu Portalı",
-                style: TextStyle(color: Colors.grey.shade400, fontSize: 11),
-              ),
-              
-              const SizedBox(height: 30),
-              const Divider(),
-              const Text(
-                "Hızlı Giriş (Geliştirme Modu)", 
-                style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 12)
-              ),
-              const SizedBox(height: 10),
-              StreamBuilder<List<EsnafModeli>>(
-                stream: _firestoreServisi.esnaflariGetir(),
-                builder: (context, snapshot) {
-                  if (!snapshot.hasData) return const SizedBox();
-                  final esnaflar = snapshot.data!;
-                  return ListView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: esnaflar.length,
-                    itemBuilder: (context, index) {
-                      final e = esnaflar[index];
-                      return Card(
-                        elevation: 0,
-                        color: Colors.grey.shade50,
-                        margin: const EdgeInsets.only(bottom: 8),
-                        child: ListTile(
-                          dense: true,
-                          title: Text(e.isletmeAdi, style: const TextStyle(fontWeight: FontWeight.bold)),
-                          subtitle: Text(e.telefon),
-                          leading: const Icon(Icons.business, color: Colors.blueGrey, size: 20),
-                          onTap: () {
-                            _telController.text = e.telefon;
-                            _girisYap();
-                          },
-                        ),
-                      );
-                    },
-                  );
-                },
-              ),
-            ],
-          ),
+            
+            const SizedBox(height: 15),
+            TextButton.icon(
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (c) => const RehberEkrani())),
+              icon: const Icon(Icons.help_outline_rounded, color: Colors.blueGrey),
+              label: const Text("Kullanım Rehberi & Yardım", style: TextStyle(color: Colors.blueGrey, fontWeight: FontWeight.bold)),
+            ),
+            
+            const SizedBox(height: 50),
+            Text(
+              "© 2026 AlmEly Randevu Portalı",
+              style: TextStyle(color: Colors.grey.shade400, fontSize: 11),
+            ),
+            
+            const SizedBox(height: 30),
+            const Divider(),
+            const Text(
+              "Hızlı Giriş (Geliştirme Modu)", 
+              style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 12)
+            ),
+            const SizedBox(height: 10),
+            StreamBuilder<List<EsnafModeli>>(
+              stream: _firestoreServisi.esnaflariGetir(),
+              builder: (context, snapshot) {
+                if (!snapshot.hasData) return const SizedBox();
+                final esnaflar = snapshot.data!;
+                return ListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: esnaflar.length,
+                  itemBuilder: (context, index) {
+                    final e = esnaflar[index];
+                    return Card(
+                      elevation: 0,
+                      color: Colors.grey.shade50,
+                      margin: const EdgeInsets.only(bottom: 8),
+                      child: ListTile(
+                        dense: true,
+                        title: Text(e.isletmeAdi, style: const TextStyle(fontWeight: FontWeight.bold)),
+                        subtitle: Text(e.telefon),
+                        leading: const Icon(Icons.business, color: Colors.blueGrey, size: 20),
+                        onTap: () {
+                          _telController.text = e.telefon;
+                          _girisYap();
+                        },
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+          ],
         ),
       ),
     );

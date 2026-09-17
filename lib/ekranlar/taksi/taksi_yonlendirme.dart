@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../../modeller/esnaf_modeli.dart';
 import '../esnaf_detay_ekrani.dart';
 import '../randevu_ekrani.dart';
-import 'taksi_esnaf_detay_ekrani.dart';
+import 'taksi_musteri_ekrani.dart';
 import 'taksi_randevu_ekrani.dart';
 
 class TaksiYonlendirme {
@@ -12,7 +12,7 @@ class TaksiYonlendirme {
     String? kullaniciTel,
   }) {
     if (esnaf.kategori == 'Taksi') {
-      return TaksiEsnafDetayEkrani(
+      return TaksiMusteriEkrani(
         esnaf: esnaf,
         kullaniciTel: kullaniciTel,
       );

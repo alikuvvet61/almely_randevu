@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../servisler/firestore_servisi.dart';
 import '../modeller/esnaf_modeli.dart';
+import 'package:almely_randevu/ekranlar/taksi/taksi_rehber_ekrani.dart';
 
 class EsnafParametreEkrani extends StatefulWidget {
   final String esnafId;
@@ -57,6 +58,14 @@ class _EsnafParametreEkraniState extends State<EsnafParametreEkrani> {
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
         elevation: 0,
+        actions: [
+          if (_esnaf?.kategori == 'Taksi')
+            IconButton(
+              tooltip: "Kullanım Rehberi",
+              icon: const Icon(Icons.help_outline, color: Colors.blue),
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (c) => const TaksiRehberEkrani(mod: 'yonetici', bolum: 'parametre'))),
+            ),
+        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1),
           child: Container(color: Colors.grey.withValues(alpha: 0.1), height: 1),
@@ -65,190 +74,84 @@ class _EsnafParametreEkraniState extends State<EsnafParametreEkrani> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _parametreKart(
-            baslik: "Randevu Alımını Durdur",
-            altBaslik: "İşaretli olursa müşteriler 'Hemen Randevu Al' butonunu göremez ve randevu alınamaz.",
-            icon: Icons.block_flipped,
-            icerik: SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text("Randevu Alınmasın", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-              value: _esnaf!.randevuAlinmasin,
-              onChanged: (v) async {
-                setState(() {
-                  _esnaf = _esnaf!.copyWith(randevuAlinmasin: v);
-                });
-                await _guncelle({'randevuAlinmasin': v});
-              },
-            ),
-          ),
-          if (_esnaf!.kategori != 'Taksi') ...[
-            _parametreKart(
-              baslik: "Randevu Onay Modu",
-              altBaslik: "Yeni gelen randevular otomatik mi onaylansın yoksa siz mi onaylayacaksınız?",
-              icon: Icons.approval_rounded,
-              icerik: DropdownButtonFormField<String>(
-                key: ValueKey(_esnaf!.randevuOnayModu),
-                initialValue: _esnaf!.randevuOnayModu.isEmpty ? 'Manuel' : _esnaf!.randevuOnayModu,
-                decoration: InputDecoration(
-                  filled: true,
-                  fillColor: Colors.grey.shade50,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
-                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade200)),
-                ),
-                items: const [
-                  DropdownMenuItem(value: 'Manuel', child: Text("Manuel (Ben onaylayacağım)", style: TextStyle(fontSize: 16))),
-                  DropdownMenuItem(value: 'Otomatik', child: Text("Otomatik (Anında onaylansın)", style: TextStyle(fontSize: 16))),
-                ],
-                onChanged: (v) {
-                  if (v != null) {
-                    _guncelle({'randevuOnayModu': v});
-                  }
-                },
-              ),
-            ),
-            _parametreKart(
-              baslik: "Aynı Gün Randevu",
-              altBaslik: "Bir müşteri aynı gün içerisinde sadece 1 randevu alabilsin mi?",
-              icon: Icons.event_busy_rounded,
-              icerik: SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text("Engelleme Aktif", style: TextStyle(fontSize: 16)),
-                value: _esnaf!.ayniGunRandevuEngelle,
-                onChanged: (v) => _guncelle({'ayniGunRandevuEngelle': v}),
-              ),
-            ),
-            _parametreKart(
-              baslik: "Ajanda Yönetim Sistemi",
-              altBaslik: "İşaretli olursa ajanda defterini manuel hazırlamanız gerekir. İşaretsiz olursa 'Tam Otomatik/Canlı' yapı aktif olur ve ajanda hazır değil uyarısı almazsınız.",
-              icon: Icons.auto_mode_rounded,
-              icerik: SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text("Randevu Ajandasını ben ayarlayacağım", style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
-                value: _esnaf!.ajandayiKendimAyarlayacagim,
-                onChanged: (v) async {
-                  setState(() {
-                    _esnaf = _esnaf!.copyWith(ajandayiKendimAyarlayacagim: v);
-                  });
-                  await _guncelle({'ajandayiKendimAyarlayacagim': v});
-                },
-              ),
-            ),
-            if (!_esnaf!.ajandayiKendimAyarlayacagim)
-              _parametreKart(
-                baslik: "Randevu Penceresi (Gelecek Günler)",
-                altBaslik: "Müşterilerin bugünden itibaren en fazla kaç gün ilerisi için randevu oluşturabileceğini belirleyin.",
-                icon: Icons.date_range_rounded,
-                icerik: Row(
-                  children: [
-                    Expanded(
-                      child: Slider(
-                        value: _esnaf!.maksimumRandevuGunu.toDouble(),
-                        min: 1,
-                        max: 365,
-                        divisions: 364,
-                        label: "${_esnaf!.maksimumRandevuGunu} Gün",
-                        onChanged: (v) {
-                          setState(() {
-                            _esnaf = _esnaf!.copyWith(maksimumRandevuGunu: v.toInt());
-                          });
-                        },
-                        onChangeEnd: (v) => _guncelle({'maksimumRandevuGunu': v.toInt()}),
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(8)),
-                      child: Text("${_esnaf!.maksimumRandevuGunu} Gün", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
-                    ),
-                  ],
-                ),
-              ),
-            if (_esnaf!.kategori != 'Araç Kiralama')
-              _parametreKart(
-                baslik: "Slot Görünüm Modu",
-                altBaslik: "Randevu saatleri '10:00' yerine '10:00 - 11:00' şeklinde mi görünsün? (Örn: Halı Sahalar için)",
-                icon: Icons.timer_outlined,
-                icerik: SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text("Aralıklı Göster", style: TextStyle(fontSize: 16)),
-                  value: _esnaf!.slotAralikliGoster,
-                  onChanged: (v) => _guncelle({'slotAralikliGoster': v}),
-                ),
-              ),
-          ],
           if (_esnaf!.kategori == 'Taksi') ...[
             _parametreKart(
-              baslik: "Araç Odaklı Sistem",
-              altBaslik: "Randevular doğrudan araç (plaka) adına alınsın.",
-              icon: Icons.local_taxi_rounded,
-              icerik: SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text("Aktif Et", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                value: _esnaf!.aracOdakliSistem,
-                onChanged: (v) async {
-                  setState(() {
-                    _esnaf = _esnaf!.copyWith(aracOdakliSistem: v);
-                  });
-                  await _guncelle({'aracOdakliSistem': v});
-                },
-              ),
-            ),
-            _parametreKart(
-              baslik: "İstirahetli Araçları Gizle",
-              altBaslik: "Durumu 'İstirahatte' olan araçlar 'Bugün Çalışan Araçlarımız' listesinde görünmesin.",
-              icon: Icons.visibility_off_rounded,
-              icerik: SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text("Listede Gizle", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                value: _esnaf!.istirahatliAraclariGizle,
-                onChanged: (v) async {
-                  setState(() {
-                    _esnaf = _esnaf!.copyWith(istirahatliAraclariGizle: v);
-                  });
-                  await _guncelle({'istirahatliAraclariGizle': v});
-                },
-              ),
-            ),
-            _parametreKart(
-              baslik: "Konum Doğrulama Mesafesi",
-              altBaslik: "Şoförlerin sıraya girebilmesi için durak merkezine maksimum ne kadar uzaklıkta (metre) olması gerektiğini belirleyin.",
-              icon: Icons.location_searching_rounded,
+              baslik: "Randevu Ayarları",
+              altBaslik: "Durağın online rezervasyon sistemine dair tüm kısıtlamaları buradan yönetin.",
+              icon: Icons.event_note_rounded,
               icerik: Column(
                 children: [
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text("Randevu Alımını Durdur", style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                    subtitle: const Text("Aktif edilirse müşteriler 'Hemen Randevu Al' butonunu göremez."),
+                    value: _esnaf!.randevuAlinmasin,
+                    onChanged: (v) async {
+                      setState(() { _esnaf = _esnaf!.copyWith(randevuAlinmasin: v); });
+                      await _guncelle({'randevuAlinmasin': v});
+                    },
+                  ),
+                  if (!_esnaf!.randevuAlinmasin) ...[
+                    const Divider(),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text("Araç Odaklı Sistem", style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                      subtitle: const Text("Randevular doğrudan plakalar adına alınır."),
+                      value: _esnaf!.aracOdakliSistem,
+                      onChanged: (v) async {
+                        setState(() { _esnaf = _esnaf!.copyWith(aracOdakliSistem: v); });
+                        await _guncelle({'aracOdakliSistem': v});
+                      },
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            _parametreKart(
+              baslik: "Durak Görünürlük Ayarları",
+              altBaslik: "Müşteri ekranındaki araç listesi ve mesafe kısıtlamalarını yönetin.",
+              icon: Icons.visibility_off_rounded,
+              icerik: Column(
+                children: [
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text("İstirahetli Araçları Gizle", style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                    subtitle: const Text("İstirahatteki araçlar 'Bugün Çalışanlar' listesinde görünmez."),
+                    value: _esnaf!.istirahatliAraclariGizle,
+                    onChanged: (v) async {
+                      setState(() { _esnaf = _esnaf!.copyWith(istirahatliAraclariGizle: v); });
+                      await _guncelle({'istirahatliAraclariGizle': v});
+                    },
+                  ),
+                  const Divider(),
+                  const SizedBox(height: 10),
+                  const Row(
+                    children: [
+                      Icon(Icons.location_searching_rounded, size: 18, color: Colors.blue),
+                      SizedBox(width: 8),
+                      Text("Konum Doğrulama Mesafesi", style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
                   Row(
                     children: [
                       Expanded(
                         child: Slider(
                           value: _esnaf!.konumDogrulamaMesafesi,
-                          min: 5,
-                          max: 500,
-                          divisions: 99,
+                          min: 5, max: 500, divisions: 99,
                           label: "${_esnaf!.konumDogrulamaMesafesi.round()} m",
                           onChanged: (v) {
-                            setState(() {
-                              _esnaf = _esnaf!.copyWith(konumDogrulamaMesafesi: v);
-                            });
+                            setState(() { _esnaf = _esnaf!.copyWith(konumDogrulamaMesafesi: v); });
                           },
                           onChangeEnd: (v) => _guncelle({'konumDogrulamaMesafesi': v}),
                         ),
                       ),
                       Container(
-                        width: 60,
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.blue.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Text(
-                          "${_esnaf!.konumDogrulamaMesafesi.round()}m",
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue),
-                        ),
+                        width: 55, padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(color: Colors.blue.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
+                        child: Text("${_esnaf!.konumDogrulamaMesafesi.round()}m", textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue, fontSize: 12)),
                       ),
                     ],
                   ),
-                  const Text("Sınır: 5m - 500m", style: TextStyle(fontSize: 13, color: Colors.grey)),
                 ],
               ),
             ),
@@ -370,6 +273,7 @@ class _EsnafParametreEkraniState extends State<EsnafParametreEkrani> {
                 ],
               ),
             ),
+          if (_esnaf!.kategori != 'Taksi') 
           _parametreKart(
             baslik: "Minimum Randevu Süresi",
             altBaslik: "Müşteriler en az ne kadarlık randevu alabilir? Bu sürenin altındaki seçimler engellenir.",

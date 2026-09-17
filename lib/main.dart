@@ -35,19 +35,11 @@ void main() async {
     debugPrint("Firebase başlatma hatası: $e");
   }
 
-  // Bildirim servislerini başlat (Birbirinden bağımsız hata yakalamalı)
-  try {
-    await BildirimServisi.initialize();
-  } catch (e) {
-    debugPrint("BildirimServisi başlatılamadı: $e");
-  }
-
-  try {
-    // OneSignal profesyonel bildirimleri başlat
-    await OneSignalServisi.initialize();
-  } catch (e) {
-    debugPrint("OneSignalServisi başlatılamadı: $e");
-  }
+  // Servisleri paralel olarak başlatalım (HIZLANDIRMA)
+  Future.wait([
+    BildirimServisi.initialize().catchError((e) => debugPrint("BildirimServisi hatası: $e")),
+    OneSignalServisi.initialize().catchError((e) => debugPrint("OneSignalServisi hatası: $e")),
+  ]);
 
   runApp(const AlmElyApp());
 }

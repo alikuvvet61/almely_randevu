@@ -1131,4 +1131,34 @@ else if (yeniDurum == 'Reddedildi' || yeniDurum == 'İptal Edildi' || yeniDurum 
       return null;
     }
   }
+
+  /// [YENİ] Taksi randevu ekranı için yerel mekan araması (Geliştirilmiş & Case-Insensitive simülasyonu)
+  Future<List<String>> mekanArama(String sorgu) async {
+    try {
+      String q = sorgu.trim();
+      if (q.isEmpty) return [];
+      
+      // Hem küçük harf hem de Baş Harfi Büyük halini deneyelim (Firestore case-sensitive olduğu için)
+      String capitalized = q[0].toUpperCase() + q.substring(1).toLowerCase();
+
+      final results = await Future.wait([
+        _esnaflarRef.where('isletmeAdi', isGreaterThanOrEqualTo: q).where('isletmeAdi', isLessThanOrEqualTo: '$q\u{f8ff}').limit(3).get(),
+        _esnaflarRef.where('isletmeAdi', isGreaterThanOrEqualTo: capitalized).where('isletmeAdi', isLessThanOrEqualTo: '$capitalized\u{f8ff}').limit(3).get(),
+      ]);
+      
+      Set<String> sonuclar = {};
+      for (var snap in results) {
+        for (var doc in snap.docs) {
+          final data = doc.data() as Map<String, dynamic>;
+          final ad = data['isletmeAdi'] ?? "";
+          final ilce = data['ilce'] ?? "";
+          sonuclar.add("$ad, $ilce, Trabzon");
+        }
+      }
+      return sonuclar.toList();
+    } catch (e) {
+      debugPrint("Mekan Arama Hatası: $e");
+      return [];
+    }
+  }
 }

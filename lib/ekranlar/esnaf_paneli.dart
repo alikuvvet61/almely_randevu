@@ -22,6 +22,7 @@ import 'package:almely_randevu/widgets/medya_goruntuleyici.dart';
 
 import 'package:almely_randevu/ekranlar/taksi/taksi_durak_takip_ekrani.dart';
 import 'package:almely_randevu/ekranlar/taksi/taksi_cizelge_ekrani.dart';
+import 'package:almely_randevu/ekranlar/taksi/taksi_rehber_ekrani.dart';
 import 'package:almely_randevu/ekranlar/esnaf_ajanda_ekrani.dart';
 import 'package:almely_randevu/ekranlar/esnaf_parametre_ekrani.dart';
 import 'package:almely_randevu/ekranlar/esnaf_randevu_onay_ekrani.dart';
@@ -2170,6 +2171,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
     final pController = TextEditingController(text: arac['plaka']);
     final sAdController = TextEditingController(text: arac['soforAd']);
     final sTelController = TextEditingController(text: arac['soforTel']);
+    final nSiraController = TextEditingController(text: (arac['nobetSirasi'] ?? "").toString());
 
     showDialog(
       context: context,
@@ -2228,6 +2230,11 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                   keyboardType: TextInputType.phone,
                   enabled: false,
                 ),
+                TextField(
+                  controller: nSiraController, 
+                  decoration: const InputDecoration(labelText: "Nöbet Sırası (№)"), 
+                  keyboardType: TextInputType.number,
+                ),
               ],
             ),
           ),
@@ -2237,6 +2244,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                 pController.dispose();
                 sAdController.dispose();
                 sTelController.dispose();
+                nSiraController.dispose();
                 Navigator.pop(context);
               },
               child: const Text("Vazgeç"),
@@ -2245,6 +2253,23 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
               onPressed: () async {
                 String eskiPlaka = (arac['plaka'] ?? "").toString().trim().toUpperCase();
                 String yeniPlaka = pController.text.trim().toUpperCase();
+                int? yeniNobetSira = int.tryParse(nSiraController.text.trim());
+
+                // [YENİ] Mükerrer Nöbet Sırası Kontrolü
+                if (yeniNobetSira != null) {
+                  bool siraZatenVar = araclar.asMap().entries.any((entry) => 
+                      entry.key != index && entry.value['nobetSirasi'] == yeniNobetSira);
+                  
+                  if (siraZatenVar) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text("№ $yeniNobetSira sırası zaten başka bir araca atanmış!"),
+                        backgroundColor: Colors.red.shade700,
+                      )
+                    );
+                    return;
+                  }
+                }
 
                 if (eskiPlaka.isNotEmpty && yeniPlaka != eskiPlaka) {
                   bool? devamEt = await showDialog<bool>(
@@ -2277,11 +2302,13 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                   araclar[index]['plaka'] = yeniPlaka;
                   araclar[index]['soforAd'] = sAdController.text.trim();
                   araclar[index]['soforTel'] = sTelController.text.trim();
+                  araclar[index]['nobetSirasi'] = yeniNobetSira;
                   _degisiklikVar = true;
                 });
                 pController.dispose();
                 sAdController.dispose();
                 sTelController.dispose();
+                nSiraController.dispose();
                 if (context.mounted) Navigator.pop(context);
               },
               child: const Text("Güncelle"),
@@ -2296,6 +2323,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
     final pController = TextEditingController();
     final sAdController = TextEditingController();
     final sTelController = TextEditingController();
+    final nSiraController = TextEditingController();
 
     showDialog(
       context: context,
@@ -2356,6 +2384,11 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                   keyboardType: TextInputType.phone,
                   enabled: false,
                 ),
+                TextField(
+                  controller: nSiraController, 
+                  decoration: const InputDecoration(labelText: "Nöbet Sırası (№)"), 
+                  keyboardType: TextInputType.number,
+                ),
               ],
             ),
           ),
@@ -2365,18 +2398,35 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                 pController.dispose();
                 sAdController.dispose();
                 sTelController.dispose();
+                nSiraController.dispose();
                 Navigator.pop(context);
               },
               child: const Text("Vazgeç"),
             ),
             ElevatedButton(
               onPressed: () {
+                int? yeniNobetSira = int.tryParse(nSiraController.text.trim());
+
+                // [YENİ] Mükerrer Nöbet Sırası Kontrolü
+                if (yeniNobetSira != null) {
+                  bool siraZatenVar = araclar.any((a) => a['nobetSirasi'] == yeniNobetSira);
+                  if (siraZatenVar) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text("№ $yeniNobetSira sırası zaten başka bir araca atanmış!"),
+                        backgroundColor: Colors.red.shade700,
+                      )
+                    );
+                    return;
+                  }
+                }
+
                 setState(() {
                   araclar.add({
                     'plaka': pController.text.trim().toUpperCase(),
                     'soforAd': sAdController.text.trim(),
                     'soforTel': sTelController.text.trim(),
-                    'nobetSirasi': null,
+                    'nobetSirasi': yeniNobetSira,
                     'durum': 'Aktif',
                     'durakta': false,
                   });
@@ -2385,6 +2435,7 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                 pController.dispose();
                 sAdController.dispose();
                 sTelController.dispose();
+                nSiraController.dispose();
                 Navigator.pop(context);
               },
               child: const Text("Ekle"),
@@ -3380,7 +3431,13 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
         actions: [
           IconButton(
             icon: const Icon(Icons.help_outline_rounded, color: Colors.blueGrey),
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (c) => const RehberEkrani(mod: 'esnaf'))),
+            onPressed: () {
+              if (widget.esnaf.kategori == 'Taksi') {
+                Navigator.push(context, MaterialPageRoute(builder: (c) => const TaksiRehberEkrani(mod: 'yonetici')));
+              } else {
+                Navigator.push(context, MaterialPageRoute(builder: (c) => const RehberEkrani(mod: 'esnaf')));
+              }
+            },
             tooltip: "Kullanım Rehberi",
           ),
           IconButton(
@@ -3913,22 +3970,23 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
                       ),
                     ),
                     _bolumKart(baslik: "Çalışma Günleri", initiallyExpanded: false, icerik: _gunlerIcerik()),
-                    _bolumKart(
-                      baslik: widget.esnaf.kategori == 'Araç Kiralama' ? "Kiralık Araçlar" : "Randevu Kanalları",
-                      initiallyExpanded: false,
-                      bilgiAciklama: _getKanalAciklama(),
-                      icerik: _kanallarWidget()
-                    ),
-                    if (widget.esnaf.kategori != 'Taksi')
+                    if (widget.esnaf.kategori != 'Taksi') ...[
+                      _bolumKart(
+                        baslik: widget.esnaf.kategori == 'Araç Kiralama' ? "Kiralık Araçlar" : "Randevu Kanalları",
+                        initiallyExpanded: false,
+                        bilgiAciklama: _getKanalAciklama(),
+                        icerik: _kanallarWidget()
+                      ),
                       if (widget.esnaf.kategori != 'Araç Kiralama')
-                      _bolumKart(baslik: "Personeller", initiallyExpanded: false, icerik: _personellerWidget()),
+                        _bolumKart(baslik: "Personeller", initiallyExpanded: false, icerik: _personellerWidget()),
 
-                    _bolumKart(
-                      baslik: "Hizmetler ve Süreleri",
-                      initiallyExpanded: false,
-                      bilgiAciklama: _getHizmetAciklama(),
-                      icerik: _hizmetlerWidget(),
-                    ),
+                      _bolumKart(
+                        baslik: "Hizmetler ve Süreleri",
+                        initiallyExpanded: false,
+                        bilgiAciklama: _getHizmetAciklama(),
+                        icerik: _hizmetlerWidget(),
+                      ),
+                    ],
                     const SizedBox(height: 25),
                     SizedBox(
                       width: double.infinity,

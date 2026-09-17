@@ -7,17 +7,18 @@ import '../../servisler/firestore_servisi.dart';
 import '../../servisler/taksi/taksi_bildirim_servisi.dart';
 import '../../modeller/randevu_modeli.dart';
 
-class TaksiPanelEkrani extends StatefulWidget {
+/// Taksi için yönetici (durak başkanı/şoför) yönetim paneli.
+class TaksiYoneticiEkrani extends StatefulWidget {
   final EsnafModeli esnaf;
   final String? soforTel;
 
-  const TaksiPanelEkrani({super.key, required this.esnaf, this.soforTel});
+  const TaksiYoneticiEkrani({super.key, required this.esnaf, this.soforTel});
 
   @override
-  State<TaksiPanelEkrani> createState() => _TaksiPanelEkraniState();
+  State<TaksiYoneticiEkrani> createState() => _TaksiYoneticiEkraniState();
 }
 
-class _TaksiPanelEkraniState extends State<TaksiPanelEkrani> {
+class _TaksiYoneticiEkraniState extends State<TaksiYoneticiEkrani> {
   final TaksiServisi _taksiServisi = TaksiServisi();
   final FirestoreServisi _firestoreServisi = FirestoreServisi();
   bool _loadingAction = false;

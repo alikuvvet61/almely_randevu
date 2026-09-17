@@ -12,7 +12,7 @@ import '../servisler/konum_servisi.dart';
 import '../servisler/bildirim_servisi.dart';
 import '../servisler/onesignal_servisi.dart';
 import 'rehber_ekrani.dart';
-import 'mod_secim_ekrani.dart';
+import 'taksi/taksi_mod_secim_ekrani.dart'; // Güncellenmiş yol
 import 'taksi/taksi_yonlendirme.dart';
 import 'kullanici_randevu_ekrani.dart';
 import 'giris_secim_ekrani.dart';
@@ -206,189 +206,189 @@ class _AnaEkranState extends State<AnaEkran> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (c) => StatefulBuilder(
-        builder: (context, setModalState) => Container(
-          height: MediaQuery.of(context).size.height * 0.8,
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
-          ),
-          child: Column(
-            children: [
-              const SizedBox(height: 12),
-              Container(width: 40, height: 5, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10))),
-              const SizedBox(height: 15),
-              Text("$katAd Esnafları", style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+        builder: (context, setModalState) => Material( // [DÜZELTME] ListTile splash efekti için Material eklendi
+          color: Colors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(25)),
+          child: SizedBox(
+            height: MediaQuery.of(context).size.height * 0.8,
+            child: Column(
+              children: [
+                const SizedBox(height: 12),
+                Container(width: 40, height: 5, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10))),
+                const SizedBox(height: 15),
+                Text("$katAd Esnafları", style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
 
-              // SIRALAMA SEÇENEKLERİ
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      const Text("Sıralama:", style: TextStyle(fontWeight: FontWeight.w500, color: Colors.grey)),
-                      const SizedBox(width: 10),
-                      if (_currentPosition != null)
+                // SIRALAMA SEÇENEKLERİ
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        const Text("Sıralama:", style: TextStyle(fontWeight: FontWeight.w500, color: Colors.grey)),
+                        const SizedBox(width: 10),
+                        if (_currentPosition != null)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8.0),
+                            child: _siralamaChip(
+                              label: "Mesafe",
+                              icon: Icons.near_me,
+                              secili: siralamaKriteri == 'mesafe',
+                              onTap: () => setModalState(() => siralamaKriteri = 'mesafe')
+                            ),
+                          ),
                         Padding(
                           padding: const EdgeInsets.only(right: 8.0),
                           child: _siralamaChip(
-                            label: "Mesafe",
-                            icon: Icons.near_me,
-                            secili: siralamaKriteri == 'mesafe',
-                            onTap: () => setModalState(() => siralamaKriteri = 'mesafe')
+                            label: "Puan",
+                            icon: Icons.star,
+                            secili: siralamaKriteri == 'puan',
+                            onTap: () => setModalState(() => siralamaKriteri = 'puan')
                           ),
                         ),
-                      Padding(
-                        padding: const EdgeInsets.only(right: 8.0),
-                        child: _siralamaChip(
-                          label: "Puan",
-                          icon: Icons.star,
-                          secili: siralamaKriteri == 'puan',
-                          onTap: () => setModalState(() => siralamaKriteri = 'puan')
-                        ),
-                      ),
-                      _siralamaChip(
-                        label: "İsim",
-                        icon: Icons.sort_by_alpha,
-                        secili: siralamaKriteri == 'isim',
-                        onTap: () => setModalState(() => siralamaKriteri = 'isim')
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              if (_currentPosition == null)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 5),
-                  child: Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.amber.shade50,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.amber.shade200),
-                    ),
-                    child: const Row(
-                      children: [
-                        Icon(Icons.location_off, size: 18, color: Colors.amber),
-                        SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            "En yakın esnafları görebilmek için konum izni verebilirsiniz.",
-                            style: TextStyle(fontSize: 12, color: Colors.amber),
-                          ),
+                        _siralamaChip(
+                          label: "İsim",
+                          icon: Icons.sort_by_alpha,
+                          secili: siralamaKriteri == 'isim',
+                          onTap: () => setModalState(() => siralamaKriteri = 'isim')
                         ),
                       ],
                     ),
                   ),
                 ),
-              const Divider(height: 1),
-
-              Expanded(
-                child: StreamBuilder<List<EsnafModeli>>(
-                  stream: firestoreServisi.kategoriyeGoreGetir(katAd),
-                  builder: (context, snapshot) {
-                    if (snapshot.hasError) return Center(child: Text("Hata: ${snapshot.error}"));
-                    if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-
-                    List<EsnafModeli> esnaflar = snapshot.data ?? [];
-                    if (esnaflar.isEmpty) return const Center(child: Text("Bu kategoride henüz esnaf bulunamadı."));
-
-                    // Verileri hazırla
-                    final List<Map<String, dynamic>> liste = esnaflar.map((e) {
-                      return {'data': e, 'mesafe': _mesafeHesapla(e)};
-                    }).toList();
-
-                    // KRİTERE GÖRE SIRALA
-                    liste.sort((a, b) {
-                      final esnafA = a['data'] as EsnafModeli;
-                      final esnafB = b['data'] as EsnafModeli;
-
-                      if (siralamaKriteri == 'mesafe' && _currentPosition != null) {
-                        double dA = a['mesafe'] as double;
-                        double dB = b['mesafe'] as double;
-                        if (dA == -1 && dB != -1) return 1;
-                        if (dA != -1 && dB == -1) return -1;
-                        if (dA != -1 && dB != -1) return dA.compareTo(dB);
-                      } else if (siralamaKriteri == 'puan') {
-                        return esnafB.puan.compareTo(esnafA.puan);
-                      }
-
-                      // İsim sıralaması veya Fallback
-                      return esnafA.isletmeAdi.toLowerCase().compareTo(esnafB.isletmeAdi.toLowerCase());
-                    });
-
-                    return ListView.separated(
-                      padding: const EdgeInsets.only(bottom: 20),
-                      itemCount: liste.length,
-                      separatorBuilder: (context, i) => const Divider(height: 1, indent: 70),
-                      itemBuilder: (context, i) {
-                        final esnaf = liste[i]['data'] as EsnafModeli;
-                        final mesafe = liste[i]['mesafe'] as double;
-
-                        return ListTile(
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
-                          leading: CircleAvatar(
-                            radius: 25,
-                            backgroundColor: Colors.blue.shade50,
-                            child: const Icon(Icons.store, color: Colors.blue, size: 28),
+                if (_currentPosition == null)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 5),
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.shade50,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.amber.shade200),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.location_off, size: 18, color: Colors.amber),
+                          SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              "En yakın esnafları görebilmek için konum izni verebilirsiniz.",
+                              style: TextStyle(fontSize: 12, color: Colors.amber),
+                            ),
                           ),
-                          title: Row(
-                            children: [
-                              Expanded(child: Text(esnaf.isletmeAdi, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16))),
-                              if (esnaf.puan > 0)
-                                Row(
-                                  children: [
-                                    const Icon(Icons.star, color: Colors.amber, size: 16),
-                                    Text(esnaf.puan.toStringAsFixed(1), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                                    Text(" (${esnaf.yorumSayisi})", style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                                  ],
-                                ),
-                            ],
-                          ),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const SizedBox(height: 4),
-                              Text("${esnaf.ilce} - ${esnaf.telefon}", style: TextStyle(color: Colors.grey.shade700)),
-                              if (mesafe != -1)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 6),
-                                  child: Row(
+                        ],
+                      ),
+                    ),
+                  ),
+                const Divider(height: 1),
+
+                Expanded(
+                  child: StreamBuilder<List<EsnafModeli>>(
+                    stream: firestoreServisi.kategoriyeGoreGetir(katAd),
+                    builder: (context, snapshot) {
+                      if (snapshot.hasError) return Center(child: Text("Hata: ${snapshot.error}"));
+                      if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+
+                      List<EsnafModeli> esnaflar = snapshot.data ?? [];
+                      if (esnaflar.isEmpty) return const Center(child: Text("Bu kategoride henüz esnaf bulunamadı."));
+
+                      // Verileri hazırla
+                      final List<Map<String, dynamic>> liste = esnaflar.map((e) {
+                        return {'data': e, 'mesafe': _mesafeHesapla(e)};
+                      }).toList();
+
+                      // KRİTERE GÖRE SIRALA
+                      liste.sort((a, b) {
+                        final esnafA = a['data'] as EsnafModeli;
+                        final esnafB = b['data'] as EsnafModeli;
+
+                        if (siralamaKriteri == 'mesafe' && _currentPosition != null) {
+                          double dA = a['mesafe'] as double;
+                          double dB = b['mesafe'] as double;
+                          if (dA == -1 && dB != -1) return 1;
+                          if (dA != -1 && dB == -1) return -1;
+                          if (dA != -1 && dB != -1) return dA.compareTo(dB);
+                        } else if (siralamaKriteri == 'puan') {
+                          return esnafB.puan.compareTo(esnafA.puan);
+                        }
+
+                        // İsim sıralaması veya Fallback
+                        return esnafA.isletmeAdi.toLowerCase().compareTo(esnafB.isletmeAdi.toLowerCase());
+                      });
+
+                      return ListView.separated(
+                        padding: const EdgeInsets.only(bottom: 20),
+                        itemCount: liste.length,
+                        separatorBuilder: (context, i) => const Divider(height: 1, indent: 70),
+                        itemBuilder: (context, i) {
+                          final esnaf = liste[i]['data'] as EsnafModeli;
+                          final mesafe = liste[i]['mesafe'] as double;
+
+                          return ListTile(
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
+                            leading: CircleAvatar(
+                              radius: 25,
+                              backgroundColor: Colors.blue.shade50,
+                              child: const Icon(Icons.store, color: Colors.blue, size: 28),
+                            ),
+                            title: Row(
+                              children: [
+                                Expanded(child: Text(esnaf.isletmeAdi, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16))),
+                                if (esnaf.puan > 0)
+                                  Row(
                                     children: [
-                                      Icon(Icons.location_on, size: 14, color: Colors.blue.shade700),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        _formatMesafe(mesafe),
-                                        style: TextStyle(
-                                          color: Colors.blue.shade700,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 12,
-                                        ),
-                                      ),
+                                      const Icon(Icons.star, color: Colors.amber, size: 16),
+                                      Text(esnaf.puan.toStringAsFixed(1), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                                      Text(" (${esnaf.yorumSayisi})", style: const TextStyle(fontSize: 11, color: Colors.grey)),
                                     ],
                                   ),
+                              ],
+                            ),
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const SizedBox(height: 4),
+                                Text("${esnaf.ilce} - ${esnaf.telefon}", style: TextStyle(color: Colors.grey.shade700)),
+                                if (mesafe != -1)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 6),
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.location_on, size: 14, color: Colors.blue.shade700),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          _formatMesafe(mesafe),
+                                          style: TextStyle(
+                                            color: Colors.blue.shade700,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            trailing: const Icon(Icons.chevron_right, color: Colors.grey),
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (c) => TaksiYonlendirme.detayEkrani(
+                                    esnaf: esnaf,
+                                    kullaniciTel: widget.kullaniciTel,
+                                  ),
                                 ),
-                            ],
-                          ),
-                          trailing: const Icon(Icons.chevron_right, color: Colors.grey),
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (c) => TaksiYonlendirme.detayEkrani(
-                                  esnaf: esnaf,
-                                  kullaniciTel: widget.kullaniciTel,
-                                ),
-                              ),
-                            );
-                          },
-                        );
-                      },
-                    );
-                  },
+                              );
+                            },
+                          );
+                        },
+                      );
+                    },
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -439,7 +439,7 @@ class _AnaEkranState extends State<AnaEkran> {
                       onPressed: () {
                         Navigator.push(
                           context,
-                          MaterialPageRoute(builder: (c) => ModSecimEkrani(esnaf: snapshot.data!, girisTel: widget.kullaniciTel!))
+                          MaterialPageRoute(builder: (c) => TaksiModSecimEkrani(esnaf: snapshot.data!, girisTel: widget.kullaniciTel!))
                         );
                       },
                     );

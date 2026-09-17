@@ -15,6 +15,7 @@ import 'package:almely_randevu/servisler/konum_servisi.dart';
 import 'package:almely_randevu/widgets/ana_buton.dart';
 import 'package:almely_randevu/widgets/sos_butonu.dart';
 import 'package:almely_randevu/ekranlar/taksi/taksi_yonlendirme.dart';
+import 'package:almely_randevu/ekranlar/taksi/taksi_rehber_ekrani.dart';
 import 'package:almely_randevu/ekranlar/tum_yorumlar_ekrani.dart';
 
 class EsnafDetayEkrani extends StatefulWidget {
@@ -332,6 +333,21 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
         title: Text(_guncelEsnaf.isletmeAdi),
         backgroundColor: Colors.blue,
         foregroundColor: Colors.white,
+        actions: [
+          if (_guncelEsnaf.kategori == 'Taksi')
+            IconButton(
+              tooltip: 'Taksi kullanım kılavuzu',
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const TaksiRehberEkrani(mod: 'yolcu'),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.help_outline),
+            ),
+        ],
       ),
       body: CustomScrollView(
         slivers: [
@@ -653,11 +669,21 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
                                                   color: Colors.white.withValues(alpha: 0.1),
                                                   shape: BoxShape.circle,
                                                   border: Border.all(color: Colors.white24, width: 1),
-                                                  image: fotoUrl != null 
-                                                      ? DecorationImage(image: NetworkImage(fotoUrl), fit: BoxFit.cover) 
-                                                      : null,
                                                 ),
-                                                child: fotoUrl == null ? const Icon(Icons.person, size: 18, color: Colors.white54) : null,
+                                                child: ClipOval(
+                                                  child: fotoUrl != null 
+                                                    ? Image.network(
+                                                        fotoUrl,
+                                                        fit: BoxFit.cover,
+                                                        cacheWidth: 100, // [HIZLANDIRMA] Bellek kullanımını düşürür ve kasmayı engeller
+                                                        errorBuilder: (c, e, s) => const Icon(Icons.person, size: 18, color: Colors.white54),
+                                                        loadingBuilder: (context, child, loadingProgress) {
+                                                          if (loadingProgress == null) return child;
+                                                          return const Center(child: SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 1, color: Colors.white54)));
+                                                        },
+                                                      )
+                                                    : const Icon(Icons.person, size: 18, color: Colors.white54),
+                                                ),
                                               ),
                                               const SizedBox(width: 8),
                                               Expanded(
@@ -1423,9 +1449,21 @@ class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
                                       color: Colors.grey.shade200,
                                       shape: BoxShape.circle,
                                       border: Border.all(color: Colors.indigo.shade100, width: 2),
-                                      image: soforFoto != null ? DecorationImage(image: NetworkImage(soforFoto), fit: BoxFit.cover) : null,
                                     ),
-                                    child: soforFoto == null ? const Icon(Icons.person, size: 35, color: Colors.grey) : null,
+                                    child: ClipOval(
+                                      child: soforFoto != null 
+                                        ? Image.network(
+                                            soforFoto,
+                                            fit: BoxFit.cover,
+                                            cacheWidth: 150, // [HIZLANDIRMA]
+                                            errorBuilder: (c, e, s) => const Icon(Icons.person, size: 35, color: Colors.grey),
+                                            loadingBuilder: (context, child, loadingProgress) {
+                                              if (loadingProgress == null) return child;
+                                              return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+                                            },
+                                          )
+                                        : const Icon(Icons.person, size: 35, color: Colors.grey),
+                                    ),
                                   ),
                                   const SizedBox(width: 15),
                                   Column(
