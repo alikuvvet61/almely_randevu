@@ -3,22 +3,22 @@ import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io' show File;
 
-import '../modeller/esnaf_modeli.dart';
-import '../servisler/firestore_servisi.dart';
-import 'rehber_ekrani.dart';
-import 'surucu_dogrulama_ekrani.dart';
+import '../../modeller/esnaf_modeli.dart';
+import '../../servisler/firestore_servisi.dart';
+import '../rehber_ekrani.dart';
+import 'taksi_surucu_dogrulama_ekrani.dart';
 
-class SurucuProfilDetayEkrani extends StatefulWidget {
+class TaksiSurucuProfilDetayEkrani extends StatefulWidget {
   final EsnafModeli esnaf;
   final Map<String, dynamic> arac;
 
-  const SurucuProfilDetayEkrani({super.key, required this.esnaf, required this.arac});
+  const TaksiSurucuProfilDetayEkrani({super.key, required this.esnaf, required this.arac});
 
   @override
-  State<SurucuProfilDetayEkrani> createState() => _SurucuProfilDetayEkraniState();
+  State<TaksiSurucuProfilDetayEkrani> createState() => _TaksiSurucuProfilDetayEkraniState();
 }
 
-class _SurucuProfilDetayEkraniState extends State<SurucuProfilDetayEkrani> {
+class _TaksiSurucuProfilDetayEkraniState extends State<TaksiSurucuProfilDetayEkrani> {
   bool _isUploading = false;
   String _uploadingDocName = "";
 
@@ -251,7 +251,7 @@ class _SurucuProfilDetayEkraniState extends State<SurucuProfilDetayEkrani> {
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 20),
                       child: ElevatedButton(
-                        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (c) => SurucuDogrulamaEkrani(esnaf: widget.esnaf, soforTel: widget.arac['soforTel']))),
+                        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (c) => TaksiSurucuDogrulamaEkrani(esnaf: widget.esnaf, soforTel: widget.arac['soforTel']))),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.blue.shade800,
                           foregroundColor: Colors.white,

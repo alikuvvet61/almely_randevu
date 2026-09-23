@@ -1,0 +1,825 @@
+﻿import 'dart:async';
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:intl/intl.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:almely_randevu/modeller/esnaf_modeli.dart';
+import 'package:almely_randevu/modeller/randevu_modeli.dart';
+import 'package:almely_randevu/servisler/firestore_servisi.dart';
+import 'package:almely_randevu/servisler/konum_servisi.dart';
+import 'package:almely_randevu/widgets/ana_buton.dart';
+import 'package:almely_randevu/widgets/sos_butonu.dart';
+
+class TaksiRandevuEkrani extends StatefulWidget {
+  final EsnafModeli esnaf;
+  final String? kullaniciTel;
+
+  const TaksiRandevuEkrani({super.key, required this.esnaf, this.kullaniciTel});
+
+  @override
+  State<TaksiRandevuEkrani> createState() => _TaksiRandevuEkraniState();
+}
+
+class _TaksiRandevuEkraniState extends State<TaksiRandevuEkrani> {
+  final _firestoreServisi = FirestoreServisi();
+  final _konumServisi = KonumServisi();
+
+  final _adController = TextEditingController();
+  final _telController = TextEditingController();
+  final _neredenController = TextEditingController();
+  final _nereyeController = TextEditingController();
+  final _scrollController = ScrollController();
+
+  final ValueNotifier<String?> _seciliSaatNotifier = ValueNotifier(null);
+  final ValueNotifier<DateTime?> _seciliTarihNotifier = ValueNotifier(null);
+  final ValueNotifier<String?> _seciliKanalNotifier = ValueNotifier(null);
+  final ValueNotifier<bool> _islemYapiliyorNotifier = ValueNotifier(false);
+  final ValueNotifier<bool> _konumYukleniyorNotifier = ValueNotifier(false);
+
+  List<RandevuModeli> _sonRandevular = [];
+  Map<String, dynamic>? _taksiAjandaVerisi;
+  StreamSubscription? _taksiAjandaSub;
+  StreamSubscription? _randevularSub;
+  Timer? _nereyeDebounce;
+  int _aramaIstekNo = 0;
+  Position? _mevcutKullaniciKonumu;
+  final FocusNode _nereyeFocus = FocusNode();
+  List<String> _nereyeOnerileri = [];
+  bool _nereyeAraniyor = false;
+  final Map<String, List<String>> _aramaOnbellegi = {};
+
+  final String _googleApiKey = "AIzaSyC55S5CY0E_WxTmwq-TvpF2Tp_yrBdrQb8";
+
+  @override
+  void initState() {
+    super.initState();
+
+    if (widget.kullaniciTel != null) {
+      _telController.text = widget.kullaniciTel!;
+    }
+
+    _seciliTarihNotifier.value = DateTime.now();
+    _seciliTarihNotifier.addListener(_updateStreams);
+
+    _neredenController.addListener(() { if (mounted) setState(() {}); });
+    _nereyeController.addListener(_nereyeMetinDegisti);
+    _nereyeFocus.addListener(() {
+      if (!_nereyeFocus.hasFocus && mounted) {
+        // Kısa gecikme: öneriye tıklamaya fırsat ver
+        Future.delayed(const Duration(milliseconds: 180), () {
+          if (mounted && !_nereyeFocus.hasFocus) {
+            setState(() => _nereyeOnerileri = []);
+          }
+        });
+      }
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _updateStreams();
+      _otomatikMevcutKonumAl();
+    });
+  }
+
+  @override
+  void dispose() {
+    _nereyeDebounce?.cancel();
+    _taksiAjandaSub?.cancel();
+    _randevularSub?.cancel();
+    _nereyeFocus.dispose();
+    _adController.dispose();
+    _telController.dispose();
+    _neredenController.dispose();
+    _nereyeController.dispose();
+    _scrollController.dispose();
+    _seciliSaatNotifier.dispose();
+    _seciliTarihNotifier.dispose();
+    _seciliKanalNotifier.dispose();
+    _islemYapiliyorNotifier.dispose();
+    _konumYukleniyorNotifier.dispose();
+    super.dispose();
+  }
+
+  void _nereyeMetinDegisti() {
+    if (!mounted) return;
+    setState(() {}); // buton aktifliği vb.
+
+    final q = _nereyeController.text.trim();
+    _nereyeDebounce?.cancel();
+
+    if (q.length < 2) {
+      setState(() {
+        _nereyeOnerileri = [];
+        _nereyeAraniyor = false;
+      });
+      return;
+    }
+
+    // Önbellekten anında göster
+    final cached = _aramaOnbellegi[q.toLowerCase()];
+    if (cached != null && cached.isNotEmpty) {
+      setState(() => _nereyeOnerileri = List.from(cached));
+    }
+
+    _nereyeDebounce = Timer(const Duration(milliseconds: 200), () {
+      _nereyeAramayiCalistir(q);
+    });
+  }
+
+  Future<T?> _zamanAsimli<T>(Future<T> future, {int ms = 1400}) async {
+    try {
+      return await future.timeout(Duration(milliseconds: ms));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Otomatik Mevcut Konumu Alır — Taksi Çağır ile aynı adres formatı
+  Future<void> _otomatikMevcutKonumAl() async {
+    _konumYukleniyorNotifier.value = true;
+    try {
+      Position? position;
+      // Web'de getLastKnownPosition desteklenmiyor
+      if (!kIsWeb) {
+        try {
+          position = await Geolocator.getLastKnownPosition();
+        } catch (_) {}
+      }
+      position ??= await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 8),
+        ),
+      );
+      _mevcutKullaniciKonumu = position;
+
+      final konumBilgisi =
+          await _konumServisi.konumuVeAdresiGetir(mevcutPozisyon: position);
+      if (konumBilgisi != null && konumBilgisi['hata'] == null) {
+        _neredenController.text =
+            konumBilgisi['tamAdres']?.toString() ?? 'Mevcut Konum';
+      } else {
+        final hata = konumBilgisi?['hata'] ?? 'Adres alınamadı';
+        _neredenController.text = 'Konum Belirlenemedi ($hata)';
+        debugPrint('Konum Alma Hatası: $hata');
+      }
+    } catch (e) {
+      _neredenController.text = 'Konum Hatası: $e';
+    } finally {
+      _konumYukleniyorNotifier.value = false;
+    }
+  }
+
+  String _normalizeTr(String s) {
+    // Türkçe İ/I önce düzeltilmeli; aksi halde toLowerCase web'de bozuk üretir
+    var t = s
+        .replaceAll('İ', 'i')
+        .replaceAll('I', 'ı')
+        .toLowerCase()
+        .replaceAll('ş', 's')
+        .replaceAll('ğ', 'g')
+        .replaceAll('ü', 'u')
+        .replaceAll('ö', 'o')
+        .replaceAll('ç', 'c');
+    // Birleşik nokta kalıntısı (i̇)
+    t = t.replaceAll('\u0307', '');
+    return t;
+  }
+
+  /// Web'de JSON alanları undefined gelebilir; her zaman güvenli String üret.
+  String _metin(dynamic v) {
+    if (v == null) return '';
+    final s = v.toString().trim();
+    if (s.isEmpty || s == 'null' || s == 'undefined') return '';
+    return s;
+  }
+
+  /// Sorgudaki her kelime, sonuçta bir kelimenin öneki VEYA içinde geçmeli.
+  bool _sorguEslesiyor(String sonuc, String sorgu) {
+    final sk = _normalizeTr(sorgu)
+        .split(RegExp(r'\s+'))
+        .where((k) => k.isNotEmpty && k.length >= 2)
+        .toList();
+    if (sk.isEmpty) return true;
+    final sonucNorm = _normalizeTr(sonuc);
+    final ak = sonucNorm
+        .split(RegExp(r'[\s,./\-]+'))
+        .where((k) => k.isNotEmpty)
+        .toList();
+    for (final k in sk) {
+      final ok = ak.any((a) => a.startsWith(k) || a.contains(k)) || sonucNorm.contains(k);
+      if (!ok) return false;
+    }
+    return true;
+  }
+
+  /// "derecik ilk" → "Derecik ilköğretim okulu Trabzon" gibi tamamlanmış sorgular.
+  List<String> _genisletilmisSorgular(String q) {
+    final set = <String>{};
+    final trim = q.trim();
+    if (trim.isEmpty) return [];
+    set.add(trim);
+    if (!_normalizeTr(trim).contains('trabzon')) {
+      set.add('$trim Trabzon');
+    }
+
+    final parcalar = trim.split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+    if (parcalar.isEmpty) return set.toList();
+
+    final onceki = parcalar.length >= 2
+        ? parcalar.sublist(0, parcalar.length - 1).join(' ')
+        : '';
+    final son = _normalizeTr(parcalar.last);
+
+    void ekleTamamlanmis(String tamam) {
+      if (onceki.isEmpty) {
+        set.add('$tamam Trabzon');
+      } else {
+        set.add('$onceki $tamam');
+        set.add('$onceki $tamam Trabzon');
+      }
+    }
+
+    // Okul / eğitim
+    if ('ilkogretim'.startsWith(son) || son == 'ilk' || 'ilkokul'.startsWith(son)) {
+      ekleTamamlanmis('ilköğretim');
+      ekleTamamlanmis('ilköğretim okulu');
+      ekleTamamlanmis('ilkokulu');
+    }
+    if ('okulu'.startsWith(son) || son == 'okul') {
+      ekleTamamlanmis('okulu');
+      ekleTamamlanmis('ilköğretim okulu');
+    }
+    if ('ortaokul'.startsWith(son) || 'lise'.startsWith(son) || 'universite'.startsWith(son)) {
+      if ('ortaokul'.startsWith(son)) ekleTamamlanmis('ortaokulu');
+      if ('lise'.startsWith(son)) ekleTamamlanmis('lisesi');
+      if ('universite'.startsWith(son)) ekleTamamlanmis('üniversitesi');
+    }
+
+    // Mekan sonekleri
+    if ('vadisi'.startsWith(son) && son.length >= 2) ekleTamamlanmis('Vadisi');
+    if ('dugun'.startsWith(son) || 'salonu'.startsWith(son)) {
+      ekleTamamlanmis('düğün salonu');
+      ekleTamamlanmis('salonu');
+    }
+    if ('hastane'.startsWith(son) || 'hastanesi'.startsWith(son)) ekleTamamlanmis('hastanesi');
+    if ('cami'.startsWith(son) || 'camii'.startsWith(son)) ekleTamamlanmis('camii');
+    if ('park'.startsWith(son) || 'parki'.startsWith(son)) ekleTamamlanmis('parkı');
+    if ('meydan'.startsWith(son) || 'meydani'.startsWith(son)) ekleTamamlanmis('meydanı');
+    if ('mahalle'.startsWith(son) || 'mah'.startsWith(son)) ekleTamamlanmis('mahallesi');
+
+    return set.toList();
+  }
+
+  String _plusCodeTemizle(String name) =>
+      name.replaceAll(RegExp(r'[A-Z0-9]{4,}\+[A-Z0-9]{2,},?\s?'), '').trim();
+
+  void _sonucEkle(List<String> hedef, dynamic ham, String orijinalSorgu) {
+    final clean = _plusCodeTemizle(_metin(ham));
+    if (clean.isEmpty) return;
+    // En az ilk anlamlı kelime eşleşsin
+    final kelimeler = orijinalSorgu.trim().split(RegExp(r'\s+')).where((k) => k.length >= 2).toList();
+    final ilkKelime = kelimeler.isEmpty ? '' : kelimeler.first;
+    if (ilkKelime.isNotEmpty && !_sorguEslesiyor(clean, ilkKelime)) return;
+    if (!hedef.any((s) => _normalizeTr(s) == _normalizeTr(clean))) {
+      hedef.add(clean);
+    }
+  }
+
+  List<String> _siralaVeKes(List<String> sonuclar, String q) {
+    final kopya = List<String>.from(sonuclar);
+    kopya.sort((a, b) {
+      final aOk = _sorguEslesiyor(a, q) ? 0 : 1;
+      final bOk = _sorguEslesiyor(b, q) ? 0 : 1;
+      if (aOk != bOk) return aOk.compareTo(bOk);
+      // Tam sorgu eşleşenleri daha kısa ada göre öne al
+      return a.length.compareTo(b.length);
+    });
+    // Çok kelimeli sorguda tam eşleşenleri tercih et; yoksa hepsini göster
+    final tam = kopya.where((s) => _sorguEslesiyor(s, q)).toList();
+    if (tam.isNotEmpty) return tam.take(12).toList();
+    return kopya.take(12).toList();
+  }
+
+  Future<void> _googleTextSearchEkle(
+    String query,
+    String orijinalSorgu,
+    List<String> sonuclar,
+    double lat,
+    double lon,
+    int istekNo,
+    void Function() uiGuncelle,
+  ) async {
+    try {
+      final textUrl = Uri.parse(
+        'https://maps.googleapis.com/maps/api/place/textsearch/json?'
+        'query=${Uri.encodeComponent(query)}'
+        '&language=tr&region=tr'
+        '&location=$lat,$lon&radius=50000'
+        '&key=$_googleApiKey',
+      );
+      final res = await _zamanAsimli(http.get(textUrl), ms: 2200);
+      if (res == null || res.statusCode != 200 || istekNo != _aramaIstekNo) return;
+      final data = json.decode(res.body);
+      final results = data['results'];
+      if (data['status'] == 'OK' && results is List) {
+        for (final item in results) {
+          if (item is! Map) continue;
+          final name = _metin(item['name']);
+          final addr = _metin(item['formatted_address']);
+          _sonucEkle(sonuclar, addr.isEmpty ? name : '$name, $addr', orijinalSorgu);
+        }
+        uiGuncelle();
+      }
+    } catch (e) {
+      debugPrint("Google text search hatası: $e");
+    }
+  }
+
+  /// Hızlı + aşamalı arama: yerel/Google/Photon + genişletilmiş Text Search.
+  Future<void> _nereyeAramayiCalistir(String sorgu) async {
+    final q = sorgu.trim();
+    if (q.length < 2) return;
+
+    final istekNo = ++_aramaIstekNo;
+    if (mounted) setState(() => _nereyeAraniyor = true);
+
+    final sonuclar = <String>[];
+    final lat = _mevcutKullaniciKonumu?.latitude ?? 41.0027;
+    final lon = _mevcutKullaniciKonumu?.longitude ?? 39.7168;
+    final genisSorgular = _genisletilmisSorgular(q);
+
+    void uiGuncelle() {
+      if (!mounted || istekNo != _aramaIstekNo) return;
+      setState(() => _nereyeOnerileri = _siralaVeKes(sonuclar, q));
+    }
+
+    // 1) Yerel — genelde en hızlı
+    try {
+      final yerel = await _zamanAsimli(_firestoreServisi.mekanArama(q), ms: 1200) ?? [];
+      if (istekNo != _aramaIstekNo) {
+        if (mounted) setState(() => _nereyeAraniyor = false);
+        return;
+      }
+      for (final s in yerel) {
+        _sonucEkle(sonuclar, s, q);
+      }
+      uiGuncelle();
+    } catch (_) {}
+
+    // 2) Google Autocomplete + Photon + genişletilmiş Text Search (paralel)
+    Future<void> googleAuto() async {
+      try {
+        final autoUrl = Uri.parse(
+          'https://maps.googleapis.com/maps/api/place/autocomplete/json?'
+          'input=${Uri.encodeComponent(q)}'
+          '&components=country:tr'
+          '&language=tr'
+          '&location=$lat,$lon&radius=40000'
+          '&strictbounds=true'
+          '&key=$_googleApiKey',
+        );
+        final res = await _zamanAsimli(http.get(autoUrl), ms: 1400);
+        if (res == null || res.statusCode != 200 || istekNo != _aramaIstekNo) return;
+        final data = json.decode(res.body);
+        final predictions = data['predictions'];
+        if (data['status'] == 'OK' && predictions is List) {
+          for (final item in predictions) {
+            if (item is! Map) continue;
+            final str = item['structured_formatting'];
+            late final String full;
+            if (str is Map) {
+              final main = _metin(str['main_text']);
+              final secondary = _metin(str['secondary_text']);
+              full = secondary.isEmpty ? main : '$main, $secondary';
+            } else {
+              full = _metin(item['description']);
+            }
+            _sonucEkle(sonuclar, full, q);
+          }
+          uiGuncelle();
+        }
+      } catch (e) {
+        debugPrint("Google autocomplete hatası: $e");
+      }
+    }
+
+    Future<void> photon() async {
+      try {
+        // Tek istek — peş peşe 3 sorgu UI'yi bekletiyordu
+        final photonUrl = Uri.parse(
+          'https://photon.komoot.io/api/?'
+          'q=${Uri.encodeComponent(q)}'
+          '&limit=8'
+          '&lang=default'
+          '&lat=$lat&lon=$lon',
+        );
+        final res = await _zamanAsimli(
+          http.get(photonUrl, headers: {'User-Agent': 'AlmelyApp_V3'}),
+          ms: 1200,
+        );
+        if (res == null || res.statusCode != 200 || istekNo != _aramaIstekNo) return;
+        final data = json.decode(res.body);
+        final features = data['features'];
+        if (features is! List) return;
+        for (final f in features) {
+          if (f is! Map) continue;
+          final p = f['properties'];
+          if (p is! Map) continue;
+          final name = _metin(p['name']);
+          if (name.isEmpty) continue;
+          final parts = <String>[
+            name,
+            _metin(p['street']),
+            _metin(p['district']),
+            _metin(p['city']),
+          ].where((e) => e.isNotEmpty).toList();
+          _sonucEkle(sonuclar, parts.join(', '), q);
+        }
+        uiGuncelle();
+      } catch (e) {
+        debugPrint("Photon hatası: $e");
+      }
+    }
+
+    Future<void> textSearch() async {
+      // En fazla 1 Text Search — yavaşlatan ekstra turları kaldır
+      final tq = genisSorgular.length > 1
+          ? genisSorgular[1]
+          : (q.toLowerCase().contains('trabzon') ? q : '$q Trabzon');
+      await _googleTextSearchEkle(tq, q, sonuclar, lat, lon, istekNo, uiGuncelle);
+    }
+
+    // Autocomplete önce bitsin; Photon/Text paralel ama ana akışı kilitlemesin
+    await Future.wait([googleAuto(), photon()]);
+    if (istekNo != _aramaIstekNo) {
+      if (mounted) setState(() => _nereyeAraniyor = false);
+      return;
+    }
+
+    // Az sonuç varsa tek Text Search
+    if (sonuclar.where((s) => _sorguEslesiyor(s, q)).length < 2) {
+      await textSearch();
+    }
+
+    if (!mounted || istekNo != _aramaIstekNo) {
+      if (mounted && istekNo == _aramaIstekNo) setState(() => _nereyeAraniyor = false);
+      return;
+    }
+    final finalListe = _siralaVeKes(sonuclar, q);
+    _aramaOnbellegi[q.toLowerCase()] = finalListe;
+    if (_aramaOnbellegi.length > 40) {
+      _aramaOnbellegi.remove(_aramaOnbellegi.keys.first);
+    }
+    setState(() {
+      _nereyeOnerileri = finalListe;
+      _nereyeAraniyor = false;
+    });
+  }
+
+  void _updateStreams() {
+    final tarih = _seciliTarihNotifier.value;
+    if (tarih == null) return;
+
+    _taksiAjandaSub?.cancel();
+    _randevularSub?.cancel();
+
+    _taksiAjandaSub = _firestoreServisi.taksiCizelgesiGetir(widget.esnaf.id).listen((event) {
+      if (mounted) {
+        setState(() { _taksiAjandaVerisi = event; });
+        _otomatikSaatSec();
+      }
+    });
+
+    _randevularSub = _firestoreServisi.randevulariGetir(widget.esnaf.id, tarih).listen((event) {
+      if (mounted) {
+        setState(() { _sonRandevular = event; });
+        _otomatikSaatSec();
+      }
+    });
+  }
+
+  void _otomatikSaatSec() {
+    if (_seciliSaatNotifier.value != null) return;
+    final simdi = DateTime.now();
+    for (int h = 0; h < 24; h++) {
+      for (int m = 0; m < 60; m += 10) {
+        final saatStr = "${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}";
+        final d = DateTime(_seciliTarihNotifier.value!.year, _seciliTarihNotifier.value!.month, _seciliTarihNotifier.value!.day, h, m);
+        if (d.isAfter(simdi.add(const Duration(minutes: 15)))) {
+           if (widget.esnaf.araclar.any((a) => _saatMusaitMi(saatStr, a['plaka']))) {
+             _seciliSaatNotifier.value = saatStr;
+             return;
+           }
+        }
+      }
+    }
+  }
+
+  bool _saatMusaitMi(String saat, String plaka) {
+    if (_taksiAjandaVerisi == null) return true;
+    final gunKey = DateFormat('yyyy-MM-dd').format(_seciliTarihNotifier.value!);
+    final gunlukPlan = _taksiAjandaVerisi![gunKey] ?? {};
+    final durum = gunlukPlan[plaka]?.toString() ?? "";
+    if (durum.contains('I')) return false;
+
+    for (var r in _sonRandevular) {
+      if (r.randevuKanali == plaka && r.saat == saat && r.durum != 'Reddedildi' && r.durum != 'İptal Edildi') {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8FAFF),
+      appBar: AppBar(
+        title: Text("${widget.esnaf.isletmeAdi} Rezervasyonu"),
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black,
+        elevation: 0,
+      ),
+      body: SingleChildScrollView(
+        controller: _scrollController,
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _adimBasligi("1", "Zaman Seçimi"),
+            _zamanModulu(),
+            const SizedBox(height: 25),
+            _adimBasligi("2", "Güzergah Bilgileri"),
+            _guzergahModulu(),
+            const SizedBox(height: 25),
+            _adimBasligi("3", "Araç ve Sürücü Seçimi"),
+            _aracSeciciModulu(),
+            const SizedBox(height: 25),
+            _adimBasligi("4", "İletişim Bilgileri"),
+            _iletisimModulu(),
+            const SizedBox(height: 120),
+          ],
+        ),
+      ),
+      bottomNavigationBar: _bottomBar(),
+      floatingActionButton: SosButonu(
+        randevuId: "taksi_rezervasyon",
+        esnafId: widget.esnaf.id,
+        kullaniciTel: widget.kullaniciTel ?? "",
+        baslatanRol: 'Yolcu',
+        adminTel: widget.esnaf.telefon,
+      ),
+    );
+  }
+
+  Widget _adimBasligi(String no, String baslik) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 15),
+      child: Row(
+        children: [
+          CircleAvatar(radius: 12, backgroundColor: Colors.indigo, child: Text(no, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold))),
+          const SizedBox(width: 10),
+          Text(baslik, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87)),
+        ],
+      ),
+    );
+  }
+
+  Widget _zamanModulu() {
+    return ValueListenableBuilder<DateTime?>(
+      valueListenable: _seciliTarihNotifier,
+      builder: (context, tarih, _) => ValueListenableBuilder<String?>(
+        valueListenable: _seciliSaatNotifier,
+        builder: (context, saat, _) => Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.grey.shade100)),
+          child: Row(
+            children: [
+              Expanded(
+                child: InkWell(
+                  onTap: () async {
+                    final d = await showDatePicker(context: context, initialDate: tarih ?? DateTime.now(), firstDate: DateTime.now(), lastDate: DateTime.now().add(const Duration(days: 30)));
+                    if (d != null) { _seciliTarihNotifier.value = d; _seciliSaatNotifier.value = null; }
+                  },
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text("TARİH", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
+                      const SizedBox(height: 8),
+                      Row(children: [const Icon(Icons.calendar_today_outlined, size: 18, color: Colors.indigo), const SizedBox(width: 8), Text(tarih == null ? "Seçiniz" : DateFormat('dd MMMM', 'tr_TR').format(tarih), style: const TextStyle(fontWeight: FontWeight.bold))]),
+                    ],
+                  ),
+                ),
+              ),
+              Container(width: 1, height: 40, color: Colors.grey.shade200),
+              Expanded(
+                child: InkWell(
+                  onTap: () async {
+                    final initialTime = saat != null ? TimeOfDay(hour: int.parse(saat.split(':')[0]), minute: int.parse(saat.split(':')[1])) : TimeOfDay.now();
+                    final t = await showTimePicker(context: context, initialTime: initialTime);
+                    if (t != null) {
+                      final s = "${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}";
+                      _seciliSaatNotifier.value = s;
+                      _seciliKanalNotifier.value = null;
+                    }
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text("SAAT", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
+                        const SizedBox(height: 8),
+                        Row(children: [const Icon(Icons.access_time, size: 18, color: Colors.indigo), const SizedBox(width: 8), Text(saat ?? "Seçiniz", style: const TextStyle(fontWeight: FontWeight.bold))]),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _guzergahModulu() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.grey.shade100)),
+      child: Column(
+        children: [
+          ValueListenableBuilder<bool>(
+            valueListenable: _konumYukleniyorNotifier,
+            builder: (context, yukleniyor, _) => Row(
+              children: [
+                const Icon(Icons.my_location, color: Colors.green),
+                const SizedBox(width: 12),
+                Expanded(child: TextField(controller: _neredenController, decoration: InputDecoration(hintText: yukleniyor ? "Mevcut konumunuz alınıyor..." : "Nereden (Alış Noktası)", border: InputBorder.none))),
+                if (yukleniyor) const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.green))
+                else IconButton(icon: const Icon(Icons.gps_fixed, color: Colors.green, size: 20), onPressed: _otomatikMevcutKonumAl),
+              ],
+            ),
+          ),
+          const Divider(),
+          Row(
+            children: [
+              const Icon(Icons.location_on, color: Colors.red),
+              const SizedBox(width: 12),
+              Expanded(
+                child: TextField(
+                  controller: _nereyeController,
+                  focusNode: _nereyeFocus,
+                  decoration: InputDecoration(
+                    hintText: "Nereye? (Lise, Taksi Durağı, Mahalle, Cadde)",
+                    border: InputBorder.none,
+                    suffixIcon: _nereyeAraniyor
+                        ? const Padding(
+                            padding: EdgeInsets.all(12),
+                            child: SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.redAccent),
+                            ),
+                          )
+                        : (_nereyeController.text.trim().isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear, size: 18, color: Colors.grey),
+                                onPressed: () {
+                                  _nereyeController.clear();
+                                  setState(() {
+                                    _nereyeOnerileri = [];
+                                    _nereyeAraniyor = false;
+                                  });
+                                },
+                              )
+                            : null),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (_nereyeOnerileri.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Material(
+              elevation: 4,
+              borderRadius: BorderRadius.circular(12),
+              color: Colors.white,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 220),
+                child: ListView.separated(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  shrinkWrap: true,
+                  itemCount: _nereyeOnerileri.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (ctx, i) {
+                    final s = _nereyeOnerileri[i];
+                    return ListTile(
+                      dense: true,
+                      leading: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: const BoxDecoration(color: Color(0xFFE8EAF6), shape: BoxShape.circle),
+                        child: Text("${i + 1}", style: const TextStyle(color: Colors.indigo, fontWeight: FontWeight.bold, fontSize: 10)),
+                      ),
+                      title: Text(s, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                      onTap: () {
+                        _nereyeController.removeListener(_nereyeMetinDegisti);
+                        _nereyeController.text = s;
+                        _nereyeController.addListener(_nereyeMetinDegisti);
+                        setState(() {
+                          _nereyeOnerileri = [];
+                          _nereyeAraniyor = false;
+                        });
+                        _nereyeFocus.unfocus();
+                      },
+                    );
+                  },
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _aracSeciciModulu() {
+    return ValueListenableBuilder<String?>(
+      valueListenable: _seciliSaatNotifier,
+      builder: (context, saat, _) => ValueListenableBuilder<String?>(
+        valueListenable: _seciliKanalNotifier,
+        builder: (context, seciliPlaka, _) {
+          if (saat == null) return const Center(child: Padding(padding: EdgeInsets.all(20), child: Text("Lütfen önce saat seçiniz.", style: TextStyle(color: Colors.grey))));
+          final liste = widget.esnaf.araclar.where((a) => _saatMusaitMi(saat, a['plaka'])).toList();
+          if (liste.isEmpty) return const Padding(padding: EdgeInsets.symmetric(vertical: 10), child: Text("Bu saatte müsait araç bulunamadı.", style: TextStyle(color: Colors.red, fontSize: 13)));
+          return Wrap(
+            spacing: 10, runSpacing: 10,
+            children: liste.map((a) {
+              bool secili = seciliPlaka == a['plaka'];
+              return ChoiceChip(label: Text(a['plaka']), selected: secili, onSelected: (val) => _seciliKanalNotifier.value = val ? a['plaka'] : null);
+            }).toList(),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _iletisimModulu() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.grey.shade100)),
+      child: Column(
+        children: [
+          TextField(controller: _adController, decoration: const InputDecoration(labelText: "Ad Soyad", prefixIcon: Icon(Icons.person_outline), border: OutlineInputBorder())),
+          const SizedBox(height: 15),
+          TextField(controller: _telController, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: "Telefon Numarası", prefixIcon: Icon(Icons.phone_outlined), border: OutlineInputBorder())),
+        ],
+      ),
+    );
+  }
+
+  Widget _bottomBar() {
+    return ValueListenableBuilder<String?>(
+      valueListenable: _seciliSaatNotifier,
+      builder: (context, saat, _) => ValueListenableBuilder<String?>(
+        valueListenable: _seciliKanalNotifier,
+        builder: (context, kanal, _) {
+          bool guzergahEksik = _neredenController.text.isEmpty || _nereyeController.text.isEmpty;
+          bool aktif = saat != null && kanal != null && !guzergahEksik;
+          String butonMetni = saat == null ? "ZAMAN SEÇİNİZ" : (guzergahEksik ? "GÜZERGAH GİRİNİZ" : (kanal == null ? "ARAÇ SEÇİNİZ" : "REZERVASYONU TAMAMLA"));
+          return Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(color: Colors.white, boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, -5))]),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (saat != null) Padding(padding: const EdgeInsets.only(bottom: 10), child: Text("Size uygun en yakın randevu saati $saat olarak belirlendi.", textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue))),
+                ValueListenableBuilder<bool>(valueListenable: _islemYapiliyorNotifier, builder: (ctx, yukleniyor, _) => yukleniyor ? const Center(child: CircularProgressIndicator()) : AnaButon(metin: butonMetni, onPressed: aktif ? _kaydet : null)),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _kaydet() async {
+    _islemYapiliyorNotifier.value = true;
+    try {
+      final r = RandevuModeli(
+        id: '', esnafId: widget.esnaf.id, esnafAdi: widget.esnaf.isletmeAdi, esnafTel: widget.esnaf.telefon,
+        kullaniciAd: _adController.text, kullaniciTel: _telController.text,
+        tarih: _seciliTarihNotifier.value!, saat: _seciliSaatNotifier.value!, sure: 30,
+        hizmetAdi: "Taksi Rezervasyonu", randevuKanali: _seciliKanalNotifier.value,
+        durum: widget.esnaf.randevuOnayModu == 'Otomatik' ? 'Onaylandı' : 'Onay bekliyor',
+        nereden: _neredenController.text, nereye: _nereyeController.text,
+      );
+      await _firestoreServisi.randevuEkle(r);
+      if (mounted) showDialog(context: context, builder: (c) => AlertDialog(title: const Text("Başarılı"), content: const Text("Rezervasyon talebiniz alınmıştır."), actions: [TextButton(onPressed: () { Navigator.pop(c); Navigator.pop(context); }, child: const Text("TAMAM"))]));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Hata: $e")));
+    } finally { _islemYapiliyorNotifier.value = false; }
+  }
+}

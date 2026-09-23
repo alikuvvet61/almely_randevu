@@ -3,7 +3,8 @@ import '../modeller/esnaf_modeli.dart';
 import '../servisler/firestore_servisi.dart';
 import '../servisler/onesignal_servisi.dart';
 import '../servisler/bildirim_servisi.dart';
-import 'esnaf_paneli.dart'; // Panelin olduğu dosya yolu
+import 'esnaf_paneli.dart';
+import 'taksi/taksi_mod_secim_ekrani.dart';
 
 class EsnafGirisEkrani extends StatefulWidget {
   const EsnafGirisEkrani({super.key});
@@ -45,14 +46,20 @@ class _EsnafGirisEkraniState extends State<EsnafGirisEkrani> {
 
         if (!mounted) return;
 
-        // BAŞARILI: Esnaf bulundu, panele gönder
-        // Eğer giriş yapılan numara dükkan numarası değilse, şoför olarak işaretle
-        String? soforTel = (esnaf.telefon != tel) ? tel : null;
-
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (c) => EsnafPaneli(esnaf: esnaf, soforTel: soforTel)),
-        );
+        final kat = esnaf.kategori.trim().toLowerCase();
+        if (kat == 'taksi') {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (c) => TaksiModSecimEkrani(esnaf: esnaf, girisTel: tel)),
+          );
+        } else {
+          // Giriş numarası işletme numarası değilse personel/şoför olarak işaretle
+          String? soforTel = (esnaf.telefon != tel) ? tel : null;
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (c) => EsnafPaneli(esnaf: esnaf, soforTel: soforTel)),
+          );
+        }
       } else {
         // HATA: Numara veritabanında yok
         ScaffoldMessenger.of(context).showSnackBar(

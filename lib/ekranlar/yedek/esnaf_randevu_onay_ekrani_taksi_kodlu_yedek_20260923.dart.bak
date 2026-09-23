@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:almely_randevu/servisler/firestore_servisi.dart';
 import 'package:almely_randevu/modeller/randevu_modeli.dart';
 import 'package:almely_randevu/modeller/esnaf_modeli.dart';
+import 'package:almely_randevu/ekranlar/taksi/taksi_rehber_ekrani.dart';
 
 class EsnafRandevuYonetimEkrani extends StatefulWidget {
   final String esnafId;
@@ -59,6 +60,14 @@ class _EsnafRandevuYonetimEkraniState extends State<EsnafRandevuYonetimEkrani> {
         appBar: AppBar(
           title: const Text("Randevu Yönetimi"),
           centerTitle: true,
+          actions: [
+            if (_esnaf?.kategori == 'Taksi')
+              IconButton(
+                tooltip: "Kullanım Rehberi",
+                icon: const Icon(Icons.help_outline, color: Colors.blue),
+                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (c) => const TaksiRehberEkrani(mod: 'yonetici', bolum: 'kayit'))),
+              ),
+          ],
           bottom: const TabBar(
             tabs: [
               Tab(text: "Bekleyen"),
@@ -306,9 +315,29 @@ class _EsnafRandevuYonetimEkraniState extends State<EsnafRandevuYonetimEkrani> {
                 children: [
                   _bilgiSatiri(Icons.phone, r.kullaniciTel),
                   _bilgiSatiri(Icons.content_cut, r.hizmetAdi),
-                  if (r.randevuKanali != null)
-                    _bilgiSatiri(Icons.layers, "Kanal: ${r.randevuKanali}"),
-                  if (r.calisanPersonel != null)
+                  if (r.randevuKanali != null) 
+                    Builder(
+                      builder: (context) {
+                        String label = "Kanal: ${r.randevuKanali}";
+                        IconData icon = Icons.layers;
+
+                        if (_esnaf?.kategori == 'Taksi' && (_esnaf?.aracOdakliSistem ?? false)) {
+                          icon = Icons.local_taxi;
+                          final arac = _esnaf?.araclar.cast<Map<String, dynamic>?>().firstWhere(
+                            (a) => a?['plaka'] == r.randevuKanali,
+                            orElse: () => null,
+                          );
+                          if (arac != null) {
+                            final sofor = arac['soforAd'] ?? arac['sofor'] ?? '';
+                            label = sofor.isNotEmpty ? "Araç: ${r.randevuKanali} ($sofor)" : "Araç: ${r.randevuKanali}";
+                          } else {
+                            label = "Araç: ${r.randevuKanali}";
+                          }
+                        }
+                        return _bilgiSatiri(icon, label);
+                      }
+                    ),
+                  if (r.calisanPersonel != null && !(_esnaf?.kategori == 'Taksi' && (_esnaf?.aracOdakliSistem ?? false))) 
                     _bilgiSatiri(Icons.person_outline, "Personel: ${r.calisanPersonel}"),
                   
                   if (r.seriId != null && r.seriId!.isNotEmpty)

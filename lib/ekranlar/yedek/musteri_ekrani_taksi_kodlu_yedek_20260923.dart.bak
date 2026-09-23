@@ -18,17 +18,17 @@ import 'package:almely_randevu/ekranlar/taksi/taksi_yonlendirme.dart';
 import 'package:almely_randevu/ekranlar/taksi/taksi_rehber_ekrani.dart';
 import 'package:almely_randevu/ekranlar/tum_yorumlar_ekrani.dart';
 
-class EsnafDetayEkrani extends StatefulWidget {
+class MusteriEkrani extends StatefulWidget {
   final EsnafModeli esnaf;
   final String? kullaniciTel;
 
-  const EsnafDetayEkrani({super.key, required this.esnaf, this.kullaniciTel});
+  const MusteriEkrani({super.key, required this.esnaf, this.kullaniciTel});
 
   @override
-  State<EsnafDetayEkrani> createState() => _EsnafDetayEkraniState();
+  State<MusteriEkrani> createState() => _MusteriEkraniState();
 }
 
-class _EsnafDetayEkraniState extends State<EsnafDetayEkrani> {
+class _MusteriEkraniState extends State<MusteriEkrani> {
   final FirestoreServisi _firestoreServisi = FirestoreServisi();
   final KonumServisi _konumServisi = KonumServisi();
   late EsnafModeli _guncelEsnaf;

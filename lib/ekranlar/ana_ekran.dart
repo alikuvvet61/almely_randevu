@@ -17,7 +17,7 @@ import 'taksi/taksi_mod_secim_ekrani.dart'; // Güncellenmiş yol
 import 'taksi/taksi_yonlendirme.dart';
 import 'kullanici_randevu_ekrani.dart';
 import 'giris_secim_ekrani.dart';
-import 'surucu_profil_detay_ekrani.dart';
+import 'taksi/taksi_surucu_profil_detay_ekrani.dart';
 import '../main.dart';
 
 
@@ -740,7 +740,7 @@ class _AnaEkranState extends State<AnaEkran> {
                   Navigator.pop(context);
                   // Şoför verisini bul
                   final arac = esnaf.araclar.firstWhere((a) => a['soforTel'] == widget.kullaniciTel, orElse: () => {});
-                  Navigator.push(context, MaterialPageRoute(builder: (c) => SurucuProfilDetayEkrani(esnaf: esnaf, arac: arac)));
+                  Navigator.push(context, MaterialPageRoute(builder: (c) => TaksiSurucuProfilDetayEkrani(esnaf: esnaf, arac: arac)));
                 },
               ),
             ],

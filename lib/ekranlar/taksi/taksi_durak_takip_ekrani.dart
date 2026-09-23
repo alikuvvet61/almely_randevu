@@ -5,8 +5,8 @@ import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import '../../modeller/esnaf_modeli.dart';
 import '../../servisler/firestore_servisi.dart';
-import '../surucu_dogrulama_ekrani.dart';
-import '../surucu_profil_detay_ekrani.dart';
+import 'taksi_surucu_dogrulama_ekrani.dart';
+import 'taksi_surucu_profil_detay_ekrani.dart';
 import 'taksi_rehber_ekrani.dart';
 
 class TaksiDurakTakipEkrani extends StatefulWidget {
@@ -321,7 +321,7 @@ class _TaksiDurakTakipEkraniState extends State<TaksiDurakTakipEkrani> {
               trailing: const Icon(Icons.chevron_right),
               onTap: () {
                 Navigator.pop(context);
-                Navigator.push(context, MaterialPageRoute(builder: (c) => SurucuProfilDetayEkrani(esnaf: widget.esnaf, arac: kendiAracim)));
+                Navigator.push(context, MaterialPageRoute(builder: (c) => TaksiSurucuProfilDetayEkrani(esnaf: widget.esnaf, arac: kendiAracim)));
               },
             ),
             const SizedBox(height: 10),
@@ -351,7 +351,7 @@ class _TaksiDurakTakipEkraniState extends State<TaksiDurakTakipEkrani> {
               trailing: const Icon(Icons.chevron_right),
               onTap: () {
                 Navigator.pop(context);
-                Navigator.push(context, MaterialPageRoute(builder: (c) => SurucuDogrulamaEkrani(esnaf: widget.esnaf)));
+                Navigator.push(context, MaterialPageRoute(builder: (c) => TaksiSurucuDogrulamaEkrani(esnaf: widget.esnaf)));
               },
             ),
             const SizedBox(height: 10),
@@ -603,7 +603,7 @@ class _TaksiDurakTakipEkraniState extends State<TaksiDurakTakipEkrani> {
                                   icon: const Icon(Icons.more_vert),
                                   onSelected: (val) async {
                                     if (val == 'DOGRULAMA') {
-                                      Navigator.push(context, MaterialPageRoute(builder: (c) => SurucuDogrulamaEkrani(esnaf: widget.esnaf)));
+                                      Navigator.push(context, MaterialPageRoute(builder: (c) => TaksiSurucuDogrulamaEkrani(esnaf: widget.esnaf)));
                                       return;
                                     }
                                     setState(() {

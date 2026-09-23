@@ -1,20 +1,25 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../modeller/esnaf_modeli.dart';
 import '../modeller/randevu_modeli.dart';
 import '../servisler/firestore_servisi.dart';
-import '../servisler/bildirim_servisi.dart'; // [YENİ] Bildirim kontrolleri için gerekli
+import '../servisler/bildirim_servisi.dart'; // [YEN─░] Bildirim kontrolleri i├ğin gerekli
 import '../widgets/ana_buton.dart';
+import '../widgets/sos_butonu.dart'; // [YEN─░] SOS Butonu i├ğin gerekli
+
+enum RandevuModu { genel, taksi }
 
 class RandevuEkrani extends StatefulWidget {
   final EsnafModeli esnaf;
   final String? kullaniciTel;
+  final RandevuModu modu;
 
   const RandevuEkrani({
     super.key,
     required this.esnaf,
     this.kullaniciTel,
+    this.modu = RandevuModu.genel,
   });
 
   @override
@@ -22,9 +27,13 @@ class RandevuEkrani extends StatefulWidget {
 }
 
 class _RandevuEkraniState extends State<RandevuEkrani> {
+  bool get _isTaksiModu => widget.modu == RandevuModu.taksi || widget.esnaf.kategori == 'Taksi';
+
   final _firestoreServisi = FirestoreServisi();
   final _adController = TextEditingController();
   final _telController = TextEditingController();
+  final _neredenController = TextEditingController(); // [YEN─░] Taksi i├ğin
+  final _nereyeController = TextEditingController();  // [YEN─░] Taksi i├ğin
   final _scrollController = ScrollController();
 
   final ValueNotifier<List<Map<String, dynamic>>> _seciliHizmetlerNotifier =
@@ -43,19 +52,26 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
 
   List<RandevuModeli> _sonRandevular = [];
   Map<String, dynamic>? _gununAjandaVerisi;
+  Map<String, dynamic>? _taksiAjandaVerisi;
   StreamSubscription? _ajandaSub;
+  StreamSubscription? _taksiAjandaSub;
   StreamSubscription? _randevularSub;
 
   late Stream<EsnafModeli> _esnafStream;
 
-  bool get _isAracKiralama => widget.esnaf.kategori == 'Araç Kiralama';
+  bool get _isAracKiralama => widget.esnaf.kategori == 'Ara├ğ Kiralama';
 
   @override
   void initState() {
     super.initState();
     _esnafStream = _firestoreServisi.esnafGetir(widget.esnaf.id);
 
-    if (widget.esnaf.randevularPersonelAdinaAlinsin) {
+    if (widget.esnaf.aracOdakliSistem && _isTaksiModu) {
+      if (widget.esnaf.araclar.length == 1) {
+        final a = widget.esnaf.araclar.first;
+        _seciliKanalNotifier.value = a['plaka']?.toString();
+      }
+    } else if (widget.esnaf.randevularPersonelAdinaAlinsin) {
       if ((widget.esnaf.personeller?.length ?? 0) == 1) {
         final p = widget.esnaf.personeller!.first;
         _seciliPersonelNotifier.value = p['isim']?.toString();
@@ -84,6 +100,8 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
 
     _seciliKanalNotifier.addListener(_onKanalChanged);
     _seciliTarihNotifier.addListener(_updateStreams);
+    _neredenController.addListener(() { if (mounted) setState(() {}); }); // [YEN─░] Buton aktifli─şi i├ğin
+    _nereyeController.addListener(() { if (mounted) setState(() {}); });  // [YEN─░] Buton aktifli─şi i├ğin
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _aramaYapiliyorNotifier.value = true;
@@ -98,6 +116,11 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
   }
 
   void _otomatikTarihSec(EsnafModeli esnaf) {
+    if (_isTaksiModu) {
+      _seciliTarihNotifier.value = DateTime.now();
+      return;
+    }
+
     final aktifler = _getAktifTarihler(esnaf);
     if (aktifler.isNotEmpty) {
       _seciliTarihNotifier.value = aktifler.first;
@@ -111,7 +134,7 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
     if (_saatKendimSececegimNotifier.value) return;
 
     final hizmetler = _seciliHizmetlerNotifier.value;
-    if (hizmetler.isEmpty) return;
+    if (hizmetler.isEmpty && esnaf.kategori != 'Taksi') return;
 
     _aramaYapiliyorNotifier.value = true;
     _musaitlikBulunamadiNotifier.value = false;
@@ -145,12 +168,22 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
     if (tarih == null) return;
 
     _ajandaSub?.cancel();
+    _taksiAjandaSub?.cancel();
     _randevularSub?.cancel();
 
     _ajandaSub = _firestoreServisi.ajandaGetir(widget.esnaf.id, tarih).listen((event) {
       if (mounted) {
         setState(() {
           _gununAjandaVerisi = event;
+        });
+        _otomatikSaatSec(widget.esnaf);
+      }
+    });
+
+    _taksiAjandaSub = _firestoreServisi.taksiCizelgesiGetir(widget.esnaf.id).listen((event) {
+      if (mounted) {
+        setState(() {
+          _taksiAjandaVerisi = event;
         });
         _otomatikSaatSec(widget.esnaf);
       }
@@ -169,9 +202,12 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
   @override
   void dispose() {
     _ajandaSub?.cancel();
+    _taksiAjandaSub?.cancel();
     _randevularSub?.cancel();
     _adController.dispose();
     _telController.dispose();
+    _neredenController.dispose();
+    _nereyeController.dispose();
     _scrollController.dispose();
     _seciliHizmetlerNotifier.dispose();
     _seciliSaatNotifier.dispose();
@@ -218,6 +254,11 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
       toplam += (h['sure'] as num).toInt();
     }
 
+    // [YEN─░] Taksi kategorisi i├ğin sabit s├╝re (rezervasyon s├╝resi mant─▒─ş─▒)
+    if (esnaf.kategori == 'Taksi' && toplam == 0) {
+      return 30; // Varsay─▒lan 30 dk
+    }
+
     return toplam;
   }
 
@@ -226,7 +267,7 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
     final simdi = DateTime.now();
     final bugun = DateTime(simdi.year, simdi.month, simdi.day);
 
-    if (!esnaf.ajandayiKendimAyarlayacagim) {
+    if (!esnaf.ajandayiKendimAyarlayacagim || esnaf.kategori == 'Taksi') {
       for (int i = 0; i < esnaf.maksimumRandevuGunu; i++) {
         tarihler.add(bugun.add(Duration(days: i)));
       }
@@ -245,7 +286,7 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
             }
           }
         } catch (e) {
-          debugPrint("Tarih parse hatası: $e");
+          debugPrint("Tarih parse hatas─▒: $e");
         }
       }
     }
@@ -286,10 +327,10 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
       int acilisDk = _saatiDakikayaCevir(acilis);
       int kapanisDk = _saatiDakikayaCevir(kapanis);
 
-      // [KESİN TAKVİM MANTIĞI]: Gece yarısını geçen dükkanlar için
+      // [KES─░N TAKV─░M MANTI─ŞI]: Gece yar─▒s─▒n─▒ ge├ğen d├╝kkanlar i├ğin
       if (kapanisDk < acilisDk || is724) {
-        // 1. Dünün devamı olan gece yarısı slotları (00:00'dan Kapanış'a kadar)
-        // Bu slotlar takvimde 'Bugün'ün sabahıdır
+        // 1. D├╝n├╝n devam─▒ olan gece yar─▒s─▒ slotlar─▒ (00:00'dan Kapan─▒┼ş'a kadar)
+        // Bu slotlar takvimde 'Bug├╝n'├╝n sabah─▒d─▒r
         int currentDk = 0;
         int targetEnd = is724 ? acilisDk : kapanisDk;
         while (currentDk < targetEnd) {
@@ -297,7 +338,7 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
           currentDk += slotAraligi;
         }
 
-        // 2. Bugünün asıl mesai slotları (Açılış'tan Gece Yarısı'na kadar)
+        // 2. Bug├╝n├╝n as─▒l mesai slotlar─▒ (A├ğ─▒l─▒┼ş'tan Gece Yar─▒s─▒'na kadar)
         currentDk = acilisDk;
         while (currentDk < 1440) {
           if (!slotlar.contains(_dakikaFormatli(currentDk))) {
@@ -306,7 +347,7 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
           currentDk += slotAraligi;
         }
       } else {
-        // Normal mesai saatleri (Örn: 09:00 - 22:00)
+        // Normal mesai saatleri (├ûrn: 09:00 - 22:00)
         int currentDk = acilisDk;
         while (currentDk < kapanisDk) {
           slotlar.add(_dakikaFormatli(currentDk));
@@ -314,7 +355,7 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
         }
       }
     } catch (e) {
-      debugPrint("Slot üretme hatası: $e");
+      debugPrint("Slot ├╝retme hatas─▒: $e");
     }
     return slotlar;
   }
@@ -331,16 +372,63 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
       EsnafModeli esnaf, String slot, List<RandevuModeli> randevular, int hizmetSuresi,
       {Map<String, dynamic>? ajandaVerisi,
       DateTime? hedefTarih,
+      Map<String, dynamic>? hariciTaksiAjandasi,
       String? kanalFiltresi}) {
     final tarih = hedefTarih ?? _seciliTarihNotifier.value;
     final kanal = kanalFiltresi ?? _seciliKanalNotifier.value;
     if (tarih == null) {
-      return "Tarih seçilmedi";
+      return "Tarih se├ğilmedi";
+    }
+
+    if (esnaf.kategori == 'Taksi' && kanal != null && kanal.isNotEmpty) {
+      String tarihKey = DateFormat('yyyy-MM-dd').format(tarih);
+      final taksiVerisi = hariciTaksiAjandasi ?? _taksiAjandaVerisi;
+      var gunlukVeri = taksiVerisi?[tarihKey] as Map<String, dynamic>?;
+      if (gunlukVeri != null && gunlukVeri.containsKey(kanal)) {
+        String durum = gunlukVeri[kanal];
+        if (durum == 'I') {
+          return "─░stirahatte";
+        }
+        
+        String mesaiAcilis = esnaf.calismaSaatleri?['acilis'] ?? "08:00";
+        String mesaiKapanis = esnaf.calismaSaatleri?['kapanis'] ?? "20:00";
+        String nobetBas = esnaf.nobetBaslangic ?? "20:00";
+        String nobetBit = esnaf.nobetBitis ?? "08:00";
+
+        String durumStr = durum.toString();
+        bool worksDay = durumStr.contains('C');
+        bool worksNight = durumStr.contains('N');
+
+        bool inDayRange = _zamanAraligindaMi(mesaiAcilis, mesaiKapanis, slot);
+        bool inNightRange = _zamanAraligindaMi(nobetBas, nobetBit, slot);
+
+        if (inDayRange && !worksDay) {
+           return "Mesai D─▒┼ş─▒";
+        }
+        if (inNightRange && !worksNight) {
+           return "Mesai D─▒┼ş─▒";
+        }
+        if (!inDayRange && !inNightRange) {
+           return "Mesai D─▒┼ş─▒";
+        }
+      } else {
+        final arac = esnaf.araclar.cast<Map<String, dynamic>?>().firstWhere(
+              (a) => a?['plaka'] == kanal,
+              orElse: () => null,
+            );
+        if (arac != null) {
+          String gunAdi = DateFormat('EEEE', 'tr_TR').format(tarih);
+          bool calisiyor = (arac['calismaGunleri'] ?? {})[gunAdi] ?? true;
+          if (!calisiyor) {
+            return "─░stirahatte";
+          }
+        }
+      }
     }
 
     final calisma = ajandaVerisi ?? esnaf.calismaSaatleri;
     if (calisma == null) {
-      return "Çalışma saati yok";
+      return "├çal─▒┼şma saati yok";
     }
 
     int slotDakika = calisma['slotDakika'] ?? calisma['slotAraligi'] ?? 30;
@@ -352,7 +440,7 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
       int oBasDk = _saatiDakikayaCevir(ajandaVerisi['ogleBaslangic']);
       int oBitDk = _saatiDakikayaCevir(ajandaVerisi['ogleBitis']);
       if (sDk >= oBasDk && sDk < oBitDk) {
-        return "Öğle Arası";
+        return "├û─şle Aras─▒";
       }
     }
 
@@ -366,20 +454,20 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                          tarih.day == simdi.day;
 
     if (bugunMu) {
-      // [GÜNCELLEME] Halı Saha gibi slot aralıklı gösterilen yerlerde 
-      // bulunduğumuz saati (başlamış olan slotu) dikkate almamalıyız.
-      int tolerans = esnaf.slotAralikliGoster ? 0 : (esnaf.kategori == 'Araç Kiralama' ? 30 : 10);
+      // [G├£NCELLEME] Hal─▒ Saha gibi slot aral─▒kl─▒ g├Âsterilen yerlerde 
+      // bulundu─şumuz saati (ba┼şlam─▒┼ş olan slotu) dikkate almamal─▒y─▒z.
+      int tolerans = esnaf.slotAralikliGoster ? 0 : (esnaf.kategori == 'Ara├ğ Kiralama' ? 30 : 10);
       if (sBaslangic.isBefore(simdi.subtract(Duration(minutes: tolerans)))) {
-        return "Geçmiş saat";
+        return "Ge├ğmi┼ş saat";
       }
     } else if (tarih.isBefore(DateTime(simdi.year, simdi.month, simdi.day))) {
-      return "Geçmiş tarih";
+      return "Ge├ğmi┼ş tarih";
     }
 
     int kontrolSuresi = hizmetSuresi > 0 ? hizmetSuresi : slotDakika;
     DateTime sBitis = sBaslangic.add(Duration(minutes: kontrolSuresi));
 
-    if (esnaf.kategori != 'Araç Kiralama' &&
+    if (esnaf.kategori != 'Ara├ğ Kiralama' &&
         (calisma['acilis'] != "00:00" || calisma['kapanis'] != "00:00")) {
       String kapanis = calisma['kapanis'] ?? "18:00";
       DateTime kZaman = DateTime(
@@ -419,7 +507,7 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
       DateTime rBas = DateTime(r.tarih.year, r.tarih.month, r.tarih.day,
           int.parse(rSaParcalar[0]), int.parse(rSaParcalar[1]));
 
-      // [YENİ]: Gece Mesaisi Çakışma Kontrolü Zekası
+      // [YEN─░]: Gece Mesaisi ├çak─▒┼şma Kontrol├╝ Zekas─▒
       String acilis = calisma['acilis'] ?? "09:00";
       int acilisDk = _saatiDakikayaCevir(acilis);
       if (_saatiDakikayaCevir(r.saat) < acilisDk) {
@@ -428,14 +516,14 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
 
       DateTime rBit = rBas.add(Duration(minutes: r.sure));
       if (sBaslangic.isBefore(rBit) && sBitis.isAfter(rBas)) {
-        return r.durum == 'Onaylandı' ? "Dolu" : "Rezerve";
+        return r.durum == 'Onayland─▒' ? "Dolu" : "Rezerve";
       }
 
-      if (esnaf.kategori == 'Araç Kiralama' && esnaf.bakimTemizlikSuresi > 0) {
+      if (esnaf.kategori == 'Ara├ğ Kiralama' && esnaf.bakimTemizlikSuresi > 0) {
         DateTime rBakimBit =
             rBit.add(Duration(minutes: esnaf.bakimTemizlikSuresi));
         if (sBaslangic.isBefore(rBakimBit) && sBitis.isAfter(rBit)) {
-          return "Bakım ve Temizlik Sürecinde";
+          return "Bak─▒m ve Temizlik S├╝recinde";
         }
       }
     }
@@ -446,10 +534,12 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
       EsnafModeli esnaf, String slot, List<RandevuModeli> randevular, int hizmetSuresi,
       {Map<String, dynamic>? ajandaVerisi,
       DateTime? hedefTarih,
+      Map<String, dynamic>? hariciTaksiAjandasi,
       String? kanalFiltresi}) {
     return _saatNedenKapali(esnaf, slot, randevular, hizmetSuresi,
             ajandaVerisi: ajandaVerisi,
             hedefTarih: hedefTarih,
+            hariciTaksiAjandasi: hariciTaksiAjandasi,
             kanalFiltresi: kanalFiltresi) ==
         null;
   }
@@ -464,26 +554,28 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
     final personel = _seciliPersonelNotifier.value;
     final kanal = _seciliKanalNotifier.value;
 
+    final isTaksi = esnaf.kategori == 'Taksi';
+
     if (_adController.text.trim().isEmpty ||
         _telController.text.trim().isEmpty ||
-        (hizmetler.isEmpty && !_isAracKiralama) ||
+        (hizmetler.isEmpty && !_isAracKiralama && !isTaksi) ||
         saat == null ||
         tarih == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Lütfen tüm alanları doldurun.")));
-      _islemYapiliyorNotifier.value = false; // [KRİTİK] Hata durumunda butonu tekrar aktif et
+          const SnackBar(content: Text("L├╝tfen t├╝m alanlar─▒ doldurun.")));
+      _islemYapiliyorNotifier.value = false; // [KR─░T─░K] Hata durumunda butonu tekrar aktif et
       return;
     }
 
     int toplamSure = _getToplamSure(hizmetler, esnaf);
 
-    // [YENİ] Minimum Randevu Süresi Kontrolü
+    // [YEN─░] Minimum Randevu S├╝resi Kontrol├╝
     if (toplamSure < esnaf.minimumRandevuSuresi) {
       String sureMetni = esnaf.minimumRandevuSuresi >= 60 
           ? "${esnaf.minimumRandevuSuresi ~/ 60} saat" 
           : "${esnaf.minimumRandevuSuresi} dakika";
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text("Bu dükkan için minimum randevu süresi $sureMetni olarak belirlenmiştir."),
+        content: Text("Bu d├╝kkan i├ğin minimum randevu s├╝resi $sureMetni olarak belirlenmi┼ştir."),
         backgroundColor: Colors.orange.shade800,
       ));
       _islemYapiliyorNotifier.value = false;
@@ -493,23 +585,26 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
     if (!_saatMusaitMi(esnaf, saat, _sonRandevular, toplamSure,
         ajandaVerisi: ajanda)) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text("Seçtiğiniz saat kiralama süresi için uygun değil veya dolu."),
+          content: Text("Se├ğti─şiniz saat kiralama s├╝resi i├ğin uygun de─şil veya dolu."),
           backgroundColor: Colors.red));
       _islemYapiliyorNotifier.value = false;
       return;
     }
 
     String durm =
-        esnaf.randevuOnayModu == 'Otomatik' ? 'Onaylandı' : 'Onay bekliyor';
+        esnaf.randevuOnayModu == 'Otomatik' ? 'Onayland─▒' : 'Onay bekliyor';
+    final aracModu = isTaksi && esnaf.aracOdakliSistem;
 
     String hAdi = "";
     if (_isAracKiralama) {
-      hAdi = "${toplamSure > 1440 ? 'Günlük' : 'Saatlik'} Kiralama";
+      hAdi = "${toplamSure > 1440 ? 'G├╝nl├╝k' : 'Saatlik'} Kiralama";
+    } else if (isTaksi) {
+      hAdi = "Taksi Rezervasyonu";
     } else {
       hAdi = hizmetler.map((h) => h['isim']).join(' + ');
     }
 
-    bool akilliTakipModu = esnaf.kategori == 'Araç Kiralama' && esnaf.akilliTakipModu;
+    bool akilliTakipModu = esnaf.kategori == 'Ara├ğ Kiralama' && esnaf.akilliTakipModu;
     DateTime? bildirimZamani;
     
     if (akilliTakipModu) {
@@ -523,7 +618,7 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
       bildirimZamani = bitisZamani.subtract(Duration(minutes: esnaf.akilliTakipSuresi));
     }
 
-    // Telefon numarasını temizle (Consistency için)
+    // Telefon numaras─▒n─▒ temizle (Consistency i├ğin)
     String temizTel = _telController.text.replaceAll(RegExp(r'[^0-9]'), '');
     if (temizTel.startsWith('0')) temizTel = temizTel.substring(1);
 
@@ -539,23 +634,25 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
       sure: toplamSure,
       hizmetAdi: hAdi,
       randevuKanali: kanal,
-      calisanPersonel: personel,
+      calisanPersonel: aracModu ? null : personel,
       durum: durm,
       akilliTakipAktif: akilliTakipModu,
       bildirimZamani: bildirimZamani,
+      nereden: isTaksi ? _neredenController.text.trim() : null,
+      nereye: isTaksi ? _nereyeController.text.trim() : null,
     );
 
     try {
-      // Randevuyu ekle ve sonucunu al (Bildirim durumu için)
+      // Randevuyu ekle ve sonucunu al (Bildirim durumu i├ğin)
       final String? resHata = await _firestoreServisi.randevuEkle(yeniRandevu);
       
       _islemYapiliyorNotifier.value = false;
 
-      // [YENİ] Randevu alındıktan hemen sonra arka planda bildirim kontrollerini tetikle
+      // [YEN─░] Randevu al─▒nd─▒ktan hemen sonra arka planda bildirim kontrollerini tetikle
       if (mounted) {
         BildirimServisi.syncAkilliTakipBildirimleri(
           widget.kullaniciTel ?? temizTel, 
-          null, // Diyalog göstermesin (arka planda sessiz çalışsın)
+          null, // Diyalog g├Âstermesin (arka planda sessiz ├ğal─▒┼şs─▒n)
           esnafMi: false
         );
       }
@@ -572,29 +669,29 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
         saatGosterim = "$saat - ${_dakikaFormatli(bitisDakika % 1440)}";
       }
 
-      String yaklasikIbaresi = esnaf.kategori == 'Halı Saha' ? '' : 'yaklaşık ';
+      String yaklasikIbaresi = esnaf.kategori == 'Hal─▒ Saha' ? '' : 'yakla┼ş─▒k ';
       String sureMetni = "$toplamSure dk";
       if (_isAracKiralama) {
         int gun = toplamSure ~/ 1440;
         int sa = (toplamSure % 1440) ~/ 60;
         if (gun > 0 && sa > 0) {
-          sureMetni = "$gun Gün $sa Saat";
+          sureMetni = "$gun G├╝n $sa Saat";
         } else if (gun > 0) {
-          sureMetni = "$gun Gün";
+          sureMetni = "$gun G├╝n";
         } else if (sa > 0) {
           sureMetni = "$sa Saat";
         }
       }
 
-      String baslik = _isAracKiralama ? "Araç kiralama rezervasyonunuz" : "Randevunuz";
-      String sureEtiket = _isAracKiralama ? "Kiralama süreniz" : "Randevu süreniz";
-      String mesaj = durm == 'Onaylandı'
-          ? "$baslik $tarihFormat tarihinde saat $saatGosterim olarak onaylanmıştır. $sureEtiket $yaklasikIbaresi$sureMetni sürecektir. ${esnaf.isletmeAdi} olarak teşekkür ederiz."
-          : "$baslik $tarihFormat tarihinde saat $saatGosterim için alınmıştır. $sureEtiket $yaklasikIbaresi$sureMetni sürecektir. ${esnaf.isletmeAdi} olarak teşekkür ederiz. Onay bekleniyor.";
+      String baslik = _isAracKiralama ? "Ara├ğ kiralama rezervasyonunuz" : "Randevunuz";
+      String sureEtiket = _isAracKiralama ? "Kiralama s├╝reniz" : "Randevu s├╝reniz";
+      String mesaj = durm == 'Onayland─▒'
+          ? "$baslik $tarihFormat tarihinde saat $saatGosterim olarak onaylanm─▒┼şt─▒r. $sureEtiket $yaklasikIbaresi$sureMetni s├╝recektir. ${esnaf.isletmeAdi} olarak te┼şekk├╝r ederiz."
+          : "$baslik $tarihFormat tarihinde saat $saatGosterim i├ğin al─▒nm─▒┼şt─▒r. $sureEtiket $yaklasikIbaresi$sureMetni s├╝recektir. ${esnaf.isletmeAdi} olarak te┼şekk├╝r ederiz. Onay bekleniyor.";
 
-      // [YENİ] Bildirim uyarısı ekle
+      // [YEN─░] Bildirim uyar─▒s─▒ ekle
       if (resHata == "ALICI_YOK") {
-        mesaj += "\n\n⚠️ DİKKAT: Bildirimlerin telefonunuza ulaşması için bir kez mobil uygulamadan giriş yapmalısınız!";
+        mesaj += "\n\nÔÜá´©Å D─░KKAT: Bildirimlerin telefonunuza ula┼şmas─▒ i├ğin bir kez mobil uygulamadan giri┼ş yapmal─▒s─▒n─▒z!";
       }
 
       showDialog(
@@ -671,10 +768,11 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text("Randevu Al",
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-            Text(widget.esnaf.isletmeAdi,
-                style: const TextStyle(fontSize: 12, color: Colors.white70)),
+            Text(widget.esnaf.kategori == 'Taksi' ? "${widget.esnaf.isletmeAdi} Rezervasyonu" : "Randevu Al",
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+            if (widget.esnaf.kategori != 'Taksi')
+              Text(widget.esnaf.isletmeAdi,
+                  style: const TextStyle(fontSize: 12, color: Colors.white70)),
           ],
         ),
         elevation: 0,
@@ -695,9 +793,32 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                 padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
                 sliver: SliverMainAxisGroup(
                   slivers: [
-                    if (!_isAracKiralama) ...[
+                    if (esnaf.kategori == 'Taksi') ...[
+                      // [YEN─░] TAKS─░ ├ûZEL AKI┼ŞI
+                      SliverToBoxAdapter(child: _adimBasligi("1", "Zaman Se├ğimi")),
+                      SliverToBoxAdapter(child: _taksiZamanSeciciWidget(esnaf)),
+                      
+                      SliverToBoxAdapter(child: _adimBasligi("2", "G├╝zergah Bilgileri")),
+                      SliverToBoxAdapter(child: _taksiGuzergahBilgileri()),
+
+                      ValueListenableBuilder<String?>(
+                        valueListenable: _seciliSaatNotifier,
+                        builder: (context, saat, _) {
+                          return SliverMainAxisGroup(
+                            slivers: [
+                              SliverToBoxAdapter(child: _adimBasligi("3", "Ara├ğ ve S├╝r├╝c├╝ Se├ğimi")),
+                              if (saat == null) 
+                                const SliverToBoxAdapter(child: Center(child: Padding(padding: EdgeInsets.all(20), child: Text("L├╝tfen ├Ânce saat se├ğiniz.", style: TextStyle(color: Colors.grey))))),
+                              if (saat != null)
+                                SliverToBoxAdapter(child: _kanalSeciciWidget(esnaf)),
+                            ],
+                          );
+                        },
+                      ),
+                    ] else ...[
+                      if (!_isAracKiralama) ...[
                         SliverToBoxAdapter(
-                            child: _adimBasligi("1", "Hizmet Seçin")),
+                            child: _adimBasligi("1", "Hizmet Se├ğin")),
                         ValueListenableBuilder<List<Map<String, dynamic>>>(
                           valueListenable: _seciliHizmetlerNotifier,
                           builder: (context, seciliHizmetler, _) {
@@ -736,11 +857,11 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                                         children: [
                                           Text("${h['sure']} Dakika"),
                                           if (showPrice) ...[
-                                            const Text(" • "),
+                                            const Text(" ÔÇó "),
                                             Text(
                                               ucret > 0
                                                   ? "${ucret.toStringAsFixed(0)} TL"
-                                                  : "Ücretsiz",
+                                                  : "├£cretsiz",
                                               style: TextStyle(
                                                   fontWeight: FontWeight.bold,
                                                   color: ucret > 0
@@ -774,15 +895,17 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                           valueListenable: _seciliHizmetlerNotifier,
                           builder: (context, seciliHizmetler, _) {
                             if (seciliHizmetler.isEmpty) return const SliverToBoxAdapter(child: SizedBox.shrink());
-                            bool personelModu = esnaf.randevularPersonelAdinaAlinsin;
-                            bool kanalSecilmeli = !personelModu && (esnaf.kanallar?.length ?? 0) > 1;
+                            bool isTaksi = esnaf.kategori == 'Taksi';
+                            bool aracModu = isTaksi && esnaf.aracOdakliSistem;
+                            bool personelModu = !aracModu && esnaf.randevularPersonelAdinaAlinsin;
+                            bool kanalSecilmeli = !personelModu && !aracModu && (esnaf.kanallar?.length ?? 0) > 1;
 
                             return SliverMainAxisGroup(
                               slivers: [
                                 SliverToBoxAdapter(
                                   child: Column(
                                     children: [
-                                      if (personelModu || kanalSecilmeli) ...[
+                                      if (aracModu || personelModu || kanalSecilmeli) ...[
                                         ValueListenableBuilder<String?>(
                                           valueListenable: _seciliPersonelNotifier,
                                           builder: (context, personel, _) {
@@ -791,20 +914,20 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                                                 (personelModu && personel != null)
                                                     ? "Personel: $personel"
                                                     : (personelModu
-                                                        ? "Personel Seçimi"
-                                                        : "Bölüm / Masa Seçimi"));
+                                                        ? "Personel Se├ğimi"
+                                                        : "B├Âl├╝m / Masa Se├ğimi"));
                                           },
                                         ),
                                         _kanalSeciciWidget(esnaf),
                                       ] else if (esnaf.kanallar != null && esnaf.kanallar!.isNotEmpty)
-                                        _seciliBilgiKarti("Seçilen Bölüm", _seciliKanalNotifier.value ?? ""),
+                                        _seciliBilgiKarti("Se├ğilen B├Âl├╝m", _seciliKanalNotifier.value ?? ""),
                                     ],
                                   ),
                                 ),
                                 ValueListenableBuilder<String?>(
                                   valueListenable: _seciliKanalNotifier,
                                   builder: (context, kanal, _) {
-                                    bool kanalGerekli = personelModu || kanalSecilmeli;
+                                    bool kanalGerekli = aracModu || personelModu || kanalSecilmeli;
                                     bool kanalSecili = kanal != null && kanal.isNotEmpty;
                                     if (kanalGerekli && !kanalSecili) return const SliverToBoxAdapter(child: SizedBox.shrink());
                                     return SliverMainAxisGroup(
@@ -812,7 +935,7 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                                         SliverToBoxAdapter(
                                           child: Column(
                                             children: [
-                                              _adimBasligi("3", "Tarih Seçin"),
+                                              _adimBasligi("3", "Tarih Se├ğin"),
                                               _tarihSeciciWidget(esnaf),
                                             ],
                                           ),
@@ -823,7 +946,7 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                                             if (tarih == null) return const SliverToBoxAdapter(child: SizedBox.shrink());
                                             return SliverMainAxisGroup(
                                               slivers: [
-                                                SliverToBoxAdapter(child: _adimBasligi("4", "Saat Seçin")),
+                                                SliverToBoxAdapter(child: _adimBasligi("4", "Saat Se├ğin")),
                                                 _saatSecimiBolumuSliver(esnaf),
                                               ],
                                             );
@@ -843,7 +966,7 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                         SliverToBoxAdapter(
                           child: Column(
                             children: [
-                              _adimBasligi("1", "Alış ve İade Bilgileri"),
+                              _adimBasligi("1", "Al─▒┼ş ve ─░ade Bilgileri"),
                               _aracKiralamaZamanSecici(esnaf),
                             ],
                           ),
@@ -855,13 +978,14 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                               return SliverToBoxAdapter(
                                 child: Column(
                                   children: [
-                                    _adimBasligi("2", "Araç Seçiniz"),
+                                    _adimBasligi("2", "Ara├ğ Se├ğiniz"),
                                     _kanalSeciciWidget(esnaf),
                                   ],
                                 ),
                               );
                             }),
                       ],
+                    ],
 
                     ValueListenableBuilder<String?>(
                       valueListenable: _seciliSaatNotifier,
@@ -880,7 +1004,7 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                               child: Column(
                                 children: [
                                   const SizedBox(height: 30),
-                                  _adimBasligi(_isAracKiralama ? "3" : "5", "İletişim Bilgileri"),
+                                  _adimBasligi(_isAracKiralama ? "3" : (esnaf.kategori == 'Taksi' ? "4" : "5"), "─░leti┼şim Bilgileri"),
                                   Container(
                                     padding: const EdgeInsets.all(20),
                                     decoration: BoxDecoration(
@@ -900,7 +1024,7 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                                             controller: _telController,
                                             keyboardType: TextInputType.phone,
                                             decoration: const InputDecoration(
-                                                labelText: "Telefon Numarası",
+                                                labelText: "Telefon Numaras─▒",
                                                 prefixIcon: Icon(Icons.phone_outlined),
                                                 border: OutlineInputBorder())),
                                       ],
@@ -943,16 +1067,29 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                                           final toplamSure = _getToplamSure(hizmetler, widget.esnaf);
                                           bool musait = saat != null &&
                                               _saatMusaitMi(widget.esnaf, saat, _sonRandevular, toplamSure, ajandaVerisi: _gununAjandaVerisi);
-                                          bool butonAktif = saat != null && (_isAracKiralama || hizmetler.isNotEmpty) && musait;
+                                          bool butonAktif = saat != null && (_isAracKiralama || hizmetler.isNotEmpty || widget.esnaf.kategori == 'Taksi') && musait;
 
                                           String butonMetni = "RANDEVUYU TAMAMLA";
                                           if (_isAracKiralama) {
                                             if (toplamSure <= 0) {
-                                              butonMetni = "ZAMAN ARALIĞI SEÇİN";
+                                              butonMetni = "ZAMAN ARALI─ŞI SE├ç─░N";
                                             } else if (kanal == null || kanal.isEmpty) {
-                                              butonMetni = "ARAÇ SEÇİNİZ";
+                                              butonMetni = "ARA├ç SE├ç─░N─░Z";
                                             } else if (!musait) {
-                                              butonMetni = "SEÇİLEN ARAÇ KİRALANDI";
+                                              butonMetni = "SE├ç─░LEN ARA├ç K─░RALANDI";
+                                            }
+                                          }
+
+                                          if (widget.esnaf.kategori == 'Taksi') {
+                                            if (saat == null) {
+                                              butonMetni = "ZAMAN SE├ç─░N─░Z";
+                                              butonAktif = false;
+                                            } else if (_neredenController.text.isEmpty || _nereyeController.text.isEmpty) {
+                                              butonMetni = "G├£ZERGAH G─░R─░N─░Z";
+                                              butonAktif = false;
+                                            } else if (kanal == null || kanal.isEmpty) {
+                                              butonMetni = "ARA├ç SE├ç─░N─░Z";
+                                              butonAktif = false;
                                             }
                                           }
 
@@ -976,21 +1113,21 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                                                           saatGosterim = "$saat - ${_dakikaFormatli(bitDakika % 1440)}";
                                                         }
                                                         bool isSelected = kendimSectim || _isAracKiralama;
-                                                        String prefix = _isAracKiralama ? "Araç Alış Saatini" : "Randevu saatini";
+                                                        String prefix = _isAracKiralama ? "Ara├ğ Al─▒┼ş Saatini" : "Randevu saatini";
                                                         
-                                                        // [YENİ] Profesyonel Gece Yarısı Metni
+                                                        // [YEN─░] Profesyonel Gece Yar─▒s─▒ Metni
                                                         String gosterimMetni = isSelected
-                                                              ? "$prefix $saatGosterim olarak seçtiniz"
-                                                              : "Size uygun en yakın randevu saati $saatGosterim olarak belirlendi.";
+                                                              ? "$prefix $saatGosterim olarak se├ğtiniz"
+                                                              : "Size uygun en yak─▒n randevu saati $saatGosterim olarak belirlendi.";
 
-                                                        if (isSelected && !(_isAracKiralama) && widget.esnaf.kategori == 'Halı Saha') {
+                                                        if (isSelected && !(_isAracKiralama) && widget.esnaf.kategori == 'Hal─▒ Saha') {
                                                            final int sDk = _saatiDakikayaCevir(saat);
                                                            if (sDk >= 0 && sDk < 360) {
                                                               final DateTime dunyaGunu = tarih;
                                                               final DateTime oncekiGun = dunyaGunu.subtract(const Duration(days: 1));
                                                               final String formatOnce = DateFormat('d MMMM', 'tr_TR').format(oncekiGun);
                                                               final String formatBugun = DateFormat('d MMMM', 'tr_TR').format(dunyaGunu);
-                                                              gosterimMetni = "Randevunuz $formatOnce'yi $formatBugun'e bağlayan gece gerçekleşecektir.";
+                                                              gosterimMetni = "Randevunuz $formatOnce'yi $formatBugun'e ba─şlayan gece ger├ğekle┼şecektir.";
                                                            }
                                                         }
 
@@ -1027,6 +1164,15 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                       });
                 });
           }),
+      floatingActionButton: widget.esnaf.kategori == 'Taksi' 
+        ? SosButonu(
+            randevuId: "on_rezervasyon", 
+            esnafId: widget.esnaf.id, 
+            kullaniciTel: widget.kullaniciTel ?? "", 
+            baslatanRol: 'Yolcu', 
+            adminTel: widget.esnaf.telefon
+          )
+        : null,
     );
   }
 
@@ -1085,7 +1231,7 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            _eliteTarihKarti("ALIŞ TARİHİ", basT, basS, true),
+                            _eliteTarihKarti("ALI┼Ş TAR─░H─░", basT, basS, true),
                             Column(
                               children: [
                                 Container(
@@ -1099,12 +1245,12 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                                   child: Column(
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
-                                      const Text("TOPLAM SÜRE",
+                                      const Text("TOPLAM S├£RE",
                                           style: TextStyle(color: Colors.indigo, fontSize: 9, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
                                       const SizedBox(height: 10),
                                       if (!hataVar && dGun > 0) ...[
                                         Text(dGun.toString(), style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: Colors.black, height: 1.0)),
-                                        const Text("GÜN", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
+                                        const Text("G├£N", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
                                       ],
                                       if (!hataVar && dGun > 0 && dSaat > 0)
                                         const Padding(
@@ -1122,7 +1268,7 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                                         ),
                                       if (!hataVar && dDakika > 0 && dGun == 0) ...[
                                         Text(dDakika.toString(), style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: Colors.black, height: 1.0)),
-                                        const Text("DAKİKA", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
+                                        const Text("DAK─░KA", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
                                       ],
                                       if (hataVar || (dGun == 0 && dSaat == 0 && dDakika == 0))
                                         const Text("--", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.grey)),
@@ -1130,10 +1276,10 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                                   ),
                                 ),
                                 const SizedBox(height: 10),
-                                Text(hataVar ? "Geçersiz aralık!" : "Lütfen süreyi onaylayın.", style: const TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.w500)),
+                                Text(hataVar ? "Ge├ğersiz aral─▒k!" : "L├╝tfen s├╝reyi onaylay─▒n.", style: const TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.w500)),
                               ],
                             ),
-                            _eliteTarihKarti("İADE TARİHİ", bitT, bitS, false),
+                            _eliteTarihKarti("─░ADE TAR─░H─░", bitT, bitS, false),
                           ],
                         ),
                       ],
@@ -1149,7 +1295,7 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
   }
 
   Widget _eliteTarihKarti(String etiket, DateTime? tarih, String? saat, bool alisMi) {
-    String gunText = "Seçiniz";
+    String gunText = "Se├ğiniz";
     String ay = "";
     String yil = "";
     String gunAdi = "";
@@ -1316,14 +1462,16 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
   }
 
   Widget _kanalSeciciWidget(EsnafModeli esnaf) {
-    bool personelModu = esnaf.randevularPersonelAdinaAlinsin;
+    bool isTaksi = esnaf.kategori == 'Taksi';
+    bool aracModu = isTaksi && esnaf.aracOdakliSistem;
+    bool personelModu = !aracModu && esnaf.randevularPersonelAdinaAlinsin;
 
     return ValueListenableBuilder<String?>(
       valueListenable: _seciliKanalNotifier,
       builder: (context, seciliKanal, _) {
-        // [GÜNCELLEME] Pasif (aktif olmayan) araçları listeden çıkarıyoruz
+        // [G├£NCELLEME] Pasif (aktif olmayan) ara├ğlar─▒ listeden ├ğ─▒kar─▒yoruz
         List<dynamic> kanallar = esnaf.kanallar ?? [];
-        if (esnaf.kategori == 'Araç Kiralama') {
+        if (esnaf.kategori == 'Ara├ğ Kiralama') {
           kanallar = kanallar.where((k) {
             if (k is Map) return k["aktif"] ?? true;
             return true;
@@ -1337,7 +1485,7 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
             children: kanallar.map((k) {
               String ad = ""; String resim = ""; String plaka = "";
               if (k is Map) {
-                ad = k['ad']?.toString() ?? k['plaka']?.toString() ?? k['marka']?.toString() ?? "İsimsiz Araç";
+                ad = k['ad']?.toString() ?? k['plaka']?.toString() ?? k['marka']?.toString() ?? "─░simsiz Ara├ğ";
                 resim = k['resim']?.toString() ?? ""; plaka = k['plaka']?.toString() ?? "";
               } else {
                 ad = k.toString();
@@ -1349,13 +1497,13 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
               if (basSaat != null && toplamSure > 0) {
                 nedenKapali = _saatNedenKapali(esnaf, basSaat, _sonRandevular, toplamSure, ajandaVerisi: _gununAjandaVerisi, kanalFiltresi: ad);
                 blocked = nedenKapali != null;
-                if (nedenKapali == "Bakım ve Temizlik Sürecinde" && esnaf.bakimSurecindeRandevuAlinsin) blocked = false;
+                if (nedenKapali == "Bak─▒m ve Temizlik S├╝recinde" && esnaf.bakimSurecindeRandevuAlinsin) blocked = false;
 
-                // [YENİ] İade saatini hesapla
+                // [YEN─░] ─░ade saatini hesapla
                 if (blocked) {
                   final iadeZamani = _getAracIadeZamani(ad, basSaat, toplamSure);
                   if (iadeZamani != null) {
-                    iadeBilgisi = "İade: ${DateFormat('dd MMM HH:mm', 'tr_TR').format(iadeZamani)}";
+                    iadeBilgisi = "─░ade: ${DateFormat('dd MMM HH:mm', 'tr_TR').format(iadeZamani)}";
                   }
                 }
               }
@@ -1403,14 +1551,50 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
           );
         }
 
-        final List<dynamic> hamListe = personelModu ? (esnaf.personeller ?? []) : (esnaf.kanallar ?? []);
+        final List<dynamic> hamListe = personelModu ? (esnaf.personeller ?? []) : (aracModu ? esnaf.araclar : (esnaf.kanallar ?? []));
         List<dynamic> liste = List.from(hamListe);
+
+        // [TAKS─░ ├ûZEL] N├Âbet ├çizelgesi ve Saat Filtreleme
+        if (isTaksi && aracModu) {
+          final DateTime? seciliTarih = _seciliTarihNotifier.value;
+          final String? seciliSaat = _seciliSaatNotifier.value;
+
+          if (seciliTarih != null && seciliSaat != null) {
+            String tarihKey = DateFormat('yyyy-MM-dd').format(seciliTarih);
+            var gunlukVeri = _taksiAjandaVerisi?[tarihKey] as Map<String, dynamic>?;
+
+            String mesaiAcilis = esnaf.calismaSaatleri?['acilis'] ?? "08:00";
+            String mesaiKapanis = esnaf.calismaSaatleri?['kapanis'] ?? "20:00";
+            String nobetBas = esnaf.nobetBaslangic ?? "20:00";
+            String nobetBit = esnaf.nobetBitis ?? "08:00";
+
+            bool isGunduz = _zamanAraligindaMi(mesaiAcilis, mesaiKapanis, seciliSaat);
+            bool isNobet = _zamanAraligindaMi(nobetBas, nobetBit, seciliSaat);
+
+            liste = liste.where((arac) {
+              String plaka = arac['plaka'] ?? "";
+              String durum = (gunlukVeri?[plaka] ?? "C").toString(); // Varsay─▒lan ├çal─▒┼şan (English C)
+
+              if (durum.contains('I')) return false; // ─░stirahatli her zaman gizli
+              
+              if (isGunduz && durum.contains('C')) return true; // G├╝nd├╝z ├ğal─▒┼şanlar
+              if (isNobet && durum.contains('N')) return true;  // N├Âbet├ği ├ğal─▒┼şanlar
+
+              // E─şer saat her iki dilime de girmiyorsa (mesai d─▒┼ş─▒) veya durum o saate uymuyorsa gizle
+              return false;
+            }).toList();
+          } else if (seciliSaat == null) {
+            // Saat se├ğilmediyse bo┼ş liste d├Âns├╝n (Hata mesaj─▒ zaten build'de var)
+            liste = [];
+          }
+        }
 
         return Wrap(
           spacing: 10, runSpacing: 10,
           children: liste.map((item) {
             String ad = ""; String kanalDegeri = "";
             if (personelModu) { ad = item['isim']?.toString() ?? ""; kanalDegeri = item['kanal']?.toString() ?? ""; }
+            else if (aracModu) { ad = item['plaka']?.toString() ?? ""; kanalDegeri = ad; }
             else { ad = item is Map ? (item['ad'] ?? item['plaka'] ?? "") : item.toString(); kanalDegeri = ad; }
             bool secili = personelModu ? (_seciliPersonelNotifier.value == ad) : (seciliKanal == kanalDegeri);
             return ChoiceChip(
@@ -1435,7 +1619,7 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
     final hizmetler = _seciliHizmetlerNotifier.value;
     final toplamSure = _getToplamSure(hizmetler, esnaf);
 
-    // [YENİ] Slotları Gruplandır (Gece vs Gündüz)
+    // [YEN─░] Slotlar─▒ Grupland─▒r (Gece vs G├╝nd├╝z)
     final geceSlotlari = slotlar.where((s) => _saatiDakikayaCevir(s) < 360).toList();
     final gunduzSlotlari = slotlar.where((s) => _saatiDakikayaCevir(s) >= 360).toList();
 
@@ -1449,8 +1633,8 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
           builder: (context, seciliSaat, _) {
             return SliverMainAxisGroup(
               slivers: [
-                // 1. GECE YARISI BÖLÜMÜ
-                if (geceSlotlari.isNotEmpty && esnaf.kategori == 'Halı Saha') ...[
+                // 1. GECE YARISI B├ûL├£M├£
+                if (geceSlotlari.isNotEmpty && esnaf.kategori == 'Hal─▒ Saha') ...[
                   SliverToBoxAdapter(
                     child: ValueListenableBuilder<DateTime?>(
                       valueListenable: _seciliTarihNotifier,
@@ -1463,7 +1647,7 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                         
                         return _vakitBasligi(
                           Icons.nightlight_round, 
-                          "Gece Yarısı: $formatOnce'yi $formatBugun'e bağlayan gece", 
+                          "Gece Yar─▒s─▒: $formatOnce'yi $formatBugun'e ba─şlayan gece", 
                           Colors.indigo.shade700
                         );
                       },
@@ -1472,12 +1656,12 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                   _saatGridiUret(esnaf, geceSlotlari, seciliSaat, toplamSure),
                 ],
 
-                // 2. GÜNDÜZ & AKŞAM BÖLÜMÜ
+                // 2. G├£ND├£Z & AK┼ŞAM B├ûL├£M├£
                 if (gunduzSlotlari.isNotEmpty) ...[
                   SliverToBoxAdapter(
                     child: _vakitBasligi(
                       Icons.wb_sunny_rounded, 
-                      "Gündüz & Akşam Seansları", 
+                      "G├╝nd├╝z & Ak┼şam Seanslar─▒", 
                       Colors.orange.shade800
                     ),
                   ),
@@ -1510,7 +1694,7 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
     return SliverGrid(
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: esnaf.slotAralikliGoster ? 3 : 4,
-          childAspectRatio: 1.8, // [GÜNCELLEME] Dikey alan için oran biraz artırıldı
+          childAspectRatio: 1.8, // [G├£NCELLEME] Dikey alan i├ğin oran biraz art─▒r─▒ld─▒
           mainAxisSpacing: 10,
           crossAxisSpacing: 10),
       delegate: SliverChildBuilderDelegate((c, i) {
@@ -1544,9 +1728,9 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                     : (!musait 
                         ? Colors.grey.shade200 
                     : (geceMi ? Colors.indigo.shade50 : (slotDk >= 1080 ? Colors.orange.shade50 : Colors.white))),
-                borderRadius: BorderRadius.circular(8)), // Köşeler biraz daha yumuşatıldı
+                borderRadius: BorderRadius.circular(8)), // K├Â┼şeler biraz daha yumu┼şat─▒ld─▒
             child: Center(
-              child: Column( // [İYİLEŞTİRME]: Row yerine Column ile alt alta dizilerek sığdırıldı
+              child: Column( // [─░Y─░LE┼ŞT─░RME]: Row yerine Column ile alt alta dizilerek s─▒─şd─▒r─▒ld─▒
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   if (geceMi) ...[
@@ -1567,7 +1751,7 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
                   Text(slotMetni,
                       style: TextStyle(
                           color: musait ? (seciliSaat == slot ? Colors.white : Colors.black) : Colors.grey,
-                          fontSize: seciliSaat == slot ? 14 : 12, // Sığması için fontlar milimetrik optimize edildi
+                          fontSize: seciliSaat == slot ? 14 : 12, // S─▒─şmas─▒ i├ğin fontlar milimetrik optimize edildi
                           fontWeight: seciliSaat == slot ? FontWeight.w900 : FontWeight.bold)),
                 ],
               ),
@@ -1578,7 +1762,7 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
     );
   }
 
-  // [YENİ] Dolu aracın iade zamanını hesaplayan yardımcı fonksiyon
+  // [YEN─░] Dolu arac─▒n iade zaman─▒n─▒ hesaplayan yard─▒mc─▒ fonksiyon
   DateTime? _getAracIadeZamani(String plaka, String basSaat, int toplamSure) {
     try {
       final tarih = _seciliTarihNotifier.value;
@@ -1591,21 +1775,140 @@ class _RandevuEkraniState extends State<RandevuEkrani> {
 
       for (var r in _sonRandevular) {
         if (r.randevuKanali != plaka) continue;
-        if (r.durum != 'Onaylandı' && r.durum != 'Onay bekliyor') continue;
+        if (r.durum != 'Onayland─▒' && r.durum != 'Onay bekliyor') continue;
 
         final rSaParcalar = r.saat.split(':');
         DateTime rBas = DateTime(r.tarih.year, r.tarih.month, r.tarih.day,
             int.parse(rSaParcalar[0]), int.parse(rSaParcalar[1]));
         DateTime rBit = rBas.add(Duration(minutes: r.sure));
 
-        // Eğer seçili zaman dilimi ile bu randevu çakışıyorsa, iade saati bu randevunun bitişidir
+        // E─şer se├ğili zaman dilimi ile bu randevu ├ğak─▒┼ş─▒yorsa, iade saati bu randevunun biti┼şidir
         if (sBaslangic.isBefore(rBit) && sBitis.isAfter(rBas)) {
           return rBit;
         }
       }
     } catch (e) {
-      debugPrint("İade saati hesaplama hatası: $e");
+      debugPrint("─░ade saati hesaplama hatas─▒: $e");
     }
     return null;
+  }
+
+  // [YEN─░] Taksi ─░├ğin ├ûzel UI Metotlar─▒
+  Widget _taksiZamanSeciciWidget(EsnafModeli esnaf) {
+    return ValueListenableBuilder<DateTime?>(
+      valueListenable: _seciliTarihNotifier,
+      builder: (context, tarih, _) => ValueListenableBuilder<String?>(
+        valueListenable: _seciliSaatNotifier,
+        builder: (context, saat, _) {
+          return Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.grey.shade100),
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 10, offset: const Offset(0, 5))],
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: InkWell(
+                    onTap: () => _tarihSec(true),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text("TAR─░H", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey, letterSpacing: 1.2)),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            const Icon(Icons.calendar_today_outlined, size: 18, color: Colors.indigo),
+                            const SizedBox(width: 8),
+                            Text(
+                              tarih == null ? "Se├ğiniz" : DateFormat('dd MMMM', 'tr_TR').format(tarih),
+                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                Container(width: 1, height: 40, color: Colors.grey.shade200),
+                Expanded(
+                  child: InkWell(
+                    onTap: () => _saatSec(tarih ?? DateTime.now(), true),
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text("SAAT", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey, letterSpacing: 1.2)),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              const Icon(Icons.access_time, size: 18, color: Colors.indigo),
+                              const SizedBox(width: 8),
+                              Text(
+                                saat ?? "Se├ğiniz",
+                                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _taksiGuzergahBilgileri() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.grey.shade100),
+      ),
+      child: Column(
+        children: [
+          TextField(
+            controller: _neredenController,
+            decoration: const InputDecoration(
+              hintText: "Nereden (Al─▒┼ş Noktas─▒)",
+              prefixIcon: Icon(Icons.my_location, color: Colors.green),
+              border: InputBorder.none,
+            ),
+          ),
+          const Divider(),
+          TextField(
+            controller: _nereyeController,
+            decoration: const InputDecoration(
+              hintText: "Nereye (Var─▒┼ş Noktas─▒)",
+              prefixIcon: Icon(Icons.location_on, color: Colors.red),
+              border: InputBorder.none,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  bool _zamanAraligindaMi(String? baslangic, String? bitis, String? saat) {
+    if (baslangic == null || bitis == null || saat == null) return false;
+    if (baslangic == "00:00" && bitis == "00:00") return true; 
+
+    int sDk = _saatiDakikayaCevir(saat);
+    int basDakika = _saatiDakikayaCevir(baslangic);
+    int bitDakika = _saatiDakikayaCevir(bitis);
+
+    if (bitDakika <= basDakika) {
+      return sDk >= basDakika || sDk < bitDakika;
+    }
+    return sDk >= basDakika && sDk < bitDakika;
   }
 }

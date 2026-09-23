@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../modeller/esnaf_modeli.dart';
-import '../esnaf_detay_ekrani.dart';
+import '../musteri_ekrani.dart';
 import '../randevu_ekrani.dart';
 import 'taksi_musteri_ekrani.dart';
 import 'taksi_randevu_ekrani.dart';
@@ -18,7 +18,7 @@ class TaksiYonlendirme {
       );
     }
 
-    return EsnafDetayEkrani(
+    return MusteriEkrani(
       esnaf: esnaf,
       kullaniciTel: kullaniciTel,
     );

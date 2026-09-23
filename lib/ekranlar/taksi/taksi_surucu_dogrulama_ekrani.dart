@@ -2,22 +2,22 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart'; // kIsWeb için
 import 'package:image_picker/image_picker.dart';
 import 'dart:io' show File;
-import '../servisler/firestore_servisi.dart';
-import '../modeller/esnaf_modeli.dart';
-import '../widgets/ana_buton.dart';
+import '../../servisler/firestore_servisi.dart';
+import '../../modeller/esnaf_modeli.dart';
+import '../../widgets/ana_buton.dart';
 
-class SurucuDogrulamaEkrani extends StatefulWidget {
+class TaksiSurucuDogrulamaEkrani extends StatefulWidget {
   final EsnafModeli esnaf;
   final String? soforTel; // Şoförün telefon numarasını doğrudan alalım
   final String? baslangicBelge; // Belirli bir belgeden başlatmak için
 
-  const SurucuDogrulamaEkrani({super.key, required this.esnaf, this.soforTel, this.baslangicBelge});
+  const TaksiSurucuDogrulamaEkrani({super.key, required this.esnaf, this.soforTel, this.baslangicBelge});
 
   @override
-  State<SurucuDogrulamaEkrani> createState() => _SurucuDogrulamaEkraniState();
+  State<TaksiSurucuDogrulamaEkrani> createState() => _TaksiSurucuDogrulamaEkraniState();
 }
 
-class _SurucuDogrulamaEkraniState extends State<SurucuDogrulamaEkrani> {
+class _TaksiSurucuDogrulamaEkraniState extends State<TaksiSurucuDogrulamaEkrani> {
   final _firestoreServisi = FirestoreServisi();
   final _picker = ImagePicker();
   

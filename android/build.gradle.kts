@@ -7,21 +7,17 @@ allprojects {
 
 project.extra.set("kotlin_version", "2.2.20")
 
-val newBuildDir: Directory =
-    rootProject.layout.buildDirectory
-        .dir("../../build")
-        .get()
-rootProject.layout.buildDirectory.value(newBuildDir)
+rootProject.layout.buildDirectory.set(file("../../build"))
 
 subprojects {
-    val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
-    project.layout.buildDirectory.value(newSubprojectBuildDir)
+    project.layout.buildDirectory.set(file("../../build/${project.name}"))
 }
 
 subprojects {
-    project.evaluationDependsOn(":app")
+// project.evaluationDependsOn(":app")
 }
 
 tasks.register<Delete>("clean") {
+    description = "Cleans the build directory"
     delete(rootProject.layout.buildDirectory)
 }
