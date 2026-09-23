@@ -41,10 +41,15 @@ class _TaksiRandevuEkraniState extends State<TaksiRandevuEkrani> {
   Map<String, dynamic>? _taksiAjandaVerisi;
   StreamSubscription? _taksiAjandaSub;
   StreamSubscription? _randevularSub;
-  Timer? _debounceTimer;
+  Timer? _nereyeDebounce;
+  int _aramaIstekNo = 0;
   Position? _mevcutKullaniciKonumu;
+  final FocusNode _nereyeFocus = FocusNode();
+  List<String> _nereyeOnerileri = [];
+  bool _nereyeAraniyor = false;
+  final Map<String, List<String>> _aramaOnbellegi = {};
 
-  final String _googleApiKey = "AIzaSyC55S5CY0E_WxTmwq-TvpF2Tp_yrBdrQb8"; 
+  final String _googleApiKey = "AIzaSyC55S5CY0E_WxTmwq-TvpF2Tp_yrBdrQb8";
 
   @override
   void initState() {
@@ -58,7 +63,17 @@ class _TaksiRandevuEkraniState extends State<TaksiRandevuEkrani> {
     _seciliTarihNotifier.addListener(_updateStreams);
 
     _neredenController.addListener(() { if (mounted) setState(() {}); });
-    _nereyeController.addListener(() { if (mounted) setState(() {}); });
+    _nereyeController.addListener(_nereyeMetinDegisti);
+    _nereyeFocus.addListener(() {
+      if (!_nereyeFocus.hasFocus && mounted) {
+        // Kısa gecikme: öneriye tıklamaya fırsat ver
+        Future.delayed(const Duration(milliseconds: 180), () {
+          if (mounted && !_nereyeFocus.hasFocus) {
+            setState(() => _nereyeOnerileri = []);
+          }
+        });
+      }
+    });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _updateStreams();
@@ -68,8 +83,10 @@ class _TaksiRandevuEkraniState extends State<TaksiRandevuEkrani> {
 
   @override
   void dispose() {
+    _nereyeDebounce?.cancel();
     _taksiAjandaSub?.cancel();
     _randevularSub?.cancel();
+    _nereyeFocus.dispose();
     _adController.dispose();
     _telController.dispose();
     _neredenController.dispose();
@@ -81,6 +98,40 @@ class _TaksiRandevuEkraniState extends State<TaksiRandevuEkrani> {
     _islemYapiliyorNotifier.dispose();
     _konumYukleniyorNotifier.dispose();
     super.dispose();
+  }
+
+  void _nereyeMetinDegisti() {
+    if (!mounted) return;
+    setState(() {}); // buton aktifliği vb.
+
+    final q = _nereyeController.text.trim();
+    _nereyeDebounce?.cancel();
+
+    if (q.length < 2) {
+      setState(() {
+        _nereyeOnerileri = [];
+        _nereyeAraniyor = false;
+      });
+      return;
+    }
+
+    // Önbellekten anında göster
+    final cached = _aramaOnbellegi[q.toLowerCase()];
+    if (cached != null && cached.isNotEmpty) {
+      setState(() => _nereyeOnerileri = List.from(cached));
+    }
+
+    _nereyeDebounce = Timer(const Duration(milliseconds: 200), () {
+      _nereyeAramayiCalistir(q);
+    });
+  }
+
+  Future<T?> _zamanAsimli<T>(Future<T> future, {int ms = 1800}) async {
+    try {
+      return await future.timeout(Duration(milliseconds: ms));
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Otomatik Mevcut Konumu Alır
@@ -108,81 +159,336 @@ class _TaksiRandevuEkraniState extends State<TaksiRandevuEkrani> {
     }
   }
 
-  /// Karma Arama: Google (Places) + Nominatim (OSM)
-  Future<List<String>> _gelismisAdresArama(String sorgu) async {
-    String q = sorgu.trim();
-    if (q.length < 2) return [];
+  String _normalizeTr(String s) {
+    // Türkçe İ/I önce düzeltilmeli; aksi halde toLowerCase web'de bozuk üretir
+    var t = s
+        .replaceAll('İ', 'i')
+        .replaceAll('I', 'ı')
+        .toLowerCase()
+        .replaceAll('ş', 's')
+        .replaceAll('ğ', 'g')
+        .replaceAll('ü', 'u')
+        .replaceAll('ö', 'o')
+        .replaceAll('ç', 'c');
+    // Birleşik nokta kalıntısı (i̇)
+    t = t.replaceAll('\u0307', '');
+    return t;
+  }
 
-    List<String> sonuclar = [];
+  /// Web'de JSON alanları undefined gelebilir; her zaman güvenli String üret.
+  String _metin(dynamic v) {
+    if (v == null) return '';
+    final s = v.toString().trim();
+    if (s.isEmpty || s == 'null' || s == 'undefined') return '';
+    return s;
+  }
 
-    // 1. ADIM: Yerel Firestore Mekan Araması
-    try {
-      final yerel = await _firestoreServisi.mekanArama(q);
-      sonuclar.addAll(yerel);
-    } catch (_) {}
+  /// Sorgudaki her kelime, sonuçta bir kelimenin öneki VEYA içinde geçmeli.
+  bool _sorguEslesiyor(String sonuc, String sorgu) {
+    final sk = _normalizeTr(sorgu)
+        .split(RegExp(r'\s+'))
+        .where((k) => k.isNotEmpty && k.length >= 2)
+        .toList();
+    if (sk.isEmpty) return true;
+    final sonucNorm = _normalizeTr(sonuc);
+    final ak = sonucNorm
+        .split(RegExp(r'[\s,./\-]+'))
+        .where((k) => k.isNotEmpty)
+        .toList();
+    for (final k in sk) {
+      final ok = ak.any((a) => a.startsWith(k) || a.contains(k)) || sonucNorm.contains(k);
+      if (!ok) return false;
+    }
+    return true;
+  }
 
-    // 2. ADIM: Google Places Autocomplete
-    String locationBias = "";
-    if (_mevcutKullaniciKonumu != null) {
-      locationBias = "&location=${_mevcutKullaniciKonumu!.latitude},${_mevcutKullaniciKonumu!.longitude}&radius=50000";
+  /// "derecik ilk" → "Derecik ilköğretim okulu Trabzon" gibi tamamlanmış sorgular.
+  List<String> _genisletilmisSorgular(String q) {
+    final set = <String>{};
+    final trim = q.trim();
+    if (trim.isEmpty) return [];
+    set.add(trim);
+    if (!_normalizeTr(trim).contains('trabzon')) {
+      set.add('$trim Trabzon');
     }
 
-    final googleUrl = Uri.parse(
-      'https://maps.googleapis.com/maps/api/place/autocomplete/json?'
-          'input=${Uri.encodeComponent(q)}'
-          '&components=country:tr'
-          '&language=tr'
-          '$locationBias'
-          '&key=$_googleApiKey',
-    );
+    final parcalar = trim.split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+    if (parcalar.isEmpty) return set.toList();
 
-    try {
-      final response = await http.get(googleUrl);
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data['status'] == 'OK' && data['predictions'] != null) {
-          for (var item in data['predictions']) {
-            final str = item['structured_formatting'];
-            String full = str != null ? "${str['main_text']}, ${str['secondary_text']}" : (item['description'] ?? '');
-            full = full.replaceAll(RegExp(r'[A-Z0-9]{4,}\+[A-Z0-9]{2,},?\s?'), '');
-            if (full.isNotEmpty && !sonuclar.contains(full)) sonuclar.add(full);
-          }
-        } else if (data['status'] == 'REQUEST_DENIED') {
-          debugPrint("Google Kısıtlaması Devam Ediyor, Yedek Servis Kullanılıyor...");
-        }
+    final onceki = parcalar.length >= 2
+        ? parcalar.sublist(0, parcalar.length - 1).join(' ')
+        : '';
+    final son = _normalizeTr(parcalar.last);
+
+    void ekleTamamlanmis(String tamam) {
+      if (onceki.isEmpty) {
+        set.add('$tamam Trabzon');
+      } else {
+        set.add('$onceki $tamam');
+        set.add('$onceki $tamam Trabzon');
       }
-    } catch (_) {}
-
-    // 3. ADIM: Nominatim (OpenStreetMap) - Papara Park / Hayal Vadisi gibi mekanları tam bulur
-    if (sonuclar.length < 5) {
-      try {
-        // [İYİLEŞTİRME] Sorgunun sonuna "Trabzon" ekleyerek yerel sonuçları zorlayalım
-        String searchContext = q.toLowerCase().contains("trabzon") ? q : "$q, Trabzon";
-        
-        final osmUrl = Uri.parse(
-          'https://nominatim.openstreetmap.org/search?'
-              'q=${Uri.encodeComponent(searchContext)}'
-              '&format=json'
-              '&addressdetails=1'
-              '&limit=10'
-              '&countrycodes=tr',
-        );
-        final res = await http.get(osmUrl, headers: {'User-Agent': 'AlmelyApp_V3'});
-        if (res.statusCode == 200) {
-          final List data = json.decode(res.body);
-          for (var r in data) {
-            String name = r['display_name'] ?? '';
-            // Plus Code temizliği
-            name = name.replaceAll(RegExp(r'[A-Z0-9]{4,}\+[A-Z0-9]{2,},?\s?'), '');
-            if (name.isNotEmpty && !sonuclar.contains(name)) {
-              sonuclar.add(name);
-            }
-          }
-        }
-      } catch (_) {}
     }
 
-    return sonuclar.toSet().toList();
+    // Okul / eğitim
+    if ('ilkogretim'.startsWith(son) || son == 'ilk' || 'ilkokul'.startsWith(son)) {
+      ekleTamamlanmis('ilköğretim');
+      ekleTamamlanmis('ilköğretim okulu');
+      ekleTamamlanmis('ilkokulu');
+    }
+    if ('okulu'.startsWith(son) || son == 'okul') {
+      ekleTamamlanmis('okulu');
+      ekleTamamlanmis('ilköğretim okulu');
+    }
+    if ('ortaokul'.startsWith(son) || 'lise'.startsWith(son) || 'universite'.startsWith(son)) {
+      if ('ortaokul'.startsWith(son)) ekleTamamlanmis('ortaokulu');
+      if ('lise'.startsWith(son)) ekleTamamlanmis('lisesi');
+      if ('universite'.startsWith(son)) ekleTamamlanmis('üniversitesi');
+    }
+
+    // Mekan sonekleri
+    if ('vadisi'.startsWith(son) && son.length >= 2) ekleTamamlanmis('Vadisi');
+    if ('dugun'.startsWith(son) || 'salonu'.startsWith(son)) {
+      ekleTamamlanmis('düğün salonu');
+      ekleTamamlanmis('salonu');
+    }
+    if ('hastane'.startsWith(son) || 'hastanesi'.startsWith(son)) ekleTamamlanmis('hastanesi');
+    if ('cami'.startsWith(son) || 'camii'.startsWith(son)) ekleTamamlanmis('camii');
+    if ('park'.startsWith(son) || 'parki'.startsWith(son)) ekleTamamlanmis('parkı');
+    if ('meydan'.startsWith(son) || 'meydani'.startsWith(son)) ekleTamamlanmis('meydanı');
+    if ('mahalle'.startsWith(son) || 'mah'.startsWith(son)) ekleTamamlanmis('mahallesi');
+
+    return set.toList();
+  }
+
+  String _plusCodeTemizle(String name) =>
+      name.replaceAll(RegExp(r'[A-Z0-9]{4,}\+[A-Z0-9]{2,},?\s?'), '').trim();
+
+  void _sonucEkle(List<String> hedef, dynamic ham, String orijinalSorgu) {
+    final clean = _plusCodeTemizle(_metin(ham));
+    if (clean.isEmpty) return;
+    // En az ilk anlamlı kelime eşleşsin
+    final kelimeler = orijinalSorgu.trim().split(RegExp(r'\s+')).where((k) => k.length >= 2).toList();
+    final ilkKelime = kelimeler.isEmpty ? '' : kelimeler.first;
+    if (ilkKelime.isNotEmpty && !_sorguEslesiyor(clean, ilkKelime)) return;
+    if (!hedef.any((s) => _normalizeTr(s) == _normalizeTr(clean))) {
+      hedef.add(clean);
+    }
+  }
+
+  List<String> _siralaVeKes(List<String> sonuclar, String q) {
+    final kopya = List<String>.from(sonuclar);
+    kopya.sort((a, b) {
+      final aOk = _sorguEslesiyor(a, q) ? 0 : 1;
+      final bOk = _sorguEslesiyor(b, q) ? 0 : 1;
+      if (aOk != bOk) return aOk.compareTo(bOk);
+      // Tam sorgu eşleşenleri daha kısa ada göre öne al
+      return a.length.compareTo(b.length);
+    });
+    // Çok kelimeli sorguda tam eşleşenleri tercih et; yoksa hepsini göster
+    final tam = kopya.where((s) => _sorguEslesiyor(s, q)).toList();
+    if (tam.isNotEmpty) return tam.take(12).toList();
+    return kopya.take(12).toList();
+  }
+
+  Future<void> _googleTextSearchEkle(
+    String query,
+    String orijinalSorgu,
+    List<String> sonuclar,
+    double lat,
+    double lon,
+    int istekNo,
+    void Function() uiGuncelle,
+  ) async {
+    try {
+      final textUrl = Uri.parse(
+        'https://maps.googleapis.com/maps/api/place/textsearch/json?'
+        'query=${Uri.encodeComponent(query)}'
+        '&language=tr&region=tr'
+        '&location=$lat,$lon&radius=50000'
+        '&key=$_googleApiKey',
+      );
+      final res = await _zamanAsimli(http.get(textUrl), ms: 2200);
+      if (res == null || res.statusCode != 200 || istekNo != _aramaIstekNo) return;
+      final data = json.decode(res.body);
+      final results = data['results'];
+      if (data['status'] == 'OK' && results is List) {
+        for (final item in results) {
+          if (item is! Map) continue;
+          final name = _metin(item['name']);
+          final addr = _metin(item['formatted_address']);
+          _sonucEkle(sonuclar, addr.isEmpty ? name : '$name, $addr', orijinalSorgu);
+        }
+        uiGuncelle();
+      }
+    } catch (e) {
+      debugPrint("Google text search hatası: $e");
+    }
+  }
+
+  /// Hızlı + aşamalı arama: yerel/Google/Photon + genişletilmiş Text Search.
+  Future<void> _nereyeAramayiCalistir(String sorgu) async {
+    final q = sorgu.trim();
+    if (q.length < 2) return;
+
+    final istekNo = ++_aramaIstekNo;
+    if (mounted) setState(() => _nereyeAraniyor = true);
+
+    final sonuclar = <String>[];
+    final lat = _mevcutKullaniciKonumu?.latitude ?? 41.0027;
+    final lon = _mevcutKullaniciKonumu?.longitude ?? 39.7168;
+    final genisSorgular = _genisletilmisSorgular(q);
+
+    void uiGuncelle() {
+      if (!mounted || istekNo != _aramaIstekNo) return;
+      setState(() => _nereyeOnerileri = _siralaVeKes(sonuclar, q));
+    }
+
+    // 1) Yerel — genelde en hızlı
+    try {
+      final yerel = await _zamanAsimli(_firestoreServisi.mekanArama(q), ms: 1200) ?? [];
+      if (istekNo != _aramaIstekNo) {
+        if (mounted) setState(() => _nereyeAraniyor = false);
+        return;
+      }
+      for (final s in yerel) {
+        _sonucEkle(sonuclar, s, q);
+      }
+      uiGuncelle();
+    } catch (_) {}
+
+    // 2) Google Autocomplete + Photon + genişletilmiş Text Search (paralel)
+    Future<void> googleAuto() async {
+      try {
+        // Ham sorgu + en iyi genişletilmiş sorgu ile autocomplete
+        final autoSorgular = <String>{q};
+        if (genisSorgular.length > 1) autoSorgular.add(genisSorgular[1]);
+
+        for (final input in autoSorgular) {
+          if (istekNo != _aramaIstekNo) return;
+          final autoUrl = Uri.parse(
+            'https://maps.googleapis.com/maps/api/place/autocomplete/json?'
+            'input=${Uri.encodeComponent(input)}'
+            '&components=country:tr'
+            '&language=tr'
+            '&location=$lat,$lon&radius=50000'
+            '&key=$_googleApiKey',
+          );
+          final res = await _zamanAsimli(http.get(autoUrl), ms: 1800);
+          if (res == null || res.statusCode != 200 || istekNo != _aramaIstekNo) continue;
+          final data = json.decode(res.body);
+          final predictions = data['predictions'];
+          if (data['status'] == 'OK' && predictions is List) {
+            for (final item in predictions) {
+              if (item is! Map) continue;
+              final str = item['structured_formatting'];
+              late final String full;
+              if (str is Map) {
+                final main = _metin(str['main_text']);
+                final secondary = _metin(str['secondary_text']);
+                full = secondary.isEmpty ? main : '$main, $secondary';
+              } else {
+                full = _metin(item['description']);
+              }
+              _sonucEkle(sonuclar, full, q);
+            }
+            uiGuncelle();
+          }
+        }
+      } catch (e) {
+        debugPrint("Google autocomplete hatası: $e");
+      }
+    }
+
+    Future<void> photon() async {
+      try {
+        // Photon ham + genişletilmiş (okul vb.)
+        final photonQs = <String>{q};
+        for (final g in genisSorgular.take(3)) {
+          photonQs.add(g);
+        }
+        for (final pq in photonQs) {
+          if (istekNo != _aramaIstekNo) return;
+          final photonUrl = Uri.parse(
+            'https://photon.komoot.io/api/?'
+            'q=${Uri.encodeComponent(pq)}'
+            '&limit=8'
+            '&lang=default'
+            '&bbox=39.2,40.85,40.15,41.25',
+          );
+          final res = await _zamanAsimli(http.get(photonUrl, headers: {'User-Agent': 'AlmelyApp_V3'}), ms: 1800);
+          if (res == null || res.statusCode != 200 || istekNo != _aramaIstekNo) continue;
+          final data = json.decode(res.body);
+          final features = data['features'];
+          if (features is! List) continue;
+          for (final f in features) {
+            if (f is! Map) continue;
+            final p = f['properties'];
+            if (p is! Map) continue;
+            final name = _metin(p['name']);
+            if (name.isEmpty) continue;
+            final parts = <String>[
+              name,
+              _metin(p['street']),
+              _metin(p['district']),
+              _metin(p['city']),
+              'Trabzon',
+            ].where((e) => e.isNotEmpty).toList();
+            _sonucEkle(sonuclar, parts.join(', '), q);
+          }
+          uiGuncelle();
+        }
+      } catch (e) {
+        debugPrint("Photon hatası: $e");
+      }
+    }
+
+    Future<void> textSearch() async {
+      // Okul/POI için genişletilmiş sorguları hemen dene (bekleme yok)
+      final textQs = genisSorgular
+          .where((s) => _normalizeTr(s) != _normalizeTr(q) || s.toLowerCase().contains('trabzon'))
+          .take(3)
+          .toList();
+      if (textQs.isEmpty) {
+        textQs.add(q.toLowerCase().contains('trabzon') ? q : '$q Trabzon');
+      }
+      for (final tq in textQs) {
+        if (istekNo != _aramaIstekNo) return;
+        await _googleTextSearchEkle(tq, q, sonuclar, lat, lon, istekNo, uiGuncelle);
+      }
+    }
+
+    await Future.wait([googleAuto(), photon(), textSearch()]);
+    if (istekNo != _aramaIstekNo) {
+      if (mounted) setState(() => _nereyeAraniyor = false);
+      return;
+    }
+
+    // Hâlâ az sonuç varsa ham sorguyla bir text search daha
+    if (sonuclar.where((s) => _sorguEslesiyor(s, q)).length < 2) {
+      await _googleTextSearchEkle(
+        q.toLowerCase().contains('trabzon') ? q : '$q Trabzon',
+        q,
+        sonuclar,
+        lat,
+        lon,
+        istekNo,
+        uiGuncelle,
+      );
+    }
+
+    if (!mounted || istekNo != _aramaIstekNo) {
+      if (mounted && istekNo == _aramaIstekNo) setState(() => _nereyeAraniyor = false);
+      return;
+    }
+    final finalListe = _siralaVeKes(sonuclar, q);
+    _aramaOnbellegi[q.toLowerCase()] = finalListe;
+    if (_aramaOnbellegi.length > 40) {
+      _aramaOnbellegi.remove(_aramaOnbellegi.keys.first);
+    }
+    setState(() {
+      _nereyeOnerileri = finalListe;
+      _nereyeAraniyor = false;
+    });
   }
 
   void _updateStreams() {
@@ -376,60 +682,77 @@ class _TaksiRandevuEkraniState extends State<TaksiRandevuEkrani> {
               const Icon(Icons.location_on, color: Colors.red),
               const SizedBox(width: 12),
               Expanded(
-                child: Autocomplete<String>(
-                  optionsBuilder: (TextEditingValue val) async {
-                    if (val.text.trim().length < 2) return const Iterable<String>.empty();
-                    final completer = Completer<List<String>>();
-                    if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
-                    _debounceTimer = Timer(const Duration(milliseconds: 300), () async {
-                      final s = await _gelismisAdresArama(val.text);
-                      completer.complete(s);
-                    });
-                    return await completer.future;
-                  },
-                  onSelected: (s) => _nereyeController.text = s,
-                  fieldViewBuilder: (ctx, ctrl, fn, onSubmit) {
-                    ctrl.addListener(() { _nereyeController.text = ctrl.text; });
-                    return TextField(controller: ctrl, focusNode: fn, decoration: const InputDecoration(hintText: "Nereye? (Lise, Taksi Durağı, Mahalle, Cadde)", border: InputBorder.none));
-                  },
-                  optionsViewBuilder: (ctx, onSelected, options) => Align(
-                    alignment: Alignment.topLeft,
-                    child: Material(
-                      elevation: 8, 
-                      borderRadius: BorderRadius.circular(15),
-                      color: Colors.white,
-                      child: Container(
-                        width: MediaQuery.of(context).size.width - 72, 
-                        constraints: const BoxConstraints(maxHeight: 260),
-                        child: ListView.separated(
-                          padding: const EdgeInsets.symmetric(vertical: 4), 
-                          shrinkWrap: true,
-                          itemCount: options.length, 
-                          separatorBuilder: (c, i) => const Divider(height: 1),
-                          itemBuilder: (ctx, i) {
-                            final s = options.elementAt(i);
-                            return Material(
-                              color: Colors.transparent,
-                              child: ListTile(
-                                dense: true,
-                                leading: Container(
-                                  padding: const EdgeInsets.all(6), 
-                                  decoration: const BoxDecoration(color: Color(0xFFE8EAF6), shape: BoxShape.circle), 
-                                  child: Text("${i + 1}", style: const TextStyle(color: Colors.indigo, fontWeight: FontWeight.bold, fontSize: 10))
-                                ),
-                                title: Text(s, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
-                                onTap: () => onSelected(s),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    ),
+                child: TextField(
+                  controller: _nereyeController,
+                  focusNode: _nereyeFocus,
+                  decoration: InputDecoration(
+                    hintText: "Nereye? (Lise, Taksi Durağı, Mahalle, Cadde)",
+                    border: InputBorder.none,
+                    suffixIcon: _nereyeAraniyor
+                        ? const Padding(
+                            padding: EdgeInsets.all(12),
+                            child: SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.redAccent),
+                            ),
+                          )
+                        : (_nereyeController.text.trim().isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear, size: 18, color: Colors.grey),
+                                onPressed: () {
+                                  _nereyeController.clear();
+                                  setState(() {
+                                    _nereyeOnerileri = [];
+                                    _nereyeAraniyor = false;
+                                  });
+                                },
+                              )
+                            : null),
                   ),
                 ),
               ),
             ],
           ),
+          if (_nereyeOnerileri.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Material(
+              elevation: 4,
+              borderRadius: BorderRadius.circular(12),
+              color: Colors.white,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 220),
+                child: ListView.separated(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  shrinkWrap: true,
+                  itemCount: _nereyeOnerileri.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (ctx, i) {
+                    final s = _nereyeOnerileri[i];
+                    return ListTile(
+                      dense: true,
+                      leading: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: const BoxDecoration(color: Color(0xFFE8EAF6), shape: BoxShape.circle),
+                        child: Text("${i + 1}", style: const TextStyle(color: Colors.indigo, fontWeight: FontWeight.bold, fontSize: 10)),
+                      ),
+                      title: Text(s, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                      onTap: () {
+                        _nereyeController.removeListener(_nereyeMetinDegisti);
+                        _nereyeController.text = s;
+                        _nereyeController.addListener(_nereyeMetinDegisti);
+                        setState(() {
+                          _nereyeOnerileri = [];
+                          _nereyeAraniyor = false;
+                        });
+                        _nereyeFocus.unfocus();
+                      },
+                    );
+                  },
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

@@ -15,6 +15,8 @@ import '../main.dart'; // navigatorKey için
 
 import 'taksi/taksi_mod_secim_ekrani.dart';
 import 'ana_ekran.dart';
+import 'esnaf_paneli.dart';
+
 
 class GirisSecimSayfasi extends StatefulWidget {
   const GirisSecimSayfasi({super.key});
@@ -124,11 +126,20 @@ class _GirisSecimSayfasiState extends State<GirisSecimSayfasi> {
       setState(() => _loading = false);
 
       if (esnaf != null) {
-        // ESNAF/ŞOFÖR: Seçim ekranına gönder
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (c) => TaksiModSecimEkrani(esnaf: esnaf, girisTel: tel))
-        );
+        // Taksi → mod seçim (müşteri/şoför/yönetici); diğer kategoriler → EsnafPaneli
+        String kat = esnaf.kategori.trim().toLowerCase();
+        if (kat == 'taksi') {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (c) => TaksiModSecimEkrani(esnaf: esnaf, girisTel: tel))
+          );
+        } else {
+          String? soforTel = (esnaf.telefon != tel) ? tel : null;
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (c) => EsnafPaneli(esnaf: esnaf, soforTel: soforTel))
+          );
+        }
       } else {
         // NORMAL MÜŞTERİ: Doğrudan ana ekrana
         Navigator.pushReplacement(

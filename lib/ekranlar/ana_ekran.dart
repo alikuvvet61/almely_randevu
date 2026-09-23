@@ -12,6 +12,7 @@ import '../servisler/konum_servisi.dart';
 import '../servisler/bildirim_servisi.dart';
 import '../servisler/onesignal_servisi.dart';
 import 'rehber_ekrani.dart';
+import 'esnaf_paneli.dart';
 import 'taksi/taksi_mod_secim_ekrani.dart'; // Güncellenmiş yol
 import 'taksi/taksi_yonlendirme.dart';
 import 'kullanici_randevu_ekrani.dart';
@@ -437,10 +438,20 @@ class _AnaEkranState extends State<AnaEkran> {
                       icon: const Icon(Icons.swap_horiz_rounded, color: Colors.blue),
                       tooltip: "Esnaf Moduna Geç",
                       onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (c) => TaksiModSecimEkrani(esnaf: snapshot.data!, girisTel: widget.kullaniciTel!))
-                        );
+                        final esnaf = snapshot.data!;
+                        final kat = esnaf.kategori.trim().toLowerCase();
+                        if (kat == 'taksi') {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (c) => TaksiModSecimEkrani(esnaf: esnaf, girisTel: widget.kullaniciTel!))
+                          );
+                        } else {
+                          final soforTel = (esnaf.telefon != widget.kullaniciTel) ? widget.kullaniciTel : null;
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (c) => EsnafPaneli(esnaf: esnaf, soforTel: soforTel))
+                          );
+                        }
                       },
                     );
                   }

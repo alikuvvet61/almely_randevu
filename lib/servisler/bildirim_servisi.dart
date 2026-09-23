@@ -15,14 +15,14 @@ class BildirimServisi {
   static final Set<String> _syncedIds = {}; 
   static StreamSubscription? _randevuAboneligi; // Mevcut aboneliği takip etmek için
   static bool _isSyncing = false; // Senkronizasyon kilidi
-  static bool _dialogOpen = false; // Ensure only one modal at a time
+  static bool _dialogOpen = false; // Aynı anda yalnızca bir modal olsun
   static final Set<String> _girisKontroluCalisiyor = {}; // Aynı telefon için çift çalışmayı engelle
 
   static Future<void> initialize({BuildContext? context}) async {
     await OneSignalServisi.initialize(context: context);
   }
 
-  // Helper to show a dialog only if none open
+  // Açık diyalog yoksa diyalog göstermek için yardımcı metot
   static void _safeShowDialog(BuildContext context, WidgetBuilder builder) {
     if (_dialogOpen) {
       debugPrint('ℹ️ BildirimServisi: Dialog zaten açık, yeni dialog atlandı.');
@@ -49,7 +49,7 @@ class BildirimServisi {
     } catch (e) {
       debugPrint('❌ Dialog pop hatası: $e');
     }
-    // _dialogOpen will be reset in the showDialog.then callback
+    // _dialogOpen, showDialog.then geri çağırımında sıfırlanacak
   }
 
   /// [YENİ] Giriş kontrolleri ve kullanıcı bilgilendirme
@@ -153,7 +153,7 @@ class BildirimServisi {
         ),
       ));
 
-    // 2. Arka planda senkronizasyonu başlat (non-blocking, kısa süreli bekleyip dialog kapat)
+    // 2. Arka planda senkronizasyonu başlat (engellemeden; kısa süre bekleyip diyaloğu kapat)
     debugPrint("🚀 Senkronizasyon Başlatılıyor (Tel: $telefon)...");
     final syncFuture = syncAkilliTakipBildirimleri(telefon, navCtx, esnafMi: esnafMi, esnafId: esnafId);
 

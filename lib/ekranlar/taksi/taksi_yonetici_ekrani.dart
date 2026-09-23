@@ -28,7 +28,7 @@ class _TaksiYoneticiEkraniState extends State<TaksiYoneticiEkrani> {
     try {
       await _taksiServisi.talepDurumGuncelle(talepId, 'Kabul edildi');
 
-      // Create a randevu record for reporting
+      // Raporlama için randevu kaydı oluştur
       final now = DateTime.now();
       final saat = '${now.hour.toString().padLeft(2,'0')}:${now.minute.toString().padLeft(2,'0')}';
 
@@ -48,7 +48,7 @@ class _TaksiYoneticiEkraniState extends State<TaksiYoneticiEkrani> {
 
       await _firestoreServisi.randevuEkle(yeniR);
 
-      // Notify user
+      // Kullanıcıya bildirim gönder
       final hedefTel = (data['kullaniciTel'] ?? data['telefon'] ?? '').toString();
       await TaksiBildirimServisi.sendTalepKabulBildirim(hedefTel, widget.esnaf.isletmeAdi);
 

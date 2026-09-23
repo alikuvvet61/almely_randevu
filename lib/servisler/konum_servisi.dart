@@ -27,12 +27,17 @@ class KonumServisi {
         if (response.statusCode == 200) {
           final data = json.decode(response.body);
           if (data['status'] == 'OK' && (data['results'] as List).isNotEmpty) {
-            return _googleSonucunuGirdiYap(data['results'][0], position);
+            final sonuc = _enDetayliGoogleSonucu(data['results'] as List);
+            final girdi = _googleSonucunuGirdiYap(sonuc, position);
+            // Sokak detayı yoksa Nominatim'e düş (sadece il/ilçe gelmesin)
+            if (_adresDetayliMi(girdi['tamAdres']?.toString() ?? '')) {
+              return girdi;
+            }
           }
         }
       } catch (_) {}
 
-      // 2. ADIM: [YEDEK] Nominatim (OSM) - Google kapalıyken adresinizi anında bulur
+      // 2. ADIM: [YEDEK] Nominatim (OSM) - Google kapalıyken veya kaba adres döndüğünde
       try {
         final osmUrl = Uri.parse(
           'https://nominatim.openstreetmap.org/reverse?format=json&lat=${position.latitude}&lon=${position.longitude}&zoom=18&addressdetails=1'
@@ -62,11 +67,62 @@ class KonumServisi {
     }
   }
 
+  /// "Ortahisar/Trabzon, Türkiye" gibi kaba adresleri ayırt eder.
+  bool _adresDetayliMi(String adres) {
+    final a = adres.trim();
+    if (a.length < 25) return false;
+    // Cadde/sokak/no ipucu veya virgülle ayrılmış birden fazla parça
+    final lower = a.toLowerCase();
+    if (lower.contains('cd') ||
+        lower.contains('cad') ||
+        lower.contains('sk') ||
+        lower.contains('sok') ||
+        lower.contains('no:') ||
+        lower.contains('no ') ||
+        RegExp(r'\d{5}').hasMatch(a)) {
+      return true;
+    }
+    return a.split(',').length >= 3;
+  }
+
+  /// Sokak / bina seviyesindeki sonucu tercih eder (il/ilçe seviyesini atlar).
+  dynamic _enDetayliGoogleSonucu(List results) {
+    const tercihSirasi = [
+      'street_address',
+      'premise',
+      'subpremise',
+      'route',
+      'intersection',
+      'neighborhood',
+      'sublocality',
+      'sublocality_level_1',
+      'postal_code',
+    ];
+    for (final tip in tercihSirasi) {
+      for (final r in results) {
+        if (r is! Map) continue;
+        final types = (r['types'] as List?)?.map((e) => e.toString()).toList() ?? [];
+        if (types.contains(tip)) return r;
+      }
+    }
+    Map? enUzun;
+    var maxLen = -1;
+    for (final r in results) {
+      if (r is! Map) continue;
+      final len = (r['formatted_address']?.toString() ?? '').length;
+      if (len > maxLen) {
+        maxLen = len;
+        enUzun = r;
+      }
+    }
+    return enUzun ?? results.first;
+  }
+
   Map<String, dynamic> _googleSonucunuGirdiYap(dynamic result, Position pos) {
-    String tamAdres = result['formatted_address'];
-    tamAdres = tamAdres.replaceAll(RegExp(r'[A-Z0-9]{4,}\+[A-Z0-9]{2,},?\s?'), '');
+    String tamAdres = result['formatted_address']?.toString() ?? '';
+    tamAdres = tamAdres.replaceAll(RegExp(r'[A-Z0-9]{4,}\+[A-Z0-9]{2,},?\s?'), '').trim();
     String il = ""; String ilce = "";
-    final addressComponents = result['address_components'] as List;
+    final addressComponents = result['address_components'] as List? ?? [];
     for (var component in addressComponents) {
       final types = component['types'] as List;
       if (types.contains('administrative_area_level_1')) il = component['long_name'];

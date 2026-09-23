@@ -1132,28 +1132,81 @@ else if (yeniDurum == 'Reddedildi' || yeniDurum == 'İptal Edildi' || yeniDurum 
     }
   }
 
-  /// [YENİ] Taksi randevu ekranı için yerel mekan araması (Geliştirilmiş & Case-Insensitive simülasyonu)
+  /// Taksi randevu ekranı için yerel mekan araması.
+  /// İlk kelimeyle geniş prefix sorgusu yapıp, tüm kelimeleri istemci tarafında
+  /// büyük/küçük harf duyarsız önek eşleşmesiyle süzüyoruz ("hayal vad" → "Hayal Vadisi").
   Future<List<String>> mekanArama(String sorgu) async {
     try {
       String q = sorgu.trim();
       if (q.isEmpty) return [];
-      
-      // Hem küçük harf hem de Baş Harfi Büyük halini deneyelim (Firestore case-sensitive olduğu için)
-      String capitalized = q[0].toUpperCase() + q.substring(1).toLowerCase();
 
-      final results = await Future.wait([
-        _esnaflarRef.where('isletmeAdi', isGreaterThanOrEqualTo: q).where('isletmeAdi', isLessThanOrEqualTo: '$q\u{f8ff}').limit(3).get(),
-        _esnaflarRef.where('isletmeAdi', isGreaterThanOrEqualTo: capitalized).where('isletmeAdi', isLessThanOrEqualTo: '$capitalized\u{f8ff}').limit(3).get(),
-      ]);
-      
+      final kelimeler = q
+          .toLowerCase()
+          .replaceAll('İ', 'i')
+          .replaceAll('I', 'ı')
+          .split(RegExp(r'\s+'))
+          .where((k) => k.isNotEmpty)
+          .toList();
+      if (kelimeler.isEmpty) return [];
+
+      // Firestore case-sensitive: ilk kelimenin birden fazla yazımını dene
+      final ilk = kelimeler.first;
+      final varyantlar = <String>{
+        ilk,
+        ilk[0].toUpperCase() + ilk.substring(1),
+        ilk.toUpperCase(),
+        // Türkçe İ/I ayrımı
+        ilk.replaceAll('i', 'İ').replaceAll('ı', 'I'),
+        (ilk[0].toUpperCase() + ilk.substring(1))
+            .replaceAll('i', 'İ')
+            .replaceAll('ı', 'I'),
+      }.toList();
+
+      final results = await Future.wait(
+        varyantlar.map((v) => _esnaflarRef
+            .where('isletmeAdi', isGreaterThanOrEqualTo: v)
+            .where('isletmeAdi', isLessThanOrEqualTo: '$v\u{f8ff}')
+            .limit(15)
+            .get()),
+      );
+
+      String normalize(String s) {
+        var t = s
+            .replaceAll('İ', 'i')
+            .replaceAll('I', 'ı')
+            .toLowerCase()
+            .replaceAll('ş', 's')
+            .replaceAll('ğ', 'g')
+            .replaceAll('ü', 'u')
+            .replaceAll('ö', 'o')
+            .replaceAll('ç', 'c')
+            .replaceAll('\u0307', '');
+        return t;
+      }
+
+      bool eslesiyor(String ad) {
+        final adNorm = normalize(ad);
+        final adKelimeler = adNorm.split(RegExp(r'[\s,./\-]+')).where((k) => k.isNotEmpty).toList();
+        // Her sorgu kelimesi, işletme adındaki bir kelimenin öneki veya parçası olmalı
+        for (final sk in kelimeler.map(normalize)) {
+          if (sk.isEmpty) continue;
+          final ok = adKelimeler.any((ak) => ak.startsWith(sk) || ak.contains(sk)) || adNorm.contains(sk);
+          if (!ok) return false;
+        }
+        return true;
+      }
+
       Set<String> sonuclar = {};
       for (var snap in results) {
         for (var doc in snap.docs) {
           final data = doc.data() as Map<String, dynamic>;
-          final ad = data['isletmeAdi'] ?? "";
+          final ad = (data['isletmeAdi'] ?? "").toString();
+          if (ad.isEmpty || !eslesiyor(ad)) continue;
           final ilce = data['ilce'] ?? "";
           sonuclar.add("$ad, $ilce, Trabzon");
+          if (sonuclar.length >= 8) break;
         }
+        if (sonuclar.length >= 8) break;
       }
       return sonuclar.toList();
     } catch (e) {
