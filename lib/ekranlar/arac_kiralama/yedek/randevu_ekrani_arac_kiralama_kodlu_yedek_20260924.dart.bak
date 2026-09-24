@@ -1,28 +1,27 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import '../../modeller/esnaf_modeli.dart';
-import '../../modeller/randevu_modeli.dart';
-import '../../servisler/firestore_servisi.dart';
-import '../../servisler/bildirim_servisi.dart';
-import '../../widgets/ana_buton.dart';
+import '../modeller/esnaf_modeli.dart';
+import '../modeller/randevu_modeli.dart';
+import '../servisler/firestore_servisi.dart';
+import '../servisler/bildirim_servisi.dart'; // [YENİ] Bildirim kontrolleri için gerekli
+import '../widgets/ana_buton.dart';
 
-/// Araç Kiralama için randevu / kiralama ekranı.
-class AracKiralamaRandevuEkrani extends StatefulWidget {
+class RandevuEkrani extends StatefulWidget {
   final EsnafModeli esnaf;
   final String? kullaniciTel;
 
-  const AracKiralamaRandevuEkrani({
+  const RandevuEkrani({
     super.key,
     required this.esnaf,
     this.kullaniciTel,
   });
 
   @override
-  State<AracKiralamaRandevuEkrani> createState() => _AracKiralamaRandevuEkraniState();
+  State<RandevuEkrani> createState() => _RandevuEkraniState();
 }
 
-class _AracKiralamaRandevuEkraniState extends State<AracKiralamaRandevuEkrani> {
+class _RandevuEkraniState extends State<RandevuEkrani> {
   final _firestoreServisi = FirestoreServisi();
   final _adController = TextEditingController();
   final _telController = TextEditingController();

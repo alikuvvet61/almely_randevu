@@ -18,7 +18,7 @@ dependencies:
   http: ^1.6.0
   cupertino_icons: ^1.0.9
   google_maps_flutter: ^2.16.0
-  firebase_core: ^4.9.0
+  firebase_core: 4.9.0
   firebase_auth: ^6.5.1
   cloud_firestore: ^6.4.1
   firebase_messaging: ^16.2.2

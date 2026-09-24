@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:async';
-import 'admin_ekrani.dart';
+import 'Admin_Paneli/admin_ekrani.dart';
 import '../servisler/firestore_servisi.dart';
 import '../servisler/versiyon_servisi.dart';
 import '../servisler/onesignal_servisi.dart';
@@ -14,6 +14,7 @@ import '../main.dart'; // navigatorKey için
 
 
 import 'taksi/taksi_mod_secim_ekrani.dart';
+import 'arac_kiralama/arac_kiralama_esnaf_paneli.dart';
 import 'ana_ekran.dart';
 import 'esnaf_paneli.dart';
 
@@ -126,12 +127,18 @@ class _GirisSecimSayfasiState extends State<GirisSecimSayfasi> {
       setState(() => _loading = false);
 
       if (esnaf != null) {
-        // Taksi → mod seçim (müşteri/şoför/yönetici); diğer kategoriler → EsnafPaneli
+        // Taksi → mod seçim; Araç Kiralama → özel panel; diğerleri → EsnafPaneli
         String kat = esnaf.kategori.trim().toLowerCase();
         if (kat == 'taksi') {
           Navigator.push(
             context,
             MaterialPageRoute(builder: (c) => TaksiModSecimEkrani(esnaf: esnaf, girisTel: tel))
+          );
+        } else if (kat == 'araç kiralama' || kat == 'arac kiralama') {
+          String? soforTel = (esnaf.telefon != tel) ? tel : null;
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (c) => AracKiralamaEsnafPaneli(esnaf: esnaf, soforTel: soforTel))
           );
         } else {
           String? soforTel = (esnaf.telefon != tel) ? tel : null;

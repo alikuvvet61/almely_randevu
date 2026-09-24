@@ -57,7 +57,7 @@ class _TaksiRandevuEkraniState extends State<TaksiRandevuEkrani> {
   int? _guzergahSureDk;
   bool _mesafeYukleniyor = false;
 
-  final String _googleApiKey = "AIzaSyC55S5CY0E_WxTmwq-TvpF2Tp_yrBdrQb8";
+  final String _googleApiKey = "AIzaSyC55S5CY0E_WxTmwq-TvpF2Tp_yrBdrQb8"; 
 
   @override
   void initState() {
@@ -433,7 +433,7 @@ class _TaksiRandevuEkraniState extends State<TaksiRandevuEkrani> {
             dLon = double.tryParse('${data.first['lon']}');
           }
         }
-      } catch (_) {}
+    } catch (_) {}
     }
 
     final oLat = _mevcutKullaniciKonumu?.latitude ?? widget.esnaf.konum.latitude;
@@ -626,14 +626,14 @@ class _TaksiRandevuEkraniState extends State<TaksiRandevuEkrani> {
     if (kIsWeb) return 0;
     try {
       final autoUrl = Uri.parse(
-        'https://maps.googleapis.com/maps/api/place/autocomplete/json?'
-        'input=${Uri.encodeComponent(q)}'
-        '&components=country:tr'
-        '&language=tr'
+      'https://maps.googleapis.com/maps/api/place/autocomplete/json?'
+          'input=${Uri.encodeComponent(q)}'
+          '&components=country:tr'
+          '&language=tr'
         '&location=$lat,$lon'
         '&radius=50000'
-        '&key=$_googleApiKey',
-      );
+          '&key=$_googleApiKey',
+    );
       final res = await _zamanAsimli(http.get(autoUrl), ms: 1800);
       if (res == null || res.statusCode != 200 || istekNo != _aramaIstekNo) {
         debugPrint('Autocomplete HTTP başarısız: ${res?.statusCode}');
@@ -1125,19 +1125,19 @@ class _TaksiRandevuEkraniState extends State<TaksiRandevuEkrani> {
             Material(
               elevation: 4,
               borderRadius: BorderRadius.circular(12),
-              color: Colors.white,
+                      color: Colors.white,
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 260),
-                child: ListView.separated(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  shrinkWrap: true,
+                        constraints: const BoxConstraints(maxHeight: 260),
+                        child: ListView.separated(
+                          padding: const EdgeInsets.symmetric(vertical: 4), 
+                          shrinkWrap: true,
                   physics: const ClampingScrollPhysics(),
                   itemCount: _nereyeOnerileri.length,
                   separatorBuilder: (_, __) => const Divider(height: 1, indent: 56),
-                  itemBuilder: (ctx, i) {
+                          itemBuilder: (ctx, i) {
                     final o = _nereyeOnerileri[i];
                     return ListTile(
-                      dense: true,
+                                dense: true,
                       leading: const Icon(Icons.place, color: Colors.redAccent, size: 22),
                       title: Text(
                         o.baslik,
@@ -1152,11 +1152,11 @@ class _TaksiRandevuEkraniState extends State<TaksiRandevuEkrani> {
                               overflow: TextOverflow.ellipsis,
                             ),
                       onTap: () => _nereyeSecildi(o),
-                    );
-                  },
-                ),
-              ),
-            ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
           ] else if (_nereyeAramaBittiBos &&
               _nereyeController.text.trim().isNotEmpty &&
               !_nereyeAraniyor) ...[

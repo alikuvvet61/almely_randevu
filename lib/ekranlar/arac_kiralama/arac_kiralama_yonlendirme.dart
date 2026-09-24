@@ -1,24 +1,17 @@
 import 'package:flutter/material.dart';
 
 import '../../modeller/esnaf_modeli.dart';
-import '../arac_kiralama/arac_kiralama_musteri_ekrani.dart';
-import '../arac_kiralama/arac_kiralama_randevu_ekrani.dart';
 import '../musteri_ekrani.dart';
 import '../randevu_ekrani.dart';
-import 'taksi_musteri_ekrani.dart';
-import 'taksi_randevu_ekrani.dart';
+import 'arac_kiralama_musteri_ekrani.dart';
+import 'arac_kiralama_randevu_ekrani.dart';
 
-class TaksiYonlendirme {
+/// Araç Kiralama kategori yönlendirmesi (taksi/taksi_yonlendirme ile aynı desen).
+class AracKiralamaYonlendirme {
   static Widget detayEkrani({
     required EsnafModeli esnaf,
     String? kullaniciTel,
   }) {
-    if (esnaf.kategori == 'Taksi') {
-      return TaksiMusteriEkrani(
-        esnaf: esnaf,
-        kullaniciTel: kullaniciTel,
-      );
-    }
     if (esnaf.kategori == 'Araç Kiralama') {
       return AracKiralamaMusteriEkrani(
         esnaf: esnaf,
@@ -36,12 +29,6 @@ class TaksiYonlendirme {
     required EsnafModeli esnaf,
     String? kullaniciTel,
   }) {
-    if (esnaf.kategori == 'Taksi') {
-      return TaksiRandevuEkrani(
-        esnaf: esnaf,
-        kullaniciTel: kullaniciTel,
-      );
-    }
     if (esnaf.kategori == 'Araç Kiralama') {
       return AracKiralamaRandevuEkrani(
         esnaf: esnaf,

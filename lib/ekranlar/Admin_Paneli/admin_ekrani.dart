@@ -3,9 +3,9 @@ import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:io';
 
-import '../modeller/esnaf_modeli.dart';
-import '../servisler/firestore_servisi.dart';
-import '../servisler/konum_servisi.dart';
+import '../../modeller/esnaf_modeli.dart';
+import '../../servisler/firestore_servisi.dart';
+import '../../servisler/konum_servisi.dart';
 
 class AdminEkrani extends StatefulWidget {
   const AdminEkrani({super.key});

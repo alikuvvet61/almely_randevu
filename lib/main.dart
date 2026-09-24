@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -7,7 +8,8 @@ import 'firebase_options.dart';
 import 'servisler/bildirim_servisi.dart';
 import 'servisler/onesignal_servisi.dart';
 import 'servisler/versiyon_servisi.dart';
-import 'ekranlar/giris_secim_ekrani.dart';
+import 'ekranlar/giris.dart';
+import 'widgets/debug_ekran_rozeti.dart';
 
 // Global Navigator Key (Her yerden navigasyon için)
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -65,6 +67,10 @@ class AlmElyApp extends StatelessWidget {
       supportedLocales: const [
         Locale('tr', 'TR'),
       ],
+      navigatorObservers: [
+        if (!kReleaseMode) DebugEkranRozeti.observer,
+      ],
+      builder: (context, child) => DebugEkranRozeti(child: child),
       home: const GirisSecimSayfasi(),
     );
   }

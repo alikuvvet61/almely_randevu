@@ -88,7 +88,7 @@ class RehberEkrani extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Text(
-            "Uygulamamızı daha verimli kullanabilmeniz için hazırlanan genel kılavuzdur. Taksi hizmetine özel detaylar için ilgili sayfadaki yardımı inceleyin.",
+            "Uygulamamızı daha verimli kullanabilmeniz için hazırlanan genel kılavuzdur. Taksi ve Araç Kiralama’ya özel detaylar için ilgili sayfadaki yardımı inceleyin.",
             style: TextStyle(fontSize: 13, color: Colors.blue.shade700, height: 1.5),
           ),
         ],

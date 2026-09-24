@@ -2,14 +2,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'giris_secim_ekrani.dart';
+import 'giris.dart';
 import '../servisler/bildirim_servisi.dart';
 import '../servisler/onesignal_servisi.dart';
 import '../servisler/firestore_servisi.dart';
 import '../modeller/randevu_modeli.dart';
 import '../modeller/esnaf_modeli.dart';
 import '../widgets/medya_goruntuleyici.dart';
-import 'kaza_bildirim_ekrani.dart';
+import 'arac_kiralama/kaza_bildirim_ekrani.dart';
 
 class KullaniciRandevuEkrani extends StatefulWidget {
   final String telefon;

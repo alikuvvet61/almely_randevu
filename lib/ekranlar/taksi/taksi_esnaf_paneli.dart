@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import 'package:almely_randevu/ekranlar/giris_secim_ekrani.dart';
+import 'package:almely_randevu/ekranlar/giris.dart';
 import 'package:almely_randevu/modeller/esnaf_modeli.dart';
 import 'package:almely_randevu/modeller/randevu_modeli.dart';
 import 'package:almely_randevu/servisler/bildirim_servisi.dart';

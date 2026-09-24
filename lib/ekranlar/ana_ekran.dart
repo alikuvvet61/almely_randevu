@@ -13,10 +13,11 @@ import '../servisler/bildirim_servisi.dart';
 import '../servisler/onesignal_servisi.dart';
 import 'rehber_ekrani.dart';
 import 'esnaf_paneli.dart';
+import 'arac_kiralama/arac_kiralama_esnaf_paneli.dart';
 import 'taksi/taksi_mod_secim_ekrani.dart'; // Güncellenmiş yol
 import 'taksi/taksi_yonlendirme.dart';
 import 'kullanici_randevu_ekrani.dart';
-import 'giris_secim_ekrani.dart';
+import 'giris.dart';
 import 'taksi/taksi_surucu_profil_detay_ekrani.dart';
 import '../main.dart';
 
@@ -444,6 +445,12 @@ class _AnaEkranState extends State<AnaEkran> {
                           Navigator.push(
                             context,
                             MaterialPageRoute(builder: (c) => TaksiModSecimEkrani(esnaf: esnaf, girisTel: widget.kullaniciTel!))
+                          );
+                        } else if (kat == 'araç kiralama' || kat == 'arac kiralama') {
+                          final soforTel = (esnaf.telefon != widget.kullaniciTel) ? widget.kullaniciTel : null;
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (c) => AracKiralamaEsnafPaneli(esnaf: esnaf, soforTel: soforTel))
                           );
                         } else {
                           final soforTel = (esnaf.telefon != widget.kullaniciTel) ? widget.kullaniciTel : null;

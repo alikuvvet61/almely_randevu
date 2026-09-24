@@ -4,11 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../modeller/randevu_modeli.dart';
-import '../servisler/firestore_servisi.dart';
-import '../servisler/storage_servisi.dart';
-import '../servisler/onesignal_servisi.dart';
-import '../widgets/medya_goruntuleyici.dart';
+import '../../modeller/randevu_modeli.dart';
+import '../../servisler/firestore_servisi.dart';
+import '../../servisler/storage_servisi.dart';
+import '../../servisler/onesignal_servisi.dart';
+import '../../widgets/medya_goruntuleyici.dart';
 
 class KazaBildirimEkrani extends StatefulWidget {
   final RandevuModeli randevu;

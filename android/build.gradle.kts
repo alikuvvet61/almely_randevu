@@ -5,16 +5,16 @@ allprojects {
     }
 }
 
-project.extra.set("kotlin_version", "2.2.20")
+project.extra.set("kotlin_version", "2.2.10")
 
-rootProject.layout.buildDirectory.set(file("../../build"))
+rootProject.layout.buildDirectory.set(file("../build"))
 
 subprojects {
-    project.layout.buildDirectory.set(file("../../build/${project.name}"))
+    project.layout.buildDirectory.set(file("${rootProject.layout.buildDirectory.get()}/${project.name}"))
 }
 
 subprojects {
-// project.evaluationDependsOn(":app")
+    project.evaluationDependsOn(":app")
 }
 
 tasks.register<Delete>("clean") {
