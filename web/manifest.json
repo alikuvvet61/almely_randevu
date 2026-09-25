@@ -1,11 +1,11 @@
 {
-    "name": "AlmEly Randevu Portalı",
-    "short_name": "AlmEly Randevu Portalı",
+    "name": "AlmEly Hizmet & Randevu",
+    "short_name": "AlmEly Hizmet & Randevu",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
+    "background_color": "#000000",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "AlmEly Hizmet & Randevu",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

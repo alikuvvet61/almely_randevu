@@ -20,7 +20,7 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <application
-        android:label="almely_randevu"
+        android:label="AlmEly Hizmet &amp; Randevu"
         android:name="android.app.Application"
         android:icon="@mipmap/ic_launcher"
         android:requestLegacyExternalStorage="true">

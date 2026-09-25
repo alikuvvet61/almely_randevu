@@ -276,7 +276,7 @@ class _GirisSecimSayfasiState extends State<GirisSecimSayfasi> {
             
             const SizedBox(height: 50),
             Text(
-              "© 2026 AlmEly Randevu Portalı",
+              "© 2026 AlmEly Hizmet & Randevu",
               style: TextStyle(color: Colors.grey.shade400, fontSize: 11),
             ),
             

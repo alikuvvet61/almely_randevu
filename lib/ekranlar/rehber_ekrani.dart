@@ -81,7 +81,7 @@ class RehberEkrani extends StatelessWidget {
               Icon(Icons.help_center_rounded, color: Colors.blue.shade800, size: 28),
               const SizedBox(width: 12),
               Text(
-                mod == 'esnaf' ? "İşletme Yönetim Rehberi" : "AlmEly Kullanım Rehberi",
+                mod == 'esnaf' ? "İşletme Yönetim Rehberi" : "AlmEly Hizmet & Randevu Rehberi",
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blue.shade900),
               ),
             ],

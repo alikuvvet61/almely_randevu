@@ -53,7 +53,7 @@ class AlmElyApp extends StatelessWidget {
     return MaterialApp(
       navigatorKey: navigatorKey,
       debugShowCheckedModeBanner: false,
-      title: 'AlmEly Randevu Portalı',
+      title: 'AlmEly Hizmet & Randevu',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
         useMaterial3: true,

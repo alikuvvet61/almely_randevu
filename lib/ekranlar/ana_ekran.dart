@@ -428,7 +428,7 @@ class _AnaEkranState extends State<AnaEkran> {
       },
       child: Scaffold(
           appBar: AppBar(
-          title: const Text("AlmEly - Trabzon"),
+          title: const Text("AlmEly Hizmet & Randevu"),
           centerTitle: true,
           leading: widget.kullaniciTel != null
             ? StreamBuilder<EsnafModeli?>(
