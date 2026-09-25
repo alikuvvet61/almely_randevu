@@ -9,7 +9,6 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import 'package:almely_randevu/ekranlar/taksi/taksi_rehber_ekrani.dart';
 import 'package:almely_randevu/ekranlar/taksi/taksi_yonlendirme.dart';
 import 'package:almely_randevu/modeller/esnaf_modeli.dart';
 import 'package:almely_randevu/servisler/bildirim_servisi.dart';
@@ -398,12 +397,8 @@ class _TaksiMusteriEkraniState extends State<TaksiMusteriEkrani> {
         title: Text(_guncelEsnaf.isletmeAdi),
         backgroundColor: Colors.blue,
         foregroundColor: Colors.white,
-        actions: [
-          IconButton(
-            tooltip: 'Taksi kullanım kılavuzu',
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (c) => const TaksiRehberEkrani(mod: 'yolcu'))),
-            icon: const Icon(Icons.help_outline),
-          ),
+        actions: const [
+          SizedBox(width: 48), // global ? için yer
         ],
       ),
       body: CustomScrollView(

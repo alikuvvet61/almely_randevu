@@ -258,6 +258,7 @@ class _MusteriEkraniState extends State<MusteriEkrani> {
         title: Text(_guncelEsnaf.isletmeAdi),
         backgroundColor: Colors.blue,
         foregroundColor: Colors.white,
+        actions: const [SizedBox(width: 48)],
       ),
       body: CustomScrollView(
         slivers: [

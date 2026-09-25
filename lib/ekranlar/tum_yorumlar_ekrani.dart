@@ -18,6 +18,7 @@ class TumYorumlarEkrani extends StatelessWidget {
         title: Text("$esnafAd - Tüm Yorumlar"),
         backgroundColor: Colors.blue,
         foregroundColor: Colors.white,
+        actions: const [SizedBox(width: 48)],
       ),
       body: StreamBuilder<List<Map<String, dynamic>>>(
         stream: firestoreServisi.yorumlariGetir(esnafId),

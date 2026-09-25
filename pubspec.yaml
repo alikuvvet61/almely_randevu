@@ -1,5 +1,5 @@
 name: almely_randevu
-description: "AlmEly Hizmet & Randevu"
+description: "AlmEly Go Hizmet & Randevu"
 publish_to: 'none'
 version: 1.0.1+1
 
@@ -49,12 +49,12 @@ flutter_launcher_icons:
   android: true
   ios: false
   image_path: "assets/app_icon.png"
-  adaptive_icon_background: "#000000"
+  adaptive_icon_background: "#FFFFFF"
   adaptive_icon_foreground: "assets/app_icon.png"
   web:
     generate: true
     image_path: "assets/app_icon.png"
-    background_color: "#000000"
+    background_color: "#FFFFFF"
     theme_color: "#0175C2"
 
 flutter:

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../servisler/firestore_servisi.dart';
 import '../../modeller/esnaf_modeli.dart';
-import 'arac_kiralama_rehber_ekrani.dart';
 
 /// Araç Kiralama işletme ayarları (esnaf_parametre'den ayrıldı).
 class AracParametreEkrani extends StatefulWidget {
@@ -65,15 +64,8 @@ class _AracParametreEkraniState extends State<AracParametreEkrani> {
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
         elevation: 0,
-        actions: [
-          IconButton(
-            tooltip: "Kullanım Rehberi",
-            icon: const Icon(Icons.help_outline, color: Colors.blue),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (c) => const AracKiralamaRehberEkrani(mod: 'esnaf', bolum: 'parametre')),
-            ),
-          ),
+        actions: const [
+          SizedBox(width: 48), // global ? için yer
         ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1),

@@ -5,7 +5,6 @@ import 'dart:io' show File;
 
 import '../../modeller/esnaf_modeli.dart';
 import '../../servisler/firestore_servisi.dart';
-import '../rehber_ekrani.dart';
 import 'taksi_surucu_dogrulama_ekrani.dart';
 
 class TaksiSurucuProfilDetayEkrani extends StatefulWidget {
@@ -112,11 +111,8 @@ class _TaksiSurucuProfilDetayEkraniState extends State<TaksiSurucuProfilDetayEkr
             backgroundColor: Colors.white,
             foregroundColor: Colors.black,
             elevation: 0,
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (c) => const RehberEkrani(mod: 'surucu'))),
-                child: const Text("Yardım", style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
-              )
+            actions: const [
+              SizedBox(width: 48), // global ? için yer
             ],
           ),
           body: StreamBuilder<Map<String, dynamic>?>(

@@ -15,7 +15,6 @@ import 'package:almely_randevu/servisler/konum_servisi.dart';
 
 import 'package:almely_randevu/ekranlar/taksi/taksi_durak_takip_ekrani.dart';
 import 'package:almely_randevu/ekranlar/taksi/taksi_cizelge_ekrani.dart';
-import 'package:almely_randevu/ekranlar/taksi/taksi_rehber_ekrani.dart';
 import 'package:almely_randevu/ekranlar/taksi/taksi_parametre_ekrani.dart';
 import 'package:almely_randevu/ekranlar/taksi/taksi_esnaf_randevu_onay_ekrani.dart';
 
@@ -1328,18 +1327,12 @@ class _TaksiEsnafPaneliState extends State<TaksiEsnafPaneli> {
         title: Text(_adController.text, style: const TextStyle(fontWeight: FontWeight.bold)),
         actions: [
           IconButton(
-            icon: const Icon(Icons.help_outline_rounded, color: Colors.blueGrey),
-            onPressed: () {
-              Navigator.push(context, MaterialPageRoute(builder: (c) => const TaksiRehberEkrani(mod: 'yonetici')));
-            },
-            tooltip: "Kullanım Rehberi",
-          ),
-          IconButton(
             icon: const Icon(Icons.logout, color: Colors.redAccent),
             onPressed: () => _cikisYap(context),
             tooltip: "Çıkış Yap",
           ),
           IconButton(icon: const Icon(Icons.refresh), onPressed: _verileriTazele),
+          const SizedBox(width: 48), // global ? için yer
         ],
       ),
         body: StreamBuilder<List<RandevuModeli>>(

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:almely_randevu/modeller/esnaf_modeli.dart';
-import 'taksi_rehber_ekrani.dart';
 
 class TaksiCizelgeEkrani extends StatefulWidget {
   final EsnafModeli esnaf;
@@ -401,14 +400,10 @@ class _TaksiCizelgeEkraniState extends State<TaksiCizelgeEkrani> {
           title: const Text("Nöbet Çizelgesi & Ajanda Defteri"),
           actions: [
             IconButton(
-              tooltip: "Kullanım Rehberi",
-              icon: const Icon(Icons.help_outline, color: Colors.blue),
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (c) => const TaksiRehberEkrani(mod: 'yonetici', bolum: 'cizelge'))),
-            ),
-            IconButton(
               icon: const Icon(Icons.refresh),
               onPressed: () => _verileriGetir(temizle: true),
             ),
+            const SizedBox(width: 48), // global ? için yer
           ],
         ),
         body: yukleniyor ? const Center(child: CircularProgressIndicator()) : _aylikAjandaDefteriSekmesi(),

@@ -1,11 +1,11 @@
 {
-    "name": "AlmEly Hizmet & Randevu",
-    "short_name": "AlmEly Hizmet & Randevu",
+    "name": "AlmEly Go Hizmet & Randevu",
+    "short_name": "AlmEly Go",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#000000",
+    "background_color": "#FFFFFF",
     "theme_color": "#0175C2",
-    "description": "AlmEly Hizmet & Randevu",
+    "description": "AlmEly Go Hizmet & Randevu",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

@@ -9,11 +9,11 @@ import 'servisler/bildirim_servisi.dart';
 import 'servisler/onesignal_servisi.dart';
 import 'servisler/versiyon_servisi.dart';
 import 'ekranlar/giris.dart';
+import 'navigator_key.dart';
 import 'widgets/debug_ekran_rozeti.dart';
+import 'widgets/ekran_rehber_katmani.dart';
 
-// Global Navigator Key (Her yerden navigasyon için)
-final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
-
+export 'navigator_key.dart' show navigatorKey;
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
@@ -53,7 +53,7 @@ class AlmElyApp extends StatelessWidget {
     return MaterialApp(
       navigatorKey: navigatorKey,
       debugShowCheckedModeBanner: false,
-      title: 'AlmEly Hizmet & Randevu',
+      title: 'AlmEly Go Hizmet & Randevu',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
         useMaterial3: true,
@@ -68,9 +68,12 @@ class AlmElyApp extends StatelessWidget {
         Locale('tr', 'TR'),
       ],
       navigatorObservers: [
+        RehberNavigatorObserver(),
         if (!kReleaseMode) DebugEkranRozeti.observer,
       ],
-      builder: (context, child) => DebugEkranRozeti(child: child),
+      builder: (context, child) => EkranRehberKatmani(
+        child: DebugEkranRozeti(child: child),
+      ),
       home: const GirisSecimSayfasi(),
     );
   }

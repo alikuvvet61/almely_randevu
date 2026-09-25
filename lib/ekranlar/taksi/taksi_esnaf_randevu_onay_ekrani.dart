@@ -4,7 +4,6 @@ import 'package:intl/intl.dart';
 import 'package:almely_randevu/servisler/firestore_servisi.dart';
 import 'package:almely_randevu/modeller/randevu_modeli.dart';
 import 'package:almely_randevu/modeller/esnaf_modeli.dart';
-import 'package:almely_randevu/ekranlar/taksi/taksi_rehber_ekrani.dart';
 
 class TaksiEsnafRandevuOnayEkrani extends StatefulWidget {
   final String esnafId;
@@ -60,12 +59,8 @@ class _TaksiEsnafRandevuOnayEkraniState extends State<TaksiEsnafRandevuOnayEkran
         appBar: AppBar(
           title: const Text("Randevu Yönetimi"),
           centerTitle: true,
-          actions: [
-            IconButton(
-              tooltip: "Kullanım Rehberi",
-              icon: const Icon(Icons.help_outline, color: Colors.blue),
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (c) => const TaksiRehberEkrani(mod: 'yonetici', bolum: 'kayit'))),
-            ),
+          actions: const [
+            SizedBox(width: 48), // global ? için yer
           ],
           bottom: const TabBar(
             tabs: [

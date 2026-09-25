@@ -203,7 +203,8 @@ class _GirisSecimSayfasiState extends State<GirisSecimSayfasi> {
             
             // Logo (5 Tıklama ile Admin Paneli)
             SizedBox(
-              height: 180, // [GERİ ALINDI] Logo boyutu eski orijinal haline getirildi
+              height: 210,
+              width: double.infinity,
               child: GestureDetector(
                 onTap: () {
                   _logoTiklamaSayisi++;
@@ -212,13 +213,29 @@ class _GirisSecimSayfasiState extends State<GirisSecimSayfasi> {
                     _adminGirisiniAc();
                   }
                 },
-                child: Image.asset(
-                  'assets/AlmEly.png',
-                  width: 220,
-                  fit: BoxFit.contain,
-                  gaplessPlayback: true,
-                  errorBuilder: (context, error, stackTrace) =>
-                  const Center(child: Icon(Icons.business_center, size: 80, color: Colors.blue)),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final dpr = MediaQuery.devicePixelRatioOf(context);
+                    final w = constraints.maxWidth.isFinite
+                        ? constraints.maxWidth
+                        : 340.0;
+                    return Image.asset(
+                      'assets/AlmEly.png',
+                      width: w.clamp(260, 380),
+                      height: 210,
+                      fit: BoxFit.contain,
+                      alignment: Alignment.center,
+                      filterQuality: FilterQuality.medium,
+                      isAntiAlias: true,
+                      gaplessPlayback: true,
+                      cacheWidth: (400 * dpr).round(),
+                      errorBuilder: (context, error, stackTrace) =>
+                          const Center(
+                            child: Icon(Icons.business_center,
+                                size: 80, color: Colors.blue),
+                          ),
+                    );
+                  },
                 ),
               ),
             ),
@@ -276,7 +293,7 @@ class _GirisSecimSayfasiState extends State<GirisSecimSayfasi> {
             
             const SizedBox(height: 50),
             Text(
-              "© 2026 AlmEly Hizmet & Randevu",
+              "© 2026 AlmEly Go Hizmet & Randevu",
               style: TextStyle(color: Colors.grey.shade400, fontSize: 11),
             ),
             

@@ -428,7 +428,7 @@ class _AnaEkranState extends State<AnaEkran> {
       },
       child: Scaffold(
           appBar: AppBar(
-          title: const Text("AlmEly Hizmet & Randevu"),
+          title: const Text("AlmEly Go Hizmet & Randevu"),
           centerTitle: true,
           leading: widget.kullaniciTel != null
             ? StreamBuilder<EsnafModeli?>(
@@ -474,11 +474,6 @@ class _AnaEkranState extends State<AnaEkran> {
                 tooltip: "Profilim",
               ),
             IconButton(
-              icon: const Icon(Icons.help_outline_rounded, color: Colors.blueGrey),
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (c) => const RehberEkrani(mod: 'musteri'))),
-              tooltip: "Kullanım Rehberi",
-            ),
-            IconButton(
               icon: const Icon(Icons.logout, color: Colors.redAccent),
               onPressed: () => _cikisYap(context),
               tooltip: "Çıkış Yap",
@@ -492,6 +487,7 @@ class _AnaEkranState extends State<AnaEkran> {
                   MaterialPageRoute(builder: (c) => KullaniciRandevuEkrani(telefon: widget.kullaniciTel!))
                 ),
               ),
+            const SizedBox(width: 48), // global ? için yer
           ],
         ),
         body: CustomScrollView(

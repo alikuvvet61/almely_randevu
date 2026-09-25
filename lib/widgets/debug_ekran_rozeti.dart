@@ -26,6 +26,7 @@ class DebugEkranRozeti extends StatelessWidget {
     'AracKiralamaEsnafRandevuOnayEkrani': 'ekranlar/arac_kiralama/arac_kiralama_esnaf_randevu_onay_ekrani.dart',
     'KullaniciRandevuEkrani': 'ekranlar/kullanici_randevu_ekrani.dart',
     'RehberEkrani': 'ekranlar/rehber_ekrani.dart',
+    'EkranRehberDetayEkrani': 'ekranlar/ekran_rehber_detay_ekrani.dart',
     'AracKiralamaRehberEkrani': 'ekranlar/arac_kiralama/arac_kiralama_rehber_ekrani.dart',
     'TumYorumlarEkrani': 'ekranlar/tum_yorumlar_ekrani.dart',
     'KazaBildirimEkrani': 'ekranlar/arac_kiralama/kaza_bildirim_ekrani.dart',

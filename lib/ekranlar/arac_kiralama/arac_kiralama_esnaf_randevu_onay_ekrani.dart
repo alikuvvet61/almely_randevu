@@ -4,7 +4,6 @@ import 'package:intl/intl.dart';
 import 'package:almely_randevu/servisler/firestore_servisi.dart';
 import 'package:almely_randevu/modeller/randevu_modeli.dart';
 import 'package:almely_randevu/modeller/esnaf_modeli.dart';
-import 'arac_kiralama_rehber_ekrani.dart';
 
 class AracKiralamaEsnafRandevuOnayEkrani extends StatefulWidget {
   final String esnafId;
@@ -60,15 +59,8 @@ class _AracKiralamaEsnafRandevuOnayEkraniState extends State<AracKiralamaEsnafRa
         appBar: AppBar(
           title: const Text("Kiralama Randevu Yönetimi"),
           centerTitle: true,
-          actions: [
-            IconButton(
-              tooltip: "Kullanım Rehberi",
-              icon: const Icon(Icons.help_outline),
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (c) => const AracKiralamaRehberEkrani(mod: 'esnaf', bolum: 'kayit')),
-              ),
-            ),
+          actions: const [
+            SizedBox(width: 48), // global ? için yer
           ],
           bottom: const TabBar(
             tabs: [

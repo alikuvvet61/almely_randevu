@@ -12,7 +12,6 @@ import 'package:almely_randevu/modeller/randevu_modeli.dart';
 import 'package:almely_randevu/servisler/firestore_servisi.dart';
 import 'package:almely_randevu/widgets/ana_buton.dart';
 import 'package:almely_randevu/ekranlar/arac_kiralama/arac_kiralama_yonlendirme.dart';
-import 'package:almely_randevu/ekranlar/arac_kiralama/arac_kiralama_rehber_ekrani.dart';
 import 'package:almely_randevu/ekranlar/tum_yorumlar_ekrani.dart';
 
 /// Araç Kiralama için müşteri (işletme detay) ekranı.
@@ -260,15 +259,8 @@ class _AracKiralamaMusteriEkraniState extends State<AracKiralamaMusteriEkrani> {
         title: Text(_guncelEsnaf.isletmeAdi),
         backgroundColor: Colors.blue,
         foregroundColor: Colors.white,
-        actions: [
-          IconButton(
-            tooltip: "Kullanım Rehberi",
-            icon: const Icon(Icons.help_outline),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (c) => const AracKiralamaRehberEkrani(mod: 'musteri')),
-            ),
-          ),
+        actions: const [
+          SizedBox(width: 48), // global ? için yer
         ],
       ),
       body: CustomScrollView(

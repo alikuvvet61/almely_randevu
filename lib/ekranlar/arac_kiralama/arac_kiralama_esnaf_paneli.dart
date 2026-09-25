@@ -19,7 +19,6 @@ import 'package:almely_randevu/servisler/konum_servisi.dart';
 import 'package:almely_randevu/widgets/medya_goruntuleyici.dart';
 
 import 'package:almely_randevu/ekranlar/esnaf_ajanda_ekrani.dart';
-import 'package:almely_randevu/ekranlar/arac_kiralama/arac_kiralama_rehber_ekrani.dart';
 import 'package:almely_randevu/ekranlar/arac_kiralama/arac_parametre_ekrani.dart';
 import 'package:almely_randevu/ekranlar/arac_kiralama/arac_kiralama_esnaf_randevu_onay_ekrani.dart';
 import 'arac_kiralama_randevu_ekrani.dart';
@@ -2678,18 +2677,12 @@ class _AracKiralamaEsnafPaneliState extends State<AracKiralamaEsnafPaneli> {
         title: Text(_adController.text, style: const TextStyle(fontWeight: FontWeight.bold)),
         actions: [
           IconButton(
-            icon: const Icon(Icons.help_outline_rounded, color: Colors.blueGrey),
-            onPressed: () {
-              Navigator.push(context, MaterialPageRoute(builder: (c) => const AracKiralamaRehberEkrani(mod: 'esnaf')));
-            },
-            tooltip: "Kullanım Rehberi",
-          ),
-          IconButton(
             icon: const Icon(Icons.logout, color: Colors.redAccent),
             onPressed: () => _cikisYap(context),
             tooltip: "Çıkış Yap",
           ),
           IconButton(icon: const Icon(Icons.refresh), onPressed: _verileriTazele),
+          const SizedBox(width: 48), // global ? için yer
         ],
       ),
         body: StreamBuilder<List<RandevuModeli>>(

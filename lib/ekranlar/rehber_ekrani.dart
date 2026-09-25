@@ -81,14 +81,14 @@ class RehberEkrani extends StatelessWidget {
               Icon(Icons.help_center_rounded, color: Colors.blue.shade800, size: 28),
               const SizedBox(width: 12),
               Text(
-                mod == 'esnaf' ? "İşletme Yönetim Rehberi" : "AlmEly Hizmet & Randevu Rehberi",
+                mod == 'esnaf' ? "İşletme Yönetim Rehberi" : "AlmEly Go Hizmet & Randevu Rehberi",
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blue.shade900),
               ),
             ],
           ),
           const SizedBox(height: 10),
           Text(
-            "Uygulamamızı daha verimli kullanabilmeniz için hazırlanan genel kılavuzdur. Taksi ve Araç Kiralama’ya özel detaylar için ilgili sayfadaki yardımı inceleyin.",
+            "Her ekranın sağ üstündeki ? düğmesi o ekranı adım adım anlatır. Bildirim olan süreçlerde rehberde ayrıca “Bildirimler” bölümü bulunur.",
             style: TextStyle(fontSize: 13, color: Colors.blue.shade700, height: 1.5),
           ),
         ],

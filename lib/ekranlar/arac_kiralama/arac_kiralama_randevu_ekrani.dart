@@ -679,6 +679,9 @@ class _AracKiralamaRandevuEkraniState extends State<AracKiralamaRandevuEkrani> {
           ],
         ),
         elevation: 0,
+        actions: const [
+          SizedBox(width: 48), // global ? için yer
+        ],
       ),
       body: StreamBuilder<EsnafModeli>(
         stream: _esnafStream,

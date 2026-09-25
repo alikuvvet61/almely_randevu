@@ -7,7 +7,6 @@ import '../../modeller/esnaf_modeli.dart';
 import '../../servisler/firestore_servisi.dart';
 import 'taksi_surucu_dogrulama_ekrani.dart';
 import 'taksi_surucu_profil_detay_ekrani.dart';
-import 'taksi_rehber_ekrani.dart';
 
 class TaksiDurakTakipEkrani extends StatefulWidget {
   final EsnafModeli esnaf;
@@ -448,18 +447,13 @@ class _TaksiDurakTakipEkraniState extends State<TaksiDurakTakipEkrani> {
         title: const Text("Canlı Durak Takip", style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: Colors.white, foregroundColor: Colors.black, elevation: 0,
         actions: [
-          IconButton(
-            tooltip: "Kullanım Rehberi",
-            icon: const Icon(Icons.help_outline, color: Colors.blue),
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (c) => const TaksiRehberEkrani(mod: 'yonetici', bolum: 'takip'))),
-          ),
           if (widget.soforTel != null)
             IconButton(
               icon: const Icon(Icons.account_circle, size: 28, color: Colors.indigo),
               onPressed: () => _profilGoster(),
               tooltip: "Profilim",
             ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 48), // global ? için yer
         ],
       ),
       body: CustomScrollView(

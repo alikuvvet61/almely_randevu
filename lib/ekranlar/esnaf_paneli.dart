@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'rehber_ekrani.dart';
 import 'package:intl/intl.dart';
 
 import 'package:almely_randevu/ekranlar/giris.dart';
@@ -1466,18 +1465,12 @@ class _EsnafPaneliState extends State<EsnafPaneli> {
         title: Text(_adController.text, style: const TextStyle(fontWeight: FontWeight.bold)),
         actions: [
           IconButton(
-            icon: const Icon(Icons.help_outline_rounded, color: Colors.blueGrey),
-            onPressed: () {
-              Navigator.push(context, MaterialPageRoute(builder: (c) => const RehberEkrani(mod: 'esnaf')));
-            },
-            tooltip: "Kullanım Rehberi",
-          ),
-          IconButton(
             icon: const Icon(Icons.logout, color: Colors.redAccent),
             onPressed: () => _cikisYap(context),
             tooltip: "Çıkış Yap",
           ),
           IconButton(icon: const Icon(Icons.refresh), onPressed: _verileriTazele),
+          const SizedBox(width: 48), // global ? için yer
         ],
       ),
         body: StreamBuilder<List<RandevuModeli>>(
