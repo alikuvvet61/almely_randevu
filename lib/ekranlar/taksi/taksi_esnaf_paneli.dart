@@ -3,28 +3,47 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import 'package:almely_randevu/ekranlar/giris.dart';
+import 'package:almely_randevu/ekranlar/taksi/taksi_mod_secim_ekrani.dart';
 import 'package:almely_randevu/modeller/esnaf_modeli.dart';
 import 'package:almely_randevu/modeller/randevu_modeli.dart';
 import 'package:almely_randevu/servisler/bildirim_servisi.dart';
 import 'package:almely_randevu/servisler/onesignal_servisi.dart';
 import 'package:almely_randevu/servisler/firestore_servisi.dart';
 import 'package:almely_randevu/servisler/konum_servisi.dart';
+import 'package:almely_randevu/yardimcilar/ad_degisimi.dart';
+import 'package:almely_randevu/yardimcilar/mesai_saati_sec.dart';
+import 'package:almely_randevu/yardimcilar/telefon_girdisi.dart';
+import 'package:almely_randevu/widgets/belirgin_kaydirma.dart';
+import 'package:almely_randevu/widgets/isletme_basvuru_alanlari.dart';
+import 'package:almely_randevu/widgets/isletme_logosu.dart';
+import 'package:almely_randevu/widgets/kaydedilmemis_uyari.dart';
+import 'package:almely_randevu/widgets/sallanan_profil_ikonu.dart';
+import 'package:almely_randevu/widgets/ortak_profil_sayfasi.dart';
 
-import 'package:almely_randevu/ekranlar/taksi/taksi_durak_takip_ekrani.dart';
+import 'package:almely_randevu/ekranlar/taksi/taksi_talep_dialogu.dart';
+import 'package:almely_randevu/ekranlar/taksi/taksi_yolculuk_karti.dart';
 import 'package:almely_randevu/ekranlar/taksi/taksi_cizelge_ekrani.dart';
 import 'package:almely_randevu/ekranlar/taksi/taksi_parametre_ekrani.dart';
 import 'package:almely_randevu/ekranlar/taksi/taksi_esnaf_randevu_onay_ekrani.dart';
+import 'package:almely_randevu/ekranlar/taksi/taksi_belge_onay_ekrani.dart';
+import 'package:almely_randevu/ekranlar/taksi/taksi_hizli_kurulum_sayfasi.dart';
+import 'package:almely_randevu/ekranlar/calisan_basvuru_listesi_ekrani.dart';
+import 'package:almely_randevu/ekranlar/taksi/taksi_musteri_ekrani.dart';
+import 'package:almely_randevu/widgets/yonetici_ses_kutusu.dart';
+import 'package:almely_randevu/yardimcilar/ekran_rehber_katalogu.dart';
+import 'package:almely_randevu/yardimcilar/yonetici_ses_komutu.dart';
+import 'package:almely_randevu/ekranlar/hizli_kurulum_kabugu.dart';
 
 class TaksiEsnafPaneli extends StatefulWidget {
   final EsnafModeli esnaf;
   final String? soforTel;
   final bool openFilo;
   final bool openMesai;
+  final bool isletmeFormunuAc;
 
-  const TaksiEsnafPaneli({super.key, required this.esnaf, this.soforTel, this.openFilo = false, this.openMesai = false});
+  const TaksiEsnafPaneli({super.key, required this.esnaf, this.soforTel, this.openFilo = false, this.openMesai = false, this.isletmeFormunuAc = false});
 
   @override
   State<TaksiEsnafPaneli> createState() => _TaksiEsnafPaneliState();
@@ -49,6 +68,7 @@ class _TaksiEsnafPaneliState extends State<TaksiEsnafPaneli> {
   List<Map<String, dynamic>> araclar = [];
   bool _personelOdakli = false;
   bool _degisiklikVar = false;
+  bool _metinProgram = false;
   String _randevuOnayModu = 'Manuel';
   bool _ayniGunRandevuEngelle = false;
   bool _slotAralikliGoster = false;
@@ -69,8 +89,17 @@ class _TaksiEsnafPaneliState extends State<TaksiEsnafPaneli> {
   String _gpsDurum = "Konumu Güncelle";
   final _konumServisi = KonumServisi();
   late EsnafModeli _guncelEsnaf;
+  final _basvuruBilgisi = IsletmeBasvuruBilgisi();
+  bool _basvuruFormuAcik = false;
 
   bool get _isSofor => widget.soforTel != null;
+
+  bool _ayniTel(Object? a, Object? b) {
+    final fs = FirestoreServisi();
+    final x = fs.musteriTelefonAnahtari('${a ?? ''}');
+    final y = fs.musteriTelefonAnahtari('${b ?? ''}');
+    return x.isNotEmpty && x == y;
+  }
 
   StreamSubscription? _talepAboneligi;
   StreamSubscription? _esnafAboneligi;
@@ -84,6 +113,8 @@ class _TaksiEsnafPaneliState extends State<TaksiEsnafPaneli> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
       BildirimServisi.girisKontrolleri(widget.soforTel ?? widget.esnaf.telefon, esnafMi: true, esnafId: widget.esnaf.id);
+      if (!_isSofor) calisanBasvurusuHatirlat(context, widget.esnaf.id);
+      if (widget.isletmeFormunuAc) _esnafDuzenleFormu();
       }
     });
 
@@ -101,6 +132,7 @@ class _TaksiEsnafPaneliState extends State<TaksiEsnafPaneli> {
     _taksiTalepleriniDinle();
     _esnafVerileriniDinle();
     _guncelEsnaf = widget.esnaf;
+    _basvuruBilgisi.logoUrl = widget.esnaf.logoUrl;
     _adController = TextEditingController(text: widget.esnaf.isletmeAdi);
     _telController = TextEditingController(text: widget.esnaf.telefon);
     _whatsappController = TextEditingController(text: widget.esnaf.whatsapp ?? "");
@@ -163,6 +195,7 @@ class _TaksiEsnafPaneliState extends State<TaksiEsnafPaneli> {
   }
 
   void _onTextChanged() {
+    if (_metinProgram) return;
     if (!_degisiklikVar && mounted) {
       setState(() => _degisiklikVar = true);
     }
@@ -183,6 +216,7 @@ class _TaksiEsnafPaneliState extends State<TaksiEsnafPaneli> {
     _adresController.dispose();
     _latController.dispose();
     _lonController.dispose();
+    _basvuruBilgisi.dispose();
     _gpsDurum = "Konumu Güncelle";
     debugPrint(_konumServisi.toString());
     super.dispose();
@@ -200,9 +234,12 @@ class _TaksiEsnafPaneliState extends State<TaksiEsnafPaneli> {
           // Sadece yerelde bir değişiklik (yazma/silme) yokken veritabanından güncelle
           setState(() {
             _guncelEsnaf = EsnafModeli.fromMap(data, snapshot.id);
+            if (!_basvuruFormuAcik) _basvuruBilgisi.doldur(data);
             araclar = List<Map<String, dynamic>>.from(data['araclar'] ?? []);
             hizmetler = List<Map<String, dynamic>>.from(data['hizmetler'] ?? []);
             kanallar = List<String>.from(data['kanallar'] ?? []);
+            final onay = (data['randevuOnayModu'] ?? 'Manuel').toString();
+            _randevuOnayModu = onay.isEmpty ? 'Manuel' : onay;
           });
         }
       }
@@ -217,17 +254,14 @@ class _TaksiEsnafPaneliState extends State<TaksiEsnafPaneli> {
         .snapshots()
         .listen((snapshot) {
       for (var change in snapshot.docChanges) {
-        if (change.type == DocumentChangeType.added) {
-          final data = change.doc.data() as Map<String, dynamic>;
-
-          // Eğer bu araç bir şoföre atanmışsa ve talep başka bir şoföre gitmişse gösterme
-          if (data['soforTel'] != null && _isSofor && data['soforTel'] != widget.soforTel) {
-            continue;
-          }
-
-          // Uygulama ön plandaysa hem diyalog göster hem de sesli uyarıyı tetikle
-          _talepBildirimiGoster(change.doc);
+        if (change.type != DocumentChangeType.added && change.type != DocumentChangeType.modified) continue;
+        final data = change.doc.data() as Map<String, dynamic>;
+        if ((data['durum'] ?? '').toString() != 'bekliyor') continue;
+        if (data['soforTel'] != null && _isSofor && !_ayniTel(data['soforTel'], widget.soforTel)) {
+          continue;
         }
+        if (!mounted) return;
+        taksiTalepPenceresiAc(context, doc: change.doc, esnaf: _guncelEsnaf, soforTel: widget.soforTel, isSofor: _isSofor);
       }
     });
   }
@@ -250,7 +284,7 @@ class _TaksiEsnafPaneliState extends State<TaksiEsnafPaneli> {
     if (widget.soforTel == null) return;
 
     List<Map<String, dynamic>> yeniAraclar = List.from(araclar);
-    int index = yeniAraclar.indexWhere((a) => a['soforTel'] == widget.soforTel);
+    int index = yeniAraclar.indexWhere((a) => _ayniTel(a['soforTel'], widget.soforTel));
 
     if (index != -1) {
       yeniAraclar[index]['konum'] = GeoPoint(lat, lon);
@@ -260,226 +294,6 @@ class _TaksiEsnafPaneliState extends State<TaksiEsnafPaneli> {
     }
   }
 
-  void _talepBildirimiGoster(DocumentSnapshot doc) {
-    if (!mounted) return;
-    final data = doc.data() as Map<String, dynamic>;
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        child: Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.local_taxi, size: 50, color: Colors.orange),
-              const SizedBox(height: 15),
-              const Text(
-                "Yeni Taksi Talebi",
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.indigo),
-              ),
-              const SizedBox(height: 20),
-              Container(
-                padding: const EdgeInsets.all(15),
-                decoration: BoxDecoration(
-                  color: Colors.orange.shade50,
-                  borderRadius: BorderRadius.circular(15),
-                  border: Border.all(color: Colors.orange.shade200),
-                ),
-                child: Column(
-                  children: [
-                    _talepSatiri(Icons.person, "Müşteri", data['musteriAd'] ?? 'Müşteri'),
-                    const SizedBox(height: 12),
-                    _talepSatiri(Icons.phone, "Müşteri Telefon", data['musteriTel'] ?? 'Bilinmiyor'),
-                    const SizedBox(height: 12),
-                    _talepSatiri(Icons.location_on, "Adres / Konum", data['adres'] ?? 'Konum Belirtilmemiş'),
-                    const SizedBox(height: 15),
-                    const Divider(),
-                    const SizedBox(height: 10),
-                    const Text("TAHMİNİ VARIŞ VE MESAFE", style: TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 10),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        Column(
-                          children: [
-                            Text(
-                              "${data['tahminiSure'] ?? '--'} dk",
-                              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: Colors.indigo),
-                            ),
-                            const Text("Süre", style: TextStyle(fontSize: 9, color: Colors.grey)),
-                          ],
-                        ),
-                        if (data['mesafe'] != null)
-                          Column(
-                            children: [
-                              Builder(builder: (context) {
-                                double m = (data['mesafe'] as num).toDouble();
-                                return Text(
-                                  m < 1000 ? "${m.toStringAsFixed(0)} m" : "${(m / 1000).toStringAsFixed(1)} km",
-                                  style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: Colors.orange),
-                                );
-                              }),
-                              const Text("Mesafe", style: TextStyle(fontSize: 9, color: Colors.grey)),
-                            ],
-                          ),
-                      ],
-                    ),
-                    if (data['plaka'] != null) ...[
-                      const Divider(height: 25),
-                      _talepSatiri(Icons.directions_car, "İstenen Araç", data['plaka']),
-                    ],
-                  ],
-                ),
-              ),
-              const SizedBox(height: 20),
-              const Text(
-                "Talebi üstlenmek ister misiniz?",
-                textAlign: TextAlign.center,
-                style: TextStyle(fontWeight: FontWeight.w500),
-              ),
-              const SizedBox(height: 25),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
-                      child: const Text("Kapat", style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () async {
-                        final talepData = doc.data() as Map<String, dynamic>;
-                        final plaka = talepData['plaka'];
-
-                        // 1. Talebi güncelle
-                        await doc.reference.update({
-                          'durum': 'kabul_edildi',
-                          'soforTel': widget.soforTel ?? 'Yönetici',
-                          'kabulZamani': FieldValue.serverTimestamp(),
-                        });
-
-                        // Müşteriye bildirim gönder
-                        if (talepData['musteriTel'] != null) {
-                          BildirimServisi.bildirimGonder(
-                            kullaniciTel: talepData['musteriTel'],
-                            baslik: "Taksiniz Yolda!",
-                            icerik: plaka != null ? "$plaka plakalı aracımız yola çıktı, size doğru geliyor." : "Aracımız yola çıktı, size doğru geliyor.",
-                          );
-                        }
-
-                        // 2. Aracı sıradan çıkar ve meşgul yap
-                        if (plaka != null) {
-                          var esDoc = await FirebaseFirestore.instance.collection('esnaflar').doc(widget.esnaf.id).get();
-                          if (esDoc.exists) {
-                            List<dynamic> gAraclar = List.from(esDoc.data()?['araclar'] ?? []);
-                            int i = gAraclar.indexWhere((a) => a['plaka'] == plaka);
-                            if (i != -1) {
-                              gAraclar[i]['durakta'] = false;
-                              gAraclar[i]['siraZamani'] = 0;
-                              gAraclar[i]['durum'] = "Meşgul";
-                              await esDoc.reference.update({'araclar': gAraclar});
-                            }
-                          }
-                        }
-
-                        if (context.mounted) {
-                          Navigator.pop(context); // Bildirim penceresini kapat
-                          // Şoföre Navigasyon Sorusu
-                          _navigasyonSor(talepData['musteriKonum'], talepData['adres']);
-                        }
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        elevation: 0,
-                      ),
-                      child: const Text("Kabul Et", style: TextStyle(fontWeight: FontWeight.bold)),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-
-  void _navigasyonSor(dynamic konum, String? adres) {
-    if (konum == null) return;
-
-    double lat;
-    double lon;
-
-    if (konum is GeoPoint) {
-      lat = konum.latitude;
-      lon = konum.longitude;
-    } else {
-      return;
-    }
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Row(
-          children: [
-            Icon(Icons.navigation, color: Colors.green),
-            SizedBox(width: 10),
-            Text("Navigasyon"),
-          ],
-        ),
-        content: Text("Müşterinin konumuna navigasyon başlatılsın mı?\n\nAdres: ${adres ?? 'Belirtilmedi'}"),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Hayır", style: TextStyle(color: Colors.grey))),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(ctx);
-              final url = Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$lat,$lon&travelmode=driving');
-              if (await canLaunchUrl(url)) {
-                await launchUrl(url, mode: LaunchMode.externalApplication);
-              }
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
-            child: const Text("Başlat"),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _talepSatiri(IconData ikon, String baslik, String icerik) {
-    return Row(
-      children: [
-        Icon(ikon, size: 20, color: Colors.indigo.withValues(alpha: 0.7)),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(baslik, style: const TextStyle(fontSize: 11, color: Colors.grey, fontWeight: FontWeight.bold)),
-              Text(icerik, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
 
   Future<void> _profesyonelAdresGetir() async {
     try {
@@ -505,19 +319,98 @@ class _TaksiEsnafPaneliState extends State<TaksiEsnafPaneli> {
   }
 
 
+  bool get _isletmeProfiliEksik => isletmeFormEksikleri(
+        ad: _adController.text,
+        telefon: _telController.text,
+        whatsapp: _whatsappController.text,
+        randevuHatti: _randevuTelController.text,
+        il: _ilController.text,
+        ilce: _ilceController.text,
+        adres: _adresController.text,
+        enlem: _latController.text,
+        boylam: _lonController.text,
+        bilgi: _basvuruBilgisi,
+      ).isNotEmpty;
+
+  IsletmeFormAnligi _isletmeFormAnligi() {
+    return IsletmeFormAnligi.cek(
+      kontroller: [
+        _adController, _telController, _whatsappController, _randevuTelController,
+        _ilController, _ilceController, _adresController, _latController, _lonController,
+        _basvuruBilgisi.email, _basvuruBilgisi.yetkili, _basvuruBilgisi.vergiNo,
+        _basvuruBilgisi.sabitTel, _basvuruBilgisi.web, _basvuruBilgisi.instagram,
+        _basvuruBilgisi.mersis, _basvuruBilgisi.sicil, _basvuruBilgisi.tanitim,
+      ],
+      bilgi: _basvuruBilgisi,
+    );
+  }
+
+  bool _isletmeFormunuOnayla(BuildContext dialogContext) {
+    final eksik = isletmeFormEksikleri(
+      ad: _adController.text,
+      telefon: _telController.text,
+      whatsapp: _whatsappController.text,
+      randevuHatti: _randevuTelController.text,
+      il: _ilController.text,
+      ilce: _ilceController.text,
+      adres: _adresController.text,
+      enlem: _latController.text,
+      boylam: _lonController.text,
+      bilgi: _basvuruBilgisi,
+    );
+    if (eksik.isNotEmpty) {
+      isletmeEksikleriniGoster(dialogContext, eksik);
+      return false;
+    }
+    setState(() => _degisiklikVar = true);
+    return true;
+  }
+
   void _esnafDuzenleFormu() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
+    if (_basvuruFormuAcik) return;
+    Future<void>.delayed(Duration.zero, () {
+      if (!mounted || _basvuruFormuAcik) return;
+      _basvuruFormuAcik = true;
+      final yukseklik = MediaQuery.sizeOf(context).height * 0.62;
+      final anlik = _isletmeFormAnligi();
+      final acilisKirli = _degisiklikVar;
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => KapatKontrolluDiyalog(
+        sor: () => isletmeFormKapanisi(
+          context: context,
+          anlik: anlik,
+          bilgi: _basvuruBilgisi,
+          acilisKirli: acilisKirli,
+          kirliYaz: (v) {
+            _degisiklikVar = v;
+            if (mounted) setState(() {});
+          },
+          onayla: () => _isletmeFormunuOnayla(context),
+        ),
+        olustur: (kapat, zorlaKapat) => AlertDialog(
+        insetPadding: isletmeFormKenar(context),
+        contentPadding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
         title: const Text("İşletme Bilgilerini Düzenle"),
-        content: SingleChildScrollView(
+        content: BelirginKaydirma(
+          width: isletmeFormGenisligi(context),
+          height: yukseklik,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              IsletmeLogoSecici(
+                url: _basvuruBilgisi.logoUrl,
+                dosya: _basvuruBilgisi.yeniLogo,
+                onSecildi: (veri) {
+                  _basvuruBilgisi.yeniLogo = veri;
+                  if (mounted) setState(() => _degisiklikVar = true);
+                },
+              ),
               TextField(controller: _adController, decoration: const InputDecoration(labelText: "İşletme Adı", prefixIcon: Icon(Icons.business))),
-              TextField(controller: _telController, decoration: const InputDecoration(labelText: "İletişim Telefonu", hintText: "5xx xxx xx xx", prefixIcon: Icon(Icons.phone)), keyboardType: TextInputType.phone),
-              TextField(controller: _whatsappController, decoration: InputDecoration(labelText: "WhatsApp (Opsiyonel)", hintText: "5xx xxx xx xx", prefixIcon: Icon(Icons.chat_bubble_outline, color: Colors.green)), keyboardType: TextInputType.phone),
-              TextField(controller: _randevuTelController, decoration: const InputDecoration(labelText: "Randevu Hattı (Opsiyonel)", hintText: "5xx xxx xx xx", prefixIcon: Icon(Icons.phone_callback, color: Colors.orange)), keyboardType: TextInputType.phone),
+              TextField(controller: _telController, decoration: const InputDecoration(labelText: "İletişim Telefonu", hintText: "05xx xxx xx xx", prefixIcon: Icon(Icons.phone)), keyboardType: TextInputType.phone, inputFormatters: TelefonGirdisi.bicim),
+              TextField(controller: _whatsappController, decoration: InputDecoration(labelText: "WhatsApp (Opsiyonel)", hintText: "05xx xxx xx xx", prefixIcon: Icon(Icons.chat_bubble_outline, color: Colors.green)), keyboardType: TextInputType.phone, inputFormatters: TelefonGirdisi.bicim),
+              TextField(controller: _randevuTelController, decoration: const InputDecoration(labelText: "Randevu Hattı (Opsiyonel)", hintText: "05xx xxx xx xx", prefixIcon: Icon(Icons.phone_callback, color: Colors.orange)), keyboardType: TextInputType.phone, inputFormatters: TelefonGirdisi.bicim),
               const Divider(height: 30),
               Row(
                 children: [
@@ -541,28 +434,46 @@ class _TaksiEsnafPaneliState extends State<TaksiEsnafPaneli> {
                 icon: const Icon(Icons.my_location),
                 label: Text(_gpsDurum),
               ),
+              IsletmeBasvuruAlanlari(
+                bilgi: _basvuruBilgisi,
+                kategori: _guncelEsnaf.kategori,
+                mesaiYazi: _mesaiYazi(),
+                degisti: () => _degisiklikVar = true,
+              ),
             ],
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Kapat")),
+          TextButton(onPressed: kapat, child: const Text("Kapat")),
           ElevatedButton(
             onPressed: () {
-              setState(() => _degisiklikVar = true);
-              Navigator.pop(context);
+              if (_isletmeFormunuOnayla(context)) zorlaKapat();
             },
             child: const Text("Tamam"),
           ),
         ],
       ),
-    );
+        ),
+    ).whenComplete(() {
+      if (!mounted) return;
+      setState(() => _basvuruFormuAcik = false);
+    });
+    });
+  }
+
+  String _mesaiYazi() {
+    final kapali = _calismaGunleri.entries.where((e) => e.value != true).map((e) => e.key).join(', ');
+    return 'Mesai: $acilisSaat – $kapanisSaat · ${kapali.isEmpty ? 'Kapalı gün yok' : 'Kapalı: $kapali'}';
   }
 
   Future<void> _verileriTazele() async {
+    _metinProgram = true;
+    try {
     var doc = await FirebaseFirestore.instance.collection('esnaflar').doc(widget.esnaf.id).get();
     if (doc.exists && mounted) {
       var data = doc.data()!;
       setState(() {
+        _basvuruBilgisi.doldur(data);
         _guncelEsnaf = EsnafModeli.fromMap(data, doc.id);
         _whatsappController.text = _guncelEsnaf.whatsapp ?? "";
         _randevuTelController.text = _guncelEsnaf.telefonRandevu ?? "";
@@ -589,22 +500,86 @@ class _TaksiEsnafPaneliState extends State<TaksiEsnafPaneli> {
         _degisiklikVar = false;
       });
     }
+    } finally {
+      _metinProgram = false;
+    }
+  }
+
+  Future<String> _sesKomutu(String metin) async {
+    final komut = yoneticiSesKomutuCoz(metin);
+    if (!komut.anlasildi) {
+      if (metin.trim().isEmpty) return komut.mesaj;
+      return EkranRehberKatalogu.ara(metin, tercih: 'TaksiEsnafPaneli');
+    }
+    if (komut.taksiIstiyorum) {
+      if (!mounted) return komut.mesaj;
+      final tel = widget.soforTel ?? widget.esnaf.telefon;
+      final esnaf = _guncelEsnaf;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (c) => TaksiMusteriEkrani(esnaf: esnaf, kullaniciTel: tel, cagriyiHazirla: true)),
+        );
+      });
+      return komut.mesaj;
+    }
+    setState(() {
+      if (komut.acilis != null) acilisSaat = komut.acilis!;
+      if (komut.kapanis != null) kapanisSaat = komut.kapanis!;
+      if (komut.randevuAlinmasin != null) {
+        _guncelEsnaf = _guncelEsnaf.copyWith(
+          randevuAlinmasin: komut.randevuAlinmasin,
+          randevuSadeceYonetici: komut.randevuAlinmasin! ? false : _guncelEsnaf.randevuSadeceYonetici,
+        );
+      }
+    });
+    await yoneticiSesKomutunuYaz(widget.esnaf.id, komut);
+    return komut.mesaj;
   }
 
   Future<void> _kaydet({bool sessiz = false}) async {
     final scaffoldMessenger = ScaffoldMessenger.of(context);
+    final telefonMesaji = TelefonGirdisi.hata(_telController.text) ??
+        TelefonGirdisi.hata(_whatsappController.text, bosOlabilir: true) ??
+        TelefonGirdisi.hata(_randevuTelController.text, bosOlabilir: true) ??
+        TelefonGirdisi.hata(_basvuruBilgisi.sabitTel.text, bosOlabilir: true);
+    if (telefonMesaji != null) {
+      scaffoldMessenger.showSnackBar(SnackBar(content: Text(telefonMesaji), backgroundColor: Colors.red));
+      return;
+    }
+    final yasalEngel = await _basvuruBilgisi.yasalHazirla(FirestoreServisi().dosyaYukle, widget.esnaf.id);
+    if (yasalEngel != null) {
+      scaffoldMessenger.showSnackBar(SnackBar(content: Text(yasalEngel), backgroundColor: Colors.red));
+      return;
+    }
+    final yasalMesaj = _basvuruBilgisi.kayitMesaji;
     try {
       await FirebaseFirestore.instance.collection('esnaflar').doc(widget.esnaf.id).update({
         'isletmeAdi': _adController.text,
-        'telefon': _telController.text,
-        'whatsapp': _whatsappController.text,
-        'telefonRandevu': _randevuTelController.text,
+        'telefon': TelefonGirdisi.rakamlar(_telController.text),
+        'whatsapp': TelefonGirdisi.rakamlar(_whatsappController.text),
+        'telefonRandevu': TelefonGirdisi.rakamlar(_randevuTelController.text),
         'il': _ilController.text,
         'ilce': _ilceController.text,
         'adres': _adresController.text,
+        ..._basvuruBilgisi.toMap(),
+        ..._basvuruBilgisi.vergiGuncellemeAlani(FieldValue.serverTimestamp()),
         'konum': GeoPoint(double.parse(_latController.text), double.parse(_lonController.text)),
         'randevularPersonelAdinaAlinsin': _personelOdakli,
         'randevuOnayModu': _randevuOnayModu,
+        'randevuAlinmasin': _guncelEsnaf.randevuAlinmasin,
+        'aracOdakliSistem': _guncelEsnaf.aracOdakliSistem,
+        'taksiCagriBildirim': _guncelEsnaf.taksiCagriBildirim,
+        'taksiNavigasyonOtomatik': _guncelEsnaf.taksiNavigasyonOtomatik,
+        'taksiIptalTabanUcret': _guncelEsnaf.taksiIptalTabanUcret,
+        'taksiIptalKmUcret': _guncelEsnaf.taksiIptalKmUcret,
+        'taksiIptalDakikaUcret': _guncelEsnaf.taksiIptalDakikaUcret,
+        'taksiRezervasyonEsnafBildirim': _guncelEsnaf.taksiRezervasyonEsnafBildirim,
+        'taksiRezervasyonMusteriBildirim': _guncelEsnaf.taksiRezervasyonMusteriBildirim,
+        'taksiRezervasyonHatirlatmaDk': _guncelEsnaf.taksiRezervasyonHatirlatmaDk,
+        'istirahatliAraclariGizle': _guncelEsnaf.istirahatliAraclariGizle,
+        'konumDogrulamaMesafesi': _guncelEsnaf.konumDogrulamaMesafesi,
         'ayniGunRandevuEngelle': _ayniGunRandevuEngelle,
         'slotAralikliGoster': _slotAralikliGoster,
         'nobetBaslangic': _nobetBaslangic,
@@ -629,11 +604,21 @@ class _TaksiEsnafPaneliState extends State<TaksiEsnafPaneli> {
         }).toList(),
       });
 
+      final eskiIsletme = _guncelEsnaf.isletmeAdi.trim();
+      final yeniIsletme = _adController.text.trim();
+      if (eskiIsletme.isNotEmpty && yeniIsletme.isNotEmpty && eskiIsletme != yeniIsletme) {
+        await AdDegisimi.isletmeAdiniYay(esnafId: widget.esnaf.id, eski: eskiIsletme, yeniAd: yeniIsletme);
+        _guncelEsnaf = _guncelEsnaf.copyWith(isletmeAdi: yeniIsletme);
+      }
+
       if (!mounted) return;
       setState(() => _degisiklikVar = false);
       if (!sessiz) {
         scaffoldMessenger.showSnackBar(
-          const SnackBar(content: Text("Tüm ayarlar başarıyla kaydedildi."), backgroundColor: Colors.green),
+          SnackBar(
+            content: Text(yasalMesaj ?? "Tüm ayarlar başarıyla kaydedildi."),
+            backgroundColor: yasalMesaj == null ? Colors.green : Colors.orange,
+          ),
         );
       }
     } catch (e) {
@@ -645,6 +630,20 @@ class _TaksiEsnafPaneliState extends State<TaksiEsnafPaneli> {
   }
 
 
+  Future<void> _kabulEdilenAraclariEkle() async {
+    final doc = await FirebaseFirestore.instance.collection('esnaflar').doc(widget.esnaf.id).get();
+    if (!doc.exists || !mounted) return;
+    final sunucu = List<Map<String, dynamic>>.from(doc.data()?['araclar'] ?? []);
+    setState(() {
+      for (final a in sunucu) {
+        if (!araclar.any((y) => _ayniTel(y['soforTel'], a['soforTel']))) {
+          araclar.add(Map<String, dynamic>.from(a));
+          _degisiklikVar = true;
+        }
+      }
+    });
+  }
+
   Widget _yonetimButonlari() {
     if (_isSofor) {
       return _ozelButon(
@@ -654,7 +653,7 @@ class _TaksiEsnafPaneliState extends State<TaksiEsnafPaneli> {
         onTap: () {
           final navigator = Navigator.of(context);
           navigator.push(
-            MaterialPageRoute(builder: (c) => TaksiDurakTakipEkrani(esnaf: _guncelEsnaf, soforTel: widget.soforTel)),
+            MaterialPageRoute(builder: (c) => taksiDurakTakipSayfasi(_guncelEsnaf, widget.soforTel)),
           );
         },
       );
@@ -688,7 +687,7 @@ class _TaksiEsnafPaneliState extends State<TaksiEsnafPaneli> {
           baslik: "Durak Takip",
           altBaslik: "Sıra ve Konum",
           renk: Colors.teal,
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (c) => TaksiDurakTakipEkrani(esnaf: _guncelEsnaf, soforTel: widget.soforTel))),
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (c) => taksiDurakTakipSayfasi(_guncelEsnaf, widget.soforTel))),
         ),
         _yonetimKarti(
           icon: Icons.settings_suggest,
@@ -701,12 +700,27 @@ class _TaksiEsnafPaneliState extends State<TaksiEsnafPaneli> {
             _verileriTazele();
           },
         ),
-        _yonetimKarti(
-          icon: Icons.business,
-          baslik: "İşletme Profili",
-          altBaslik: "Bilgileri Güncelle",
-          renk: Colors.deepPurple,
-          onTap: _esnafDuzenleFormu,
+        StreamBuilder<List<Map<String, dynamic>>>(
+          stream: FirestoreServisi().calisanBasvurulariDinle(widget.esnaf.id),
+          builder: (context, snap) {
+            final bekliyor = (snap.data ?? const []).isNotEmpty;
+            return _yonetimKarti(
+              icon: Icons.badge_outlined,
+              baslik: "Çalışan başvuruları",
+              altBaslik: "Kabul ve red",
+              renk: Colors.teal,
+              cerceve: bekliyor ? Colors.orange : null,
+              onTap: () async {
+                await Navigator.push(context, MaterialPageRoute(builder: (c) => CalisanBasvuruListesiEkrani(esnafId: widget.esnaf.id)));
+                if (!mounted) return;
+                if (!_degisiklikVar) {
+                  _verileriTazele();
+                } else {
+                  await _kabulEdilenAraclariEkle();
+                }
+              },
+            );
+          },
         ),
       ],
     );
@@ -718,6 +732,7 @@ class _TaksiEsnafPaneliState extends State<TaksiEsnafPaneli> {
     required String altBaslik,
     required Color renk,
     required VoidCallback onTap,
+    Color? cerceve,
   }) {
     return Material(
       color: Colors.transparent,
@@ -729,7 +744,10 @@ class _TaksiEsnafPaneliState extends State<TaksiEsnafPaneli> {
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: renk.withValues(alpha: 0.1)),
+            border: Border.all(
+              color: cerceve ?? renk.withValues(alpha: 0.1),
+              width: cerceve == null ? 1 : 2,
+            ),
             boxShadow: [
               BoxShadow(
                 color: renk.withValues(alpha: 0.05),
@@ -917,28 +935,29 @@ class _TaksiEsnafPaneliState extends State<TaksiEsnafPaneli> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 StreamBuilder<List<Map<String, dynamic>>>(
-                  stream: FirestoreServisi().tumKullanicilariGetir(),
+                  stream: FirestoreServisi().calisanBasvurulariTumunuDinle(_guncelEsnaf.id),
                   builder: (context, snapshot) {
-                    final kullanicilar = (snapshot.data ?? [])
-                        .where((u) => u['plaka'] != null && 
-                                     u['plaka'].toString().isNotEmpty && 
-                                     (u['adSoyad'] ?? u['ad']) != null)
-                        .toList();
-                    
+                    final fs = FirestoreServisi();
+                    final kullanicilar = fs.durakKabulSoforleri(snapshot.data ?? []);
+                    if (kullanicilar.isEmpty) {
+                      return const Text('Bu durağa kabul edilmiş şoför yok. Şoför, İşletmede çalışıyorum ile bu durağa başvurur.');
+                    }
+                    final seciliAnahtar = fs.musteriTelefonAnahtari(sTelController.text);
+                    final secili = kullanicilar.any((u) => u['anahtar'] == seciliAnahtar) ? seciliAnahtar : null;
                     return DropdownButtonFormField<String>(
-                      initialValue: kullanicilar.any((u) => u['tel'] == sTelController.text) ? sTelController.text : null,
-                      decoration: const InputDecoration(labelText: "Kayıtlı Şoförlerden Seç"),
+                      initialValue: secili,
+                      decoration: const InputDecoration(labelText: "Bu durağın şoförlerinden seç"),
                       hint: const Text("Şoför Seçiniz"),
                       items: kullanicilar.map((u) => DropdownMenuItem(
-                        value: u['tel'].toString(),
-                        child: Text("${u['adSoyad'] ?? u['ad']} (${u['plaka']})"),
+                        value: u['anahtar'].toString(),
+                        child: Text("${u['adSoyad']} (${u['plaka']})"),
                       )).toList(),
                       onChanged: (v) {
-                        final secili = kullanicilar.firstWhere((u) => u['tel'] == v);
+                        final bulunan = kullanicilar.firstWhere((u) => u['anahtar'] == v);
                         setDialogState(() {
-                          pController.text = (secili['plaka'] ?? "").toString();
-                          sAdController.text = (secili['adSoyad'] ?? secili['ad'] ?? "").toString();
-                          sTelController.text = v ?? "";
+                          pController.text = (bulunan['plaka'] ?? "").toString();
+                          sAdController.text = (bulunan['adSoyad'] ?? "").toString();
+                          sTelController.text = (bulunan['tel'] ?? "").toString();
                         });
                       },
                     );
@@ -1069,30 +1088,33 @@ class _TaksiEsnafPaneliState extends State<TaksiEsnafPaneli> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 StreamBuilder<List<Map<String, dynamic>>>(
-                  stream: FirestoreServisi().tumKullanicilariGetir(),
+                  stream: FirestoreServisi().calisanBasvurulariTumunuDinle(_guncelEsnaf.id),
                   builder: (context, snapshot) {
-                    final mevcutTelefonlar = araclar.map((a) => a['soforTel']?.toString()).toSet();
-
-                    final kullanicilar = (snapshot.data ?? [])
-                        .where((u) => u['plaka'] != null && 
-                                     u['plaka'].toString().isNotEmpty && 
-                                     (u['adSoyad'] ?? u['ad']) != null &&
-                                     !mevcutTelefonlar.contains(u['tel'])) // Zaten ekli olanları filtrele
+                    final fs = FirestoreServisi();
+                    final mevcutAnahtarlar = araclar
+                        .map((a) => fs.musteriTelefonAnahtari('${a['soforTel'] ?? ''}'))
+                        .where((t) => t.isNotEmpty)
+                        .toSet();
+                    final kullanicilar = fs.durakKabulSoforleri(snapshot.data ?? [])
+                        .where((u) => !mevcutAnahtarlar.contains(u['anahtar']))
                         .toList();
+                    if (kullanicilar.isEmpty) {
+                      return const Text('Bu durağa kabul edilmiş şoför yok. Şoför, İşletmede çalışıyorum ile bu durağa başvurur.');
+                    }
 
                     return DropdownButtonFormField<String>(
-                      decoration: const InputDecoration(labelText: "Kayıtlı Şoförlerden Seç"),
+                      decoration: const InputDecoration(labelText: "Bu durağın şoförlerinden seç"),
                       hint: const Text("Şoför Seçiniz"),
                       items: kullanicilar.map((u) => DropdownMenuItem(
-                        value: u['tel'].toString(),
-                        child: Text("${u['adSoyad'] ?? u['ad']} (${u['plaka']})"),
+                        value: u['anahtar'].toString(),
+                        child: Text("${u['adSoyad']} (${u['plaka']})"),
                       )).toList(),
                       onChanged: (v) {
-                        final secili = kullanicilar.firstWhere((u) => u['tel'] == v);
+                        final secili = kullanicilar.firstWhere((u) => u['anahtar'] == v);
                         setDialogState(() {
                           pController.text = (secili['plaka'] ?? "").toString();
-                          sAdController.text = (secili['adSoyad'] ?? secili['ad'] ?? "").toString();
-                          sTelController.text = v ?? "";
+                          sAdController.text = (secili['adSoyad'] ?? "").toString();
+                          sTelController.text = (secili['tel'] ?? "").toString();
                         });
                       },
                     );
@@ -1138,7 +1160,9 @@ class _TaksiEsnafPaneliState extends State<TaksiEsnafPaneli> {
               child: const Text("Vazgeç"),
             ),
             ElevatedButton(
-              onPressed: () {
+              onPressed: sTelController.text.trim().isEmpty
+                  ? null
+                  : () {
                 int? yeniNobetSira = int.tryParse(nSiraController.text.trim());
 
                 // [YENİ] Mükerrer Nöbet Sırası Kontrolü
@@ -1294,17 +1318,8 @@ class _TaksiEsnafPaneliState extends State<TaksiEsnafPaneli> {
   Widget _saatSecici(String etiket, String deger, Function(String) onSec) {
     return InkWell(
       onTap: () async {
-        TimeOfDay initial = const TimeOfDay(hour: 9, minute: 0);
-        if (deger != "Seçilmedi") {
-          initial = TimeOfDay(hour: int.parse(deger.split(":")[0]), minute: int.parse(deger.split(":")[1]));
-        }
-
-        TimeOfDay? t = await showTimePicker(
-          context: context,
-          initialTime: initial,
-          builder: (context, child) => MediaQuery(data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true), child: child!)
-        );
-        if (t != null) onSec("${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}");
+        final t = await mesaiSaatiSec(context, baslik: etiket, secili: deger.contains(':') ? deger : '09:00');
+        if (t != null) onSec(t);
       },
       child: Column(
         children: [
@@ -1316,22 +1331,152 @@ class _TaksiEsnafPaneliState extends State<TaksiEsnafPaneli> {
   }
 
 
+  Future<void> _hizliKurulumAc() async {
+    final kopru = TaksiKurulumKopru(
+      esnafOku: () => _guncelEsnaf,
+      esnafYaz: (e) => setState(() {
+        _guncelEsnaf = e;
+        _randevuOnayModu = e.randevuOnayModu.isEmpty ? 'Manuel' : e.randevuOnayModu;
+        _degisiklikVar = true;
+      }),
+      is724Oku: () => _is724,
+      is724Yaz: (v) => setState(() {
+        _is724 = v;
+        _degisiklikVar = true;
+      }),
+      acilisOku: () => acilisSaat,
+      kapanisOku: () => kapanisSaat,
+      acilisYaz: (v) => setState(() {
+        acilisSaat = v;
+        _degisiklikVar = true;
+      }),
+      kapanisYaz: (v) => setState(() {
+        kapanisSaat = v;
+        _degisiklikVar = true;
+      }),
+      nobetBasOku: () => _nobetBaslangic,
+      nobetBitOku: () => _nobetBitis,
+      nobetBasYaz: (v) => setState(() {
+        _nobetBaslangic = v;
+        _degisiklikVar = true;
+      }),
+      nobetBitYaz: (v) => setState(() {
+        _nobetBitis = v;
+        _degisiklikVar = true;
+      }),
+      gunler: _calismaGunleri,
+      gunDegisti: () => setState(() => _degisiklikVar = true),
+      araclar: araclar,
+      aracEkle: ({required String plaka, required String ad, required String tel, int? nobet}) {
+        final p = plaka.trim().toUpperCase();
+        final telefon = tel.trim();
+        if (p.isEmpty || ad.trim().isEmpty || telefon.isEmpty) return 'Şoför seçin.';
+        if (araclar.any((a) => _ayniTel(a['soforTel'], telefon))) return 'Bu şoför zaten listede.';
+        if (nobet != null && araclar.any((a) => a['nobetSirasi'] == nobet)) {
+          return '№ $nobet sırası başka bir araçta.';
+        }
+        setState(() {
+          araclar.add({
+            'plaka': p,
+            'soforAd': ad.trim(),
+            'soforTel': telefon,
+            'nobetSirasi': nobet,
+            'durum': 'Aktif',
+            'durakta': false,
+          });
+          _degisiklikVar = true;
+        });
+        return null;
+      },
+      aracNobetYaz: (i, nobet) {
+        for (var j = 0; j < araclar.length; j++) {
+          if (j != i && araclar[j]['nobetSirasi'] == nobet) {
+            return '№ $nobet sırası başka bir araçta.';
+          }
+        }
+        setState(() {
+          araclar[i]['nobetSirasi'] = nobet;
+          _degisiklikVar = true;
+        });
+        return null;
+      },
+      aracSil: (i) => setState(() {
+        araclar.removeAt(i);
+        _degisiklikVar = true;
+      }),
+      kaydet: () => _kaydet(),
+    );
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (c) => TaksiHizliKurulumSayfasi(kopru: kopru)),
+    );
+    if (mounted) setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isSofor) {
-      return TaksiDurakTakipEkrani(esnaf: _guncelEsnaf, soforTel: widget.soforTel);
+      return taksiDurakTakipSayfasi(_guncelEsnaf, widget.soforTel);
     }
 
-    return Scaffold(
+    return PopScope(
+      canPop: !_degisiklikVar,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        final devam = await kaydedilmemisDevam(context, _degisiklikVar, kaydet: () => _kaydet(), kayitTamam: () => !_degisiklikVar, kaydetmedenCik: () => _verileriTazele());
+        if (devam && context.mounted) Navigator.of(context).pop();
+      },
+      child: Scaffold(
       appBar: AppBar(
-        title: Text(_adController.text, style: const TextStyle(fontWeight: FontWeight.bold)),
+        title: Row(
+          children: [
+            IsletmeLogosu(url: _basvuruBilgisi.logoUrl, dosya: _basvuruBilgisi.yeniLogo, boyut: 36, yuvarlak: true),
+            Flexible(child: Text(_adController.text, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold))),
+          ],
+        ),
+        leading: IconButton(
+          icon: const Icon(Icons.swap_horiz_rounded, color: Colors.blue),
+          tooltip: "Mod Değiştir",
+          onPressed: () async {
+            YuzerMikrofon.hepsiniKapat();
+            if (!await kaydedilmemisDevam(context, _degisiklikVar, kaydet: () => _kaydet(), kayitTamam: () => !_degisiklikVar, kaydetmedenCik: () => _verileriTazele())) return;
+            if (!context.mounted) return;
+            final girisTel = widget.soforTel ?? widget.esnaf.telefon;
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (c) => TaksiModSecimEkrani(esnaf: _guncelEsnaf, girisTel: girisTel),
+              ),
+            );
+          },
+        ),
         actions: [
+          SallananProfilIkonu(
+            salla: !_basvuruFormuAcik && _isletmeProfiliEksik,
+            onPressed: () => ortakProfilAc(
+              context: context,
+              telefon: widget.soforTel ?? widget.esnaf.telefon,
+              isletmeDuzenle: (_) => _esnafDuzenleFormu(),
+              cikisOncesi: () => kaydedilmemisDevam(context, _degisiklikVar, kaydet: () => _kaydet(), kayitTamam: () => !_degisiklikVar, kaydetmedenCik: () => _verileriTazele()),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.logout, color: Colors.redAccent),
-            onPressed: () => _cikisYap(context),
+            onPressed: () async {
+              if (!await kaydedilmemisDevam(context, _degisiklikVar, kaydet: () => _kaydet(), kayitTamam: () => !_degisiklikVar, kaydetmedenCik: () => _verileriTazele())) return;
+              if (!context.mounted) return;
+              _cikisYap(context);
+            },
             tooltip: "Çıkış Yap",
           ),
-          IconButton(icon: const Icon(Icons.refresh), onPressed: _verileriTazele),
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: () async {
+              if (!await kaydedilmemisDevam(context, _degisiklikVar, kaydet: () => _kaydet(), kayitTamam: () => !_degisiklikVar, kaydetmedenCik: () => _verileriTazele())) return;
+              if (!mounted) return;
+              _verileriTazele();
+            },
+          ),
           const SizedBox(width: 48), // global ? için yer
         ],
       ),
@@ -1349,6 +1494,10 @@ class _TaksiEsnafPaneliState extends State<TaksiEsnafPaneli> {
               padding: const EdgeInsets.all(16),
               child: Column(
                 children: [
+                  if (!_isSofor)
+                    YoneticiSesKutusu(aktif: _guncelEsnaf.yapayZekaAktif, onKomut: _sesKomutu),
+                  TaksiYolculukKarti(esnafId: widget.esnaf.id),
+                  hizliKurulumDugmesi(_hizliKurulumAc),
                   if (bekleyenler.isNotEmpty && !_guncelEsnaf.randevuAlinmasin)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 15),
@@ -1416,6 +1565,22 @@ class _TaksiEsnafPaneliState extends State<TaksiEsnafPaneli> {
                       baslik: "Filo Yönetimi",
                       initiallyExpanded: widget.openFilo,
                       icerik: _filoWidget(),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (c) => TaksiBelgeOnayEkrani(esnaf: _guncelEsnaf)),
+                            );
+                          },
+                          icon: const Icon(Icons.verified_outlined),
+                          label: const Text('Şoför belgelerini onayla'),
+                        ),
+                      ),
                     ),
                     _bolumKart(
                       baslik: "Mesai Saatleri",
@@ -1494,13 +1659,14 @@ class _TaksiEsnafPaneliState extends State<TaksiEsnafPaneli> {
                     ),
                     _bolumKart(baslik: "Çalışma Günleri", initiallyExpanded: false, icerik: _gunlerIcerik()),
                     const SizedBox(height: 25),
+                    KaydedilmemisUyari(gorunur: _degisiklikVar),
                     SizedBox(
                       width: double.infinity,
                       height: 55,
                       child: ElevatedButton(
                         onPressed: _kaydet,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.indigo,
+                          backgroundColor: _degisiklikVar ? Colors.orange.shade800 : Colors.indigo,
                           foregroundColor: Colors.white,
                           elevation: 4,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
@@ -1523,6 +1689,7 @@ class _TaksiEsnafPaneliState extends State<TaksiEsnafPaneli> {
             );
           },
         ),
+      ),
     );
   }
 

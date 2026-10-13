@@ -11,6 +11,8 @@ import 'package:almely_randevu/modeller/esnaf_modeli.dart';
 import 'package:almely_randevu/modeller/randevu_modeli.dart';
 import 'package:almely_randevu/servisler/firestore_servisi.dart';
 import 'package:almely_randevu/widgets/ana_buton.dart';
+import 'package:almely_randevu/widgets/isletme_logosu.dart';
+import 'package:almely_randevu/widgets/yapay_zeka_kutusu.dart';
 import 'package:almely_randevu/ekranlar/arac_kiralama/arac_kiralama_yonlendirme.dart';
 import 'package:almely_randevu/ekranlar/tum_yorumlar_ekrani.dart';
 
@@ -286,6 +288,10 @@ class _AracKiralamaMusteriEkraniState extends State<AracKiralamaMusteriEkrani> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (_guncelEsnaf.logoUrl.trim().isNotEmpty) ...[
+                    Center(child: IsletmeLogosu(url: _guncelEsnaf.logoUrl, boyut: 88, yuvarlak: true, kenarBoslugu: false)),
+                    const SizedBox(height: 12),
+                  ],
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -880,45 +886,53 @@ class _AracKiralamaMusteriEkraniState extends State<AracKiralamaMusteriEkrani> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            YapayZekaKutusu(
+              aktif: _guncelEsnaf.yapayZekaAktif,
+              isletmeAdi: _guncelEsnaf.isletmeAdi,
+              rehberAnahtar: 'AracKiralamaMusteriEkrani',
+              randevuAl: !_guncelEsnaf.randevuAlinmasin ? _randevuyaGit : null,
+            ),
             if (!_guncelEsnaf.randevuAlinmasin)
               AnaButon(
                 metin: _guncelEsnaf.kategori == 'Araç Kiralama' ? "Randevu Al/Araç Kirala" : "Hemen Randevu Al",
-                onPressed: () {
-                  bool ajandaVarMi = false;
-                  if (!_guncelEsnaf.ajandayiKendimAyarlayacagim) {
-                    ajandaVarMi = true;
-                  } else {
-                    final bugunStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
-                    if (_guncelEsnaf.aktifGunler != null && _guncelEsnaf.aktifGunler!.isNotEmpty) {
-                      for (var gunStr in _guncelEsnaf.aktifGunler!) {
-                        String tarihKismi = gunStr.toString().split('_')[0];
-                        if (tarihKismi.compareTo(bugunStr) >= 0) {
-                          ajandaVarMi = true;
-                          break;
-                        }
-                      }
-                    }
-                  }
-                  if (ajandaVarMi) {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (c) => AracKiralamaYonlendirme.randevuEkrani(
-                          esnaf: _guncelEsnaf,
-                          kullaniciTel: widget.kullaniciTel,
-                        ),
-                      ),
-                    );
-                  } else {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Bu işletmenin henüz yayında olan bir ajanda defteri bulunmuyor."), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating));
-                  }
-                },
+                onPressed: _randevuyaGit,
               ),
             const SizedBox(height: 10),
           ],
         ),
       ),
     );
+  }
+
+  void _randevuyaGit() {
+    bool ajandaVarMi = false;
+    if (!_guncelEsnaf.ajandayiKendimAyarlayacagim) {
+      ajandaVarMi = true;
+    } else {
+      final bugunStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
+      if (_guncelEsnaf.aktifGunler != null && _guncelEsnaf.aktifGunler!.isNotEmpty) {
+        for (var gunStr in _guncelEsnaf.aktifGunler!) {
+          String tarihKismi = gunStr.toString().split('_')[0];
+          if (tarihKismi.compareTo(bugunStr) >= 0) {
+            ajandaVarMi = true;
+            break;
+          }
+        }
+      }
+    }
+    if (ajandaVarMi) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (c) => AracKiralamaYonlendirme.randevuEkrani(
+            esnaf: _guncelEsnaf,
+            kullaniciTel: widget.kullaniciTel,
+          ),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Bu işletmenin henüz yayında olan bir ajanda defteri bulunmuyor."), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating));
+    }
   }
 
   Widget _kaydirmaButonu(IconData icon, Alignment alignment) {

@@ -448,6 +448,12 @@ class _AracKiralamaEsnafRandevuOnayEkraniState extends State<AracKiralamaEsnafRa
                                 // [YENİ] Bildirimleri hemen senkronize et (Arka randevuları kontrol etmesi için)
                                 if (_esnaf != null) {
                                 BildirimServisi.syncAkilliTakipBildirimleri(_esnaf!.telefon, null, esnafMi: true, esnafId: _esnaf!.id);
+                                await BildirimServisi.kiralamaDurumMusteriye(
+                                  esnaf: _esnaf!,
+                                  musteriTel: r.kullaniciTel,
+                                  onaylandi: true,
+                                  tarihSaat: "$tarihFormat ${r.saat}",
+                                );
                                 }
 
                                 String msg = "Randevu onaylandı";
@@ -553,6 +559,14 @@ class _AracKiralamaEsnafRandevuOnayEkraniState extends State<AracKiralamaEsnafRa
                             esnafAdi: r.esnafAdi,
                             tarihSaat: "$tarihFormat ${r.saat}"
                           );
+                          if (_esnaf != null) {
+                            await BildirimServisi.kiralamaDurumMusteriye(
+                              esnaf: _esnaf!,
+                              musteriTel: r.kullaniciTel,
+                              onaylandi: false,
+                              tarihSaat: "$tarihFormat ${r.saat}",
+                            );
+                          }
                           if (context.mounted && navigator.mounted) {
                             // [YENİ] İptal sonrası bildirimleri onar
                             if (_esnaf != null) {
@@ -613,6 +627,14 @@ class _AracKiralamaEsnafRandevuOnayEkraniState extends State<AracKiralamaEsnafRa
                             esnafAdi: r.esnafAdi,
                             tarihSaat: "$tarihFormat ${r.saat}"
                           );
+                          if (_esnaf != null) {
+                            await BildirimServisi.kiralamaDurumMusteriye(
+                              esnaf: _esnaf!,
+                              musteriTel: r.kullaniciTel,
+                              onaylandi: false,
+                              tarihSaat: "$tarihFormat ${r.saat}",
+                            );
+                          }
                           if (context.mounted && navigator.mounted) {
                             // [YENİ] İptal sonrası bildirimleri onar
                             if (_esnaf != null) {

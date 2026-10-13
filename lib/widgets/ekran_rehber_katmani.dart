@@ -30,11 +30,12 @@ class EkranRehberKatmani extends StatelessWidget {
   }
 
   static bool _maviAppBarMi(String sinif) {
-    return sinif == 'AracKiralamaMusteriEkrani' ||
+        return sinif == 'AracKiralamaMusteriEkrani' ||
         sinif == 'TaksiMusteriEkrani' ||
         sinif == 'TaksiRandevuEkrani' ||
         sinif == 'MusteriEkrani' ||
-        sinif == 'TumYorumlarEkrani';
+        sinif == 'TumYorumlarEkrani' ||
+        sinif == 'MacIlanlariEkrani';
   }
 
   @override

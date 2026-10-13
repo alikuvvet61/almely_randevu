@@ -117,7 +117,7 @@ class _TaksiSurucuDogrulamaEkraniState extends State<TaksiSurucuDogrulamaEkrani>
           context: context,
           builder: (ctx) => AlertDialog(
             title: const Text("Başarılı"),
-            content: const Text("Belgeleriniz incelemeye alındı. Admin onayından sonra paneliniz güncellenecektir."),
+            content: const Text("Belgeleriniz durağın onayına düştü. Durak ehliyet, ruhsat, sigorta ve taksimetreyi onaylayınca yolcu plakanın yanında Belgeli görür."),
             actions: [
               TextButton(
                 onPressed: () {
@@ -182,7 +182,7 @@ class _TaksiSurucuDogrulamaEkraniState extends State<TaksiSurucuDogrulamaEkrani>
             ),
             const SizedBox(height: 10),
             const Text(
-              "Lütfen belgelerinizi güncel ve net şekilde yükleyin. Onay süreci 24 saat sürebilir.",
+              "Fotoğrafı durak onaylar. Dördü de onaylanınca yolcu plakanın yanında Belgeli görür.",
               style: TextStyle(color: Colors.grey),
             ),
             const SizedBox(height: 30),

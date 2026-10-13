@@ -461,9 +461,15 @@ class _TaksiEsnafRandevuOnayEkraniState extends State<TaksiEsnafRandevuOnayEkran
                               if (mounted) {
                                 Navigator.pop(context); // Kum saatini kapat
 
-                                // [YENİ] Bildirimleri hemen senkronize et (Arka randevuları kontrol etmesi için)
                                 if (_esnaf != null) {
-                                BildirimServisi.syncAkilliTakipBildirimleri(_esnaf!.telefon, null, esnafMi: true, esnafId: _esnaf!.id);
+                                  BildirimServisi.syncAkilliTakipBildirimleri(_esnaf!.telefon, null, esnafMi: true, esnafId: _esnaf!.id);
+                                  final tarihSaat = "$tarihFormat ${r.saat}";
+                                  await BildirimServisi.taksiRezervasyonYolcuya(
+                                    esnaf: _esnaf!,
+                                    musteriTel: r.kullaniciTel,
+                                    onaylandi: true,
+                                    tarihSaat: tarihSaat,
+                                  );
                                 }
 
                                 String msg = "Randevu onaylandı";
@@ -569,6 +575,14 @@ class _TaksiEsnafRandevuOnayEkraniState extends State<TaksiEsnafRandevuOnayEkran
                             esnafAdi: r.esnafAdi,
                             tarihSaat: "$tarihFormat ${r.saat}"
                           );
+                          if (_esnaf != null) {
+                            await BildirimServisi.taksiRezervasyonYolcuya(
+                              esnaf: _esnaf!,
+                              musteriTel: r.kullaniciTel,
+                              onaylandi: false,
+                              tarihSaat: "$tarihFormat ${r.saat}",
+                            );
+                          }
                           if (context.mounted && navigator.mounted) {
                             // [YENİ] İptal sonrası bildirimleri onar
                             if (_esnaf != null) {
@@ -629,6 +643,14 @@ class _TaksiEsnafRandevuOnayEkraniState extends State<TaksiEsnafRandevuOnayEkran
                             esnafAdi: r.esnafAdi,
                             tarihSaat: "$tarihFormat ${r.saat}"
                           );
+                          if (_esnaf != null) {
+                            await BildirimServisi.taksiRezervasyonYolcuya(
+                              esnaf: _esnaf!,
+                              musteriTel: r.kullaniciTel,
+                              onaylandi: false,
+                              tarihSaat: "$tarihFormat ${r.saat}",
+                            );
+                          }
                           if (context.mounted && navigator.mounted) {
                             // [YENİ] İptal sonrası bildirimleri onar
                             if (_esnaf != null) {

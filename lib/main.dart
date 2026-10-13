@@ -12,6 +12,7 @@ import 'ekranlar/giris.dart';
 import 'navigator_key.dart';
 import 'widgets/debug_ekran_rozeti.dart';
 import 'widgets/ekran_rehber_katmani.dart';
+import 'widgets/yonetici_ses_kutusu.dart';
 
 export 'navigator_key.dart' show navigatorKey;
 void main() async {
@@ -53,7 +54,7 @@ class AlmElyApp extends StatelessWidget {
     return MaterialApp(
       navigatorKey: navigatorKey,
       debugShowCheckedModeBanner: false,
-      title: 'AlmEly Go Hizmet & Randevu',
+      title: 'AlmEly Go',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
         useMaterial3: true,
@@ -69,10 +70,13 @@ class AlmElyApp extends StatelessWidget {
       ],
       navigatorObservers: [
         RehberNavigatorObserver(),
+        YuzerMikrofon.gozlemci,
         if (!kReleaseMode) DebugEkranRozeti.observer,
       ],
       builder: (context, child) => EkranRehberKatmani(
-        child: DebugEkranRozeti(child: child),
+        child: DebugEkranRozeti(
+          child: YuzerMikrofonKatmani(child: child ?? const SizedBox.shrink()),
+        ),
       ),
       home: const GirisSecimSayfasi(),
     );

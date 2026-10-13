@@ -11,18 +11,26 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'package:almely_randevu/ekranlar/taksi/taksi_yonlendirme.dart';
 import 'package:almely_randevu/modeller/esnaf_modeli.dart';
+import 'package:almely_randevu/widgets/isletme_logosu.dart';
 import 'package:almely_randevu/servisler/bildirim_servisi.dart';
 import 'package:almely_randevu/servisler/firestore_servisi.dart';
 import 'package:almely_randevu/servisler/konum_servisi.dart';
 import 'package:almely_randevu/widgets/ana_buton.dart';
 import 'package:almely_randevu/widgets/sos_butonu.dart';
+import 'package:almely_randevu/widgets/yapay_zeka_kutusu.dart';
+import 'package:almely_randevu/widgets/nereye_alani.dart';
+import 'package:almely_randevu/ekranlar/taksi/taksi_yolculuk_karti.dart';
+import 'package:almely_randevu/servisler/taksi/taksi_cagri_sirasi.dart';
+import 'package:almely_randevu/servisler/taksi/taksi_iptal_bedeli.dart';
+import 'package:almely_randevu/servisler/taksi/taksi_guven.dart';
 
 /// Taksi için müşteri (yolcu) detay ekranı.
 class TaksiMusteriEkrani extends StatefulWidget {
   final EsnafModeli esnaf;
   final String? kullaniciTel;
+  final bool cagriyiHazirla;
 
-  const TaksiMusteriEkrani({super.key, required this.esnaf, this.kullaniciTel});
+  const TaksiMusteriEkrani({super.key, required this.esnaf, this.kullaniciTel, this.cagriyiHazirla = false});
 
   @override
   State<TaksiMusteriEkrani> createState() => _TaksiMusteriEkraniState();
@@ -41,6 +49,14 @@ class _TaksiMusteriEkraniState extends State<TaksiMusteriEkrani> {
   StreamSubscription? _esnafSub;
   StreamSubscription? _ajandaSub;
   StreamSubscription? _kullaniciSub;
+  StreamSubscription? _talepSub;
+  Map<String, dynamic>? _aktifTalep;
+  Timer? _beklemeSayaci;
+  bool _yolcuVazgecti = false;
+  final Set<String> _ozetGosterilen = {};
+  final Map<String, DateTime> _beklemeBaslangici = {};
+  BitmapDescriptor? _taksiIkon;
+  String? _taksiIkonPlaka;
   Map<String, dynamic> _gunlukAjanda = {};
   final Map<String, Map<String, dynamic>> _kullaniciProfilleri = {};
   double _secilenPuan = 0.0;
@@ -65,6 +81,12 @@ class _TaksiMusteriEkraniState extends State<TaksiMusteriEkrani> {
     _yorumlarStream = _firestoreServisi.yorumlariGetir(widget.esnaf.id);
     _esnafDinle();
     _ajandaDinle();
+    _talepDinle();
+    if (widget.cagriyiHazirla) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _taksiCagirDialog(context);
+      });
+    }
   }
 
   /// Her iki balonu da aynı anda açık tutmak için görsel marker üreten yardımcı metot
@@ -232,6 +254,8 @@ class _TaksiMusteriEkraniState extends State<TaksiMusteriEkrani> {
     _esnafSub?.cancel();
     _ajandaSub?.cancel();
     _kullaniciSub?.cancel();
+    _talepSub?.cancel();
+    _beklemeSayaci?.cancel();
     _filoController.dispose();
     _yorumController.dispose();
     super.dispose();
@@ -390,8 +414,50 @@ class _TaksiMusteriEkraniState extends State<TaksiMusteriEkrani> {
     );
   }
 
+  Widget _harita() {
+    return GoogleMap(
+      key: const PageStorageKey('taksi_harita'),
+      onMapCreated: (c) {
+        _mapController = c;
+        _musteriKonumunaOdakla();
+      },
+      initialCameraPosition: _ilkKameraPozisyonu,
+      markers: _isaretciler,
+      circles: _daireler,
+      myLocationEnabled: false,
+      myLocationButtonEnabled: true,
+      mapType: MapType.normal,
+      gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{Factory<OneSequenceGestureRecognizer>(() => EagerGestureRecognizer())},
+    );
+  }
+
+  Widget _yolculukSayfasi() {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(_guncelEsnaf.isletmeAdi),
+        backgroundColor: Colors.blue,
+        foregroundColor: Colors.white,
+        actions: const [SizedBox(width: 48)],
+      ),
+      body: Stack(
+        children: [
+          Positioned.fill(child: _harita()),
+          Positioned(left: 12, right: 12, bottom: 88, child: _yolculukSeridi()),
+        ],
+      ),
+      floatingActionButton: SosButonu(
+        randevuId: "taksi_detay",
+        esnafId: _guncelEsnaf.id,
+        kullaniciTel: widget.kullaniciTel ?? "",
+        baslatanRol: 'Yolcu',
+        adminTel: _guncelEsnaf.telefon,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (_aktifTalep != null) return _yolculukSayfasi();
     return Scaffold(
       appBar: AppBar(
         title: Text(_guncelEsnaf.isletmeAdi),
@@ -406,20 +472,7 @@ class _TaksiMusteriEkraniState extends State<TaksiMusteriEkrani> {
           SliverToBoxAdapter(
             child: SizedBox(
               height: 300,
-              child: GoogleMap(
-                key: const PageStorageKey('taksi_harita'),
-                onMapCreated: (c) {
-                  _mapController = c;
-                  _musteriKonumunaOdakla();
-                },
-                initialCameraPosition: _ilkKameraPozisyonu,
-                markers: _isaretciler,
-                circles: _daireler,
-                myLocationEnabled: false,
-                myLocationButtonEnabled: true,
-                mapType: MapType.normal,
-                gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{ Factory<OneSequenceGestureRecognizer>(() => EagerGestureRecognizer()) },
-              ),
+              child: _harita(),
             ),
           ),
           SliverToBoxAdapter(
@@ -428,6 +481,10 @@ class _TaksiMusteriEkraniState extends State<TaksiMusteriEkrani> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (_guncelEsnaf.logoUrl.trim().isNotEmpty) ...[
+                    Center(child: IsletmeLogosu(url: _guncelEsnaf.logoUrl, boyut: 88, yuvarlak: true, kenarBoslugu: false)),
+                    const SizedBox(height: 12),
+                  ],
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -547,12 +604,24 @@ class _TaksiMusteriEkraniState extends State<TaksiMusteriEkrani> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            YapayZekaKutusu(
+              aktif: _guncelEsnaf.yapayZekaAktif,
+              isletmeAdi: _guncelEsnaf.isletmeAdi,
+              rehberAnahtar: 'TaksiMusteriEkrani',
+              taksiIstiyorum: () => _taksiCagirDialog(context),
+              randevuAl: !_guncelEsnaf.randevuAlinmasin
+                  ? () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (c) => TaksiYonlendirme.randevuEkrani(esnaf: _guncelEsnaf, kullaniciTel: widget.kullaniciTel)),
+                      )
+                  : null,
+            ),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
               child: ElevatedButton.icon(
                 onPressed: _taksiYukleniyor ? null : () => _taksiCagirDialog(context),
                 icon: _taksiYukleniyor ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black)) : const Icon(Icons.local_taxi, color: Colors.black),
-                label: const Text("Taksi Çağır", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black)),
+                label: const Text("Taksi İstiyorum", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black)),
                 style: ElevatedButton.styleFrom(backgroundColor: Colors.yellow.shade700, minimumSize: const Size(double.infinity, 55), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
               ),
             ),
@@ -669,6 +738,11 @@ class _TaksiMusteriEkraniState extends State<TaksiMusteriEkrani> {
                               Icon(Icons.circle, size: 10, color: noktaRengi),
                               const SizedBox(width: 5),
                               Flexible(child: Text(durumMetni, style: const TextStyle(color: Colors.white, fontSize: 11), overflow: TextOverflow.ellipsis)),
+                              if (taksiBelgeli(belgeler))
+                                const Padding(
+                                  padding: EdgeInsets.only(left: 4),
+                                  child: Text('BELGELİ', style: TextStyle(color: Colors.greenAccent, fontSize: 9, fontWeight: FontWeight.w900)),
+                                ),
                             ],
                           );
                         }),
@@ -770,6 +844,283 @@ class _TaksiMusteriEkraniState extends State<TaksiMusteriEkrani> {
     );
   }
 
+  void _talepDinle() {
+    final anahtar = _firestoreServisi.musteriTelefonAnahtari(widget.kullaniciTel ?? '');
+    if (anahtar.isEmpty) return;
+    _talepSub = FirebaseFirestore.instance
+        .collection('taksi_talepleri')
+        .where('musteriAnahtar', isEqualTo: anahtar)
+        .snapshots()
+        .listen((snap) async {
+      QueryDocumentSnapshot<Map<String, dynamic>>? secilen;
+      for (final d in snap.docs) {
+        final data = d.data();
+        if (data['esnafId'] != widget.esnaf.id) continue;
+        final durum = (data['durum'] ?? '').toString();
+        if (!taksiSurenDurumlar.contains(durum)) continue;
+        if (secilen == null) {
+          secilen = d;
+          continue;
+        }
+        final onceki = (secilen.data()['durum'] ?? '').toString();
+        if (onceki == 'bekliyor' && durum != 'bekliyor') secilen = d;
+      }
+      if (!mounted) return;
+      if (secilen == null) {
+        final oncekiId = (_aktifTalep?['id'] ?? '').toString();
+        final oncekiDurum = (_aktifTalep?['durum'] ?? '').toString();
+        final oncekiBekliyordu = oncekiDurum == 'bekliyor';
+        final vazgecti = _yolcuVazgecti;
+        Map<String, dynamic>? ozet;
+        if (oncekiId.isNotEmpty && !oncekiBekliyordu && !_ozetGosterilen.contains(oncekiId)) {
+          for (final d in snap.docs) {
+            if (d.id != oncekiId) continue;
+            if ((d.data()['durum'] ?? '').toString() != 'indi') continue;
+            ozet = Map<String, dynamic>.from(d.data());
+            _ozetGosterilen.add(oncekiId);
+          }
+        }
+        _yolcuVazgecti = false;
+        _beklemeSayaci?.cancel();
+        setState(() {
+          _aktifTalep = null;
+          _isaretciler.removeWhere((m) => m.markerId.value == 'taksi_yolda');
+        });
+        if (oncekiBekliyordu && !vazgecti) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Şu an araç çıkarılamadı. Biraz sonra tekrar deneyebilirsiniz.')),
+          );
+        }
+        if (ozet != null) {
+          final veri = ozet;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _yolculukOzeti(veri);
+          });
+        }
+        return;
+      }
+      final data = Map<String, dynamic>.from(secilen.data());
+      data['id'] = secilen.id;
+      setState(() => _aktifTalep = data);
+      _beklemeSayaciniKur(secilen.id, data);
+      final konum = data['soforKonum'];
+      final plaka = (data['plaka'] ?? '').toString();
+      if (konum is! GeoPoint || (data['durum'] ?? '') == 'bekliyor') {
+        setState(() => _isaretciler.removeWhere((m) => m.markerId.value == 'taksi_yolda'));
+        return;
+      }
+      if (_taksiIkon == null || _taksiIkonPlaka != plaka) {
+        _taksiIkon = await _balonluMarkerUret(
+          baslik: plaka.isEmpty ? 'Taksi' : plaka,
+          balonRenk: Colors.yellow.shade600,
+          igneRenk: Colors.black,
+        );
+        _taksiIkonPlaka = plaka;
+      }
+      if (!mounted || _taksiIkon == null) return;
+      final nokta = LatLng(konum.latitude, konum.longitude);
+      setState(() {
+        _isaretciler.removeWhere((m) => m.markerId.value == 'taksi_yolda');
+        _isaretciler.add(Marker(
+          markerId: const MarkerId('taksi_yolda'),
+          position: nokta,
+          icon: _taksiIkon!,
+          anchor: const Offset(0.5, 1.0),
+        ));
+      });
+      _mapController?.animateCamera(CameraUpdate.newLatLng(nokta));
+    });
+  }
+
+  void _beklemeSayaciniKur(String id, Map<String, dynamic> data) {
+    _beklemeSayaci?.cancel();
+    if ((data['durum'] ?? '') != 'bekliyor') return;
+    _beklemeBaslangici.putIfAbsent(id, () => DateTime.now());
+    final toplam = taksiCagriKalani(data, yerelden: _beklemeBaslangici[id]);
+    final soru = data['soruZamani'];
+    var soruKalan = taksiSoruAraligi;
+    if (soru is Timestamp) {
+      soruKalan = taksiSoruAraligi - DateTime.now().difference(soru.toDate());
+      if (soruKalan.isNegative) soruKalan = Duration.zero;
+    }
+    final bekle = soruKalan < toplam ? soruKalan : toplam;
+    if (bekle == Duration.zero) {
+      taksiSiradakiAracaSor(id);
+      _beklemeSayaci = Timer(const Duration(seconds: 5), () {
+        if (!mounted) return;
+        final guncel = _aktifTalep;
+        if (guncel != null && (guncel['id'] ?? '') == id) _beklemeSayaciniKur(id, guncel);
+      });
+      return;
+    }
+    _beklemeSayaci = Timer(bekle, () => taksiSiradakiAracaSor(id));
+  }
+
+  Future<void> _yolcuVazgec(Map<String, dynamic> talep) async {
+    final id = (talep['id'] ?? '').toString();
+    final durum = (talep['durum'] ?? '').toString();
+    if (id.isEmpty) return;
+    if (durum == 'yolda' || durum == 'geldim') {
+      final hesap = taksiIptalHesapla(
+        talep: talep,
+        taban: _guncelEsnaf.taksiIptalTabanUcret,
+        kmUcret: _guncelEsnaf.taksiIptalKmUcret,
+        dakikaUcret: _guncelEsnaf.taksiIptalDakikaUcret,
+      );
+      final onay = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Vazgeç'),
+          content: Text(taksiIptalOnayMetni(hesap)),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Hayır')),
+            TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Vazgeç', style: TextStyle(color: Colors.red))),
+          ],
+        ),
+      );
+      if (onay != true || !mounted) return;
+      final bedel = await taksiBinmedenVazgec(talepId: id, esnafId: widget.esnaf.id);
+      if (bedel == null) return;
+      await BildirimServisi.taksiYolcuVazgecti(
+        esnaf: _guncelEsnaf,
+        soforTel: (talep['soforTel'] ?? '').toString(),
+        iptalBedeli: bedel,
+      );
+      return;
+    }
+    _beklemeyiKapat(id, 'iptal');
+  }
+
+  Future<void> _beklemeyiKapat(String id, String durum) async {
+    if (durum == 'iptal') _yolcuVazgecti = true;
+    final kapandi = await taksiBekleyenCagriyiKapat(id, durum);
+    if (!kapandi) {
+      if (durum == 'iptal') _yolcuVazgecti = false;
+      return;
+    }
+    if (durum != 'iptal') return;
+    final sofor = (_aktifTalep?['soforTel'] ?? '').toString();
+    await BildirimServisi.taksiYolcuVazgecti(esnaf: _guncelEsnaf, soforTel: sofor);
+  }
+
+  Widget _yolculukSeridi() {
+    final talep = _aktifTalep;
+    if (talep == null) return const SizedBox.shrink();
+    final durum = (talep['durum'] ?? '').toString();
+    final plaka = (talep['plaka'] ?? '').toString();
+    final nereye = (talep['nereye'] ?? '').toString();
+    String alt = 'Ücret taksimetrededir.';
+    if (durum == 'yolda') {
+      final arac = talep['soforKonum'];
+      final yolcu = talep['musteriKonum'];
+      if (arac is GeoPoint && yolcu is GeoPoint) {
+        alt = 'Yaklaşık ${taksiDakika(arac, yolcu)} dk. Ücret taksimetrededir.';
+      } else {
+        alt = 'Konum birazdan görünecek. Ücret taksimetrededir.';
+      }
+    } else if (durum == 'bekliyor') {
+      alt = 'Durağın onayı bekleniyor. 25 saniye cevap yoksa sıradaki araca geçilir. 2 dakika dolunca çağrı kapanır.';
+    }
+    final soforTel = (talep['soforTel'] ?? '').toString();
+    final belgeli = taksiBelgeli((_kullaniciProfilleri[soforTel] ?? {})['belgeler']);
+    final yolda = durum == 'yolda' || durum == 'geldim' || durum == 'bindi';
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.yellow.shade100,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.yellow.shade700),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            plaka.isEmpty ? taksiDurumBasligi(durum) : '$plaka · ${taksiDurumBasligi(durum)}',
+            style: const TextStyle(fontWeight: FontWeight.w900),
+          ),
+          if (belgeli)
+            const Text('Belgeli', style: TextStyle(color: Colors.green, fontWeight: FontWeight.w800)),
+          Text(alt),
+          if (nereye.isNotEmpty) Text('Varış: $nereye'),
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              if (durum == 'bekliyor' || durum == 'yolda' || durum == 'geldim' || durum == 'bindi')
+                TextButton.icon(
+                  onPressed: () {
+                    final sofor = (talep['soforTel'] ?? '').toString().trim();
+                    final tel = durum == 'bekliyor' || sofor.isEmpty ? _guncelEsnaf.telefon : sofor;
+                    _aramaYap(tel);
+                  },
+                  icon: const Icon(Icons.phone, size: 18),
+                  label: Text(durum == 'bekliyor' ? 'Durağı ara' : 'Şoförü ara'),
+                ),
+              if (yolda)
+                TextButton.icon(
+                  onPressed: () => _yakinaGonder(talep),
+                  icon: const Icon(Icons.share, size: 18),
+                  label: const Text('Yakınıma gönder'),
+                ),
+              if (durum == 'bekliyor' || durum == 'yolda' || durum == 'geldim')
+                TextButton(
+                  onPressed: () => _yolcuVazgec(talep),
+                  child: const Text('Vazgeç', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _yakinaGonder(Map<String, dynamic> talep) async {
+    final konum = talep['soforKonum'];
+    final durum = (talep['durum'] ?? '').toString();
+    final metin = taksiYakinaMetin(
+      durak: _guncelEsnaf.isletmeAdi,
+      plaka: (talep['plaka'] ?? '').toString(),
+      durum: taksiDurumBasligi(durum),
+      durakTel: _guncelEsnaf.telefon,
+      adres: (talep['adres'] ?? '').toString(),
+      nereye: (talep['nereye'] ?? '').toString(),
+      enlem: konum is GeoPoint ? konum.latitude : null,
+      boylam: konum is GeoPoint ? konum.longitude : null,
+    );
+    final uri = Uri.parse('https://wa.me/?text=${Uri.encodeComponent(metin)}');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  void _yolculukOzeti(Map<String, dynamic> talep) {
+    final plaka = (talep['plaka'] ?? '').toString();
+    final adres = (talep['adres'] ?? '').toString();
+    final nereye = (talep['nereye'] ?? '').toString();
+    final kabul = taksiSaatYazi(talep['kabulZamani']);
+    final inis = taksiSaatYazi(talep['indimZamani']);
+    final satirlar = <String>[
+      _guncelEsnaf.isletmeAdi,
+      if (plaka.isNotEmpty) 'Plaka: $plaka',
+      if (adres.isNotEmpty) 'Alış: $adres',
+      if (nereye.isNotEmpty) 'Varış: $nereye',
+      if (kabul.isNotEmpty) 'Kabul: $kabul',
+      if (inis.isNotEmpty) 'İniş: $inis',
+      'Ücret taksimetrededir.',
+    ];
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Yolculuk kaydı'),
+        content: Text(satirlar.join('\n')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Kapat')),
+        ],
+      ),
+    );
+  }
+
   void _taksiCagirDialog(BuildContext context) async {
     if (_taksiYukleniyor) return;
     setState(() => _taksiYukleniyor = true);
@@ -806,83 +1157,60 @@ class _TaksiMusteriEkraniState extends State<TaksiMusteriEkrani> {
     if (mounted) setState(() => _taksiYukleniyor = false);
     if (!context.mounted) return;
 
-    showDialog(
+    final secilen = await showDialog<String>(
       context: context,
-      builder: (context) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 24),
-              decoration: BoxDecoration(color: Colors.yellow.shade700, borderRadius: const BorderRadius.vertical(top: Radius.circular(24))),
-              child: const Column(
-                children: [
-                  Icon(Icons.local_taxi, size: 50, color: Colors.black),
-                  SizedBox(height: 10),
-                  Text("Taksi Çağır", style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.black)),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                children: [
-                  const Text("MÜŞTERİ ADRESİ", style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  Text(musteriAdresi, textAlign: TextAlign.center, style: const TextStyle(fontSize: 13)),
-                  const Divider(height: 40),
-                  const Text("TAHMİNİ VARIŞ VE MESAFE", style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 15),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      Column(children: [Text("$beklemeSuresi dk", style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: Colors.indigo)), const Text("Süre", style: TextStyle(fontSize: 10, color: Colors.grey))]),
-                      Column(children: [Text(mesafeMetre < 1000 ? "${mesafeMetre.toStringAsFixed(0)} m" : "${(mesafeMetre / 1000).toStringAsFixed(1)} km", style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: Colors.orange)), const Text("Mesafe", style: TextStyle(fontSize: 10, color: Colors.grey))]),
-                    ],
-                  ),
-                  const SizedBox(height: 30),
-                  Row(
-                    children: [
-                      Expanded(child: TextButton(onPressed: () => Navigator.pop(context), child: const Text("Vazgeç", style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)))),
-                      const SizedBox(width: 10),
-                      Expanded(flex: 2, child: ElevatedButton(
-                        onPressed: () {
-                          Navigator.pop(context);
-                          _taksiCagriOnayla(musteriKonumu, musteriAdresi, beklemeSuresi, siradakiArac);
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.yellow.shade700, 
-                          foregroundColor: Colors.black, 
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                          elevation: 4,
-                        ),
-                        child: const Text("Taksi İstiyorum", style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1)),
-                      )),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+      builder: (context) => _TaksiCagriDialog(
+        isletmeAdi: _guncelEsnaf.isletmeAdi,
+        musteriAdresi: musteriAdresi,
+        enlem: musteriKonumu.latitude,
+        boylam: musteriKonumu.longitude,
+        il: widget.esnaf.il,
+        ilce: widget.esnaf.ilce,
+        esnafEnlem: widget.esnaf.konum.latitude,
+        esnafBoylam: widget.esnaf.konum.longitude,
+        beklemeSuresi: beklemeSuresi,
+        mesafeMetre: mesafeMetre,
       ),
     );
+    if (secilen == null || !mounted) return;
+    _taksiCagriOnayla(musteriKonumu, musteriAdresi, secilen, beklemeSuresi, siradakiArac);
   }
 
-  void _taksiCagriOnayla(GeoPoint musteriKonumu, String musteriAdresi, int beklemeSuresi, Map<String, dynamic>? siradakiArac) async {
+  void _taksiCagriOnayla(GeoPoint musteriKonumu, String musteriAdresi, String nereye, int beklemeSuresi, Map<String, dynamic>? siradakiArac) async {
     try {
-      await FirebaseFirestore.instance.collection('esnaflar').doc(widget.esnaf.id).collection('taksi_cagrilari').add({
-        'kullaniciTel': widget.kullaniciTel ?? "",
+      final mesafe = Geolocator.distanceBetween(
+        musteriKonumu.latitude,
+        musteriKonumu.longitude,
+        widget.esnaf.konum.latitude,
+        widget.esnaf.konum.longitude,
+      );
+      final plaka = siradakiArac?['plaka'];
+      final kayit = await FirebaseFirestore.instance.collection('taksi_talepleri').add({
+        'esnafId': widget.esnaf.id,
+        'kullaniciTel': widget.kullaniciTel ?? '',
+        'musteriTel': widget.kullaniciTel ?? '',
+        'musteriAd': 'Yolcu',
+        'adres': musteriAdresi,
+        'nereye': nereye,
         'musteriKonum': musteriKonumu,
-        'musteriAdresi': musteriAdresi,
+        'musteriAnahtar': _firestoreServisi.musteriTelefonAnahtari(widget.kullaniciTel ?? ''),
         'tarih': FieldValue.serverTimestamp(),
-        'durum': 'Bekliyor',
-        'atananArac': siradakiArac?['plaka'],
+        'olusturulmaTarihi': FieldValue.serverTimestamp(),
+        'soruZamani': FieldValue.serverTimestamp(),
+        'sorulanPlakalar': [if (plaka != null) plaka],
+        'durum': 'bekliyor',
+        'plaka': plaka,
         'soforTel': siradakiArac?['soforTel'],
         'tahminiSure': beklemeSuresi,
+        'mesafe': mesafe,
       });
+
+      await BildirimServisi.taksiCagriDustu(
+        esnaf: widget.esnaf,
+        soforTel: siradakiArac?['soforTel']?.toString(),
+        adres: musteriAdresi,
+        talepId: kayit.id,
+      );
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -896,5 +1224,130 @@ class _TaksiMusteriEkraniState extends State<TaksiMusteriEkrani> {
         );
       }
     }
+  }
+}
+
+class _TaksiCagriDialog extends StatefulWidget {
+  final String isletmeAdi;
+  final String musteriAdresi;
+  final double enlem;
+  final double boylam;
+  final String il;
+  final String ilce;
+  final double esnafEnlem;
+  final double esnafBoylam;
+  final int beklemeSuresi;
+  final double mesafeMetre;
+
+  const _TaksiCagriDialog({
+    required this.isletmeAdi,
+    required this.musteriAdresi,
+    required this.enlem,
+    required this.boylam,
+    required this.il,
+    required this.ilce,
+    required this.esnafEnlem,
+    required this.esnafBoylam,
+    required this.beklemeSuresi,
+    required this.mesafeMetre,
+  });
+
+  @override
+  State<_TaksiCagriDialog> createState() => _TaksiCagriDialogState();
+}
+
+class _TaksiCagriDialogState extends State<_TaksiCagriDialog> {
+  final TextEditingController _nereye = TextEditingController();
+
+  @override
+  void dispose() {
+    _nereye.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mesafeMetre = widget.mesafeMetre;
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              decoration: BoxDecoration(color: Colors.yellow.shade700, borderRadius: const BorderRadius.vertical(top: Radius.circular(24))),
+              child: Column(
+                children: [
+                  const Icon(Icons.local_taxi, size: 50, color: Colors.black),
+                  const SizedBox(height: 10),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Text(
+                      widget.isletmeAdi,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.black),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                children: [
+                  const Text("MÜŞTERİ ADRESİ", style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  Text(widget.musteriAdresi, textAlign: TextAlign.center, style: const TextStyle(fontSize: 13)),
+                  const SizedBox(height: 12),
+                  NereyeAlani(
+                    controller: _nereye,
+                    enlem: widget.enlem,
+                    boylam: widget.boylam,
+                    il: widget.il,
+                    ilce: widget.ilce,
+                    esnafEnlem: widget.esnafEnlem,
+                    esnafBoylam: widget.esnafBoylam,
+                  ),
+                  const SizedBox(height: 8),
+                  const Text('Ücret taksimetrededir.', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  const Divider(height: 32),
+                  const Text('TAHMİNİ GELİŞ', style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 15),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      Column(children: [Text("${widget.beklemeSuresi} dk", style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: Colors.indigo)), const Text("Süre", style: TextStyle(fontSize: 10, color: Colors.grey))]),
+                      Column(children: [Text(mesafeMetre < 1000 ? "${mesafeMetre.toStringAsFixed(0)} m" : "${(mesafeMetre / 1000).toStringAsFixed(1)} km", style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: Colors.orange)), const Text("Mesafe", style: TextStyle(fontSize: 10, color: Colors.grey))]),
+                    ],
+                  ),
+                  const SizedBox(height: 30),
+                  Row(
+                    children: [
+                      Expanded(child: TextButton(onPressed: () => Navigator.pop(context), child: const Text("Vazgeç", style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)))),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        flex: 2,
+                        child: ElevatedButton(
+                          onPressed: () => Navigator.pop(context, _nereye.text.trim()),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.yellow.shade700,
+                            foregroundColor: Colors.black,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                            elevation: 4,
+                          ),
+                          child: const Text("Taksi İstiyorum", style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

@@ -11,8 +11,12 @@ import 'package:almely_randevu/modeller/esnaf_modeli.dart';
 import 'package:almely_randevu/modeller/randevu_modeli.dart';
 import 'package:almely_randevu/servisler/firestore_servisi.dart';
 import 'package:almely_randevu/widgets/ana_buton.dart';
+import 'package:almely_randevu/widgets/isletme_logosu.dart';
+import 'package:almely_randevu/widgets/yapay_zeka_kutusu.dart';
+import 'package:almely_randevu/ekranlar/hali_saha/mac_ilanlari_ekrani.dart';
 import 'package:almely_randevu/ekranlar/randevu_ekrani.dart';
 import 'package:almely_randevu/ekranlar/tum_yorumlar_ekrani.dart';
+import 'package:almely_randevu/yardimcilar/hizmet_paketi.dart';
 
 class MusteriEkrani extends StatefulWidget {
   final EsnafModeli esnaf;
@@ -191,6 +195,9 @@ class _MusteriEkraniState extends State<MusteriEkrani> {
     );
   }
 
+  bool get _vitrinVar =>
+      _guncelEsnaf.kategori != 'Taksi' && _guncelEsnaf.kategori != 'Araç Kiralama';
+
   void _resimGoster(BuildContext context, String url, String baslik) {
     showDialog(
       context: context,
@@ -283,6 +290,10 @@ class _MusteriEkraniState extends State<MusteriEkrani> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (_guncelEsnaf.logoUrl.trim().isNotEmpty) ...[
+                    Center(child: IsletmeLogosu(url: _guncelEsnaf.logoUrl, boyut: 88, yuvarlak: true, kenarBoslugu: false)),
+                    const SizedBox(height: 12),
+                  ],
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -312,6 +323,27 @@ class _MusteriEkraniState extends State<MusteriEkrani> {
                       ),
                     ],
                   ),
+                  if (_vitrinVar && _guncelEsnaf.galeri.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      height: 110,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _guncelEsnaf.galeri.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 8),
+                        itemBuilder: (context, i) {
+                          final url = _guncelEsnaf.galeri[i];
+                          return GestureDetector(
+                            onTap: () => _resimGoster(context, url, _guncelEsnaf.isletmeAdi),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: Image.network(url, width: 140, height: 110, fit: BoxFit.cover),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
                   const Divider(height: 40),
                   const Text("Adres Bilgileri", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 10),
@@ -321,6 +353,10 @@ class _MusteriEkraniState extends State<MusteriEkrani> {
                     title: Text("${_guncelEsnaf.ilce}, ${_guncelEsnaf.il}"),
                     subtitle: Text(_guncelEsnaf.adres),
                   ),
+                  if (_vitrinVar && _guncelEsnaf.tanitim.trim().isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(_guncelEsnaf.tanitim.trim(), style: const TextStyle(fontSize: 15, height: 1.35)),
+                  ],
                   const SizedBox(height: 20),
                   const Text("Çalışma Programı ve Hizmet Bilgisi", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 10),
@@ -840,6 +876,70 @@ class _MusteriEkraniState extends State<MusteriEkrani> {
                         ),
                       ),
                     ),
+                  if (_guncelEsnaf.kategori != 'Araç Kiralama' && (_guncelEsnaf.hizmetler?.isNotEmpty ?? false)) ...[
+                    const Divider(height: 40),
+                    const Text("Hizmetler", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 10),
+                    ...HizmetPaketi.onGorusmeBasa(_guncelEsnaf.hizmetler!).map((ham) {
+                      final h = Map<String, dynamic>.from(ham as Map);
+                      final sure = h['sure'] ?? 30;
+                      final goster = h['ucretGoster'] == true;
+                      final ucret = (h['ucret'] as num?)?.toDouble() ?? 0;
+                      final ilk = HizmetPaketi.ilkGorusmeMi(h);
+                      final paketler = goster && !ilk ? HizmetPaketi.aktifTanimlar(h) : <HizmetPaketTanimi>[];
+                      final birim = HizmetPaketi.hakBirimi(_guncelEsnaf.kategori);
+                      final tekAd = HizmetPaketi.ozelDersMi(_guncelEsnaf.kategori) ? 'Tek ders' : 'Tek seans';
+                      final sureYazi = ilk
+                          ? '$sure dakika · İlk görüşme'
+                          : (paketler.isNotEmpty ? '$tekAd · $sure dakika' : '$sure dakika');
+                      final fiyatYazi = ucret > 0 ? '${ucret.toStringAsFixed(0)} TL' : 'Ücretsiz';
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          side: BorderSide(color: Colors.grey.shade200),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(h['isim']?.toString() ?? "Hizmet", style: const TextStyle(fontWeight: FontWeight.w600)),
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  Expanded(child: Text(sureYazi)),
+                                  if (goster)
+                                    Text(
+                                      fiyatYazi,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: ucret > 0 ? Colors.green : Colors.blue,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                              if (paketler.isNotEmpty) ...[
+                                const SizedBox(height: 8),
+                                Text('Paketler', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.indigo.shade700)),
+                                ...paketler.map((p) {
+                                  final ucretYazi = p.ucret > 0 ? ' ${p.ucret.toStringAsFixed(0)} TL' : '';
+                                  return Padding(
+                                    padding: const EdgeInsets.only(top: 2),
+                                    child: Text(
+                                      '${p.gecerlilikGun} günde ${p.seans} $birim$ucretYazi',
+                                      style: TextStyle(color: Colors.indigo.shade700, fontSize: 13),
+                                    ),
+                                  );
+                                }),
+                              ],
+                            ],
+                          ),
+                        ),
+                      );
+                    }),
+                  ],
                   const Divider(height: 40),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -877,45 +977,86 @@ class _MusteriEkraniState extends State<MusteriEkrani> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (!_guncelEsnaf.randevuAlinmasin)
-              AnaButon(
-                metin: _guncelEsnaf.kategori == 'Araç Kiralama' ? "Randevu Al/Araç Kirala" : "Hemen Randevu Al",
-                onPressed: () {
-                  bool ajandaVarMi = false;
-                  if (!_guncelEsnaf.ajandayiKendimAyarlayacagim) {
-                    ajandaVarMi = true;
-                  } else {
-                    final bugunStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
-                    if (_guncelEsnaf.aktifGunler != null && _guncelEsnaf.aktifGunler!.isNotEmpty) {
-                      for (var gunStr in _guncelEsnaf.aktifGunler!) {
-                        String tarihKismi = gunStr.toString().split('_')[0];
-                        if (tarihKismi.compareTo(bugunStr) >= 0) {
-                          ajandaVarMi = true;
-                          break;
-                        }
-                      }
-                    }
-                  }
-                  if (ajandaVarMi) {
+            YapayZekaKutusu(
+              aktif: _guncelEsnaf.yapayZekaAktif,
+              isletmeAdi: _guncelEsnaf.isletmeAdi,
+              rehberAnahtar: 'MusteriEkrani',
+              randevuAl: (!_guncelEsnaf.randevuAlinmasin && !_guncelEsnaf.randevuSadeceYonetici) ? _randevuyaGit : null,
+            ),
+            if (_guncelEsnaf.kategori == 'Halı Saha')
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
+                child: OutlinedButton(
+                  onPressed: () {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (c) => RandevuEkrani(
+                        builder: (_) => MacIlanlariEkrani(
                           esnaf: _guncelEsnaf,
                           kullaniciTel: widget.kullaniciTel,
                         ),
                       ),
                     );
-                  } else {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Bu işletmenin henüz yayında olan bir ajanda defteri bulunmuyor."), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating));
-                  }
-                },
+                  },
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(double.infinity, 46),
+                    foregroundColor: Colors.blueGrey.shade800,
+                    side: BorderSide(color: Colors.blueGrey.shade200),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      SizedBox(width: 30, height: 30, child: Icon(Icons.person, size: 24)),
+                      SizedBox(width: 8),
+                      Text('Oyuncu veya Rakip Bul'),
+                      SizedBox(width: 8),
+                      SizedBox(width: 30, height: 30, child: Icon(Icons.groups, size: 30)),
+                    ],
+                  ),
+                ),
+              ),
+            if (!_guncelEsnaf.randevuAlinmasin && !_guncelEsnaf.randevuSadeceYonetici)
+              AnaButon(
+                metin: _guncelEsnaf.kategori == 'Araç Kiralama' ? "Randevu Al/Araç Kirala" : "Hemen Randevu Al",
+                onPressed: _randevuyaGit,
               ),
             const SizedBox(height: 10),
           ],
         ),
       ),
     );
+  }
+
+  void _randevuyaGit() {
+    bool ajandaVarMi = false;
+    if (!_guncelEsnaf.ajandayiKendimAyarlayacagim) {
+      ajandaVarMi = true;
+    } else {
+      final bugunStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
+      if (_guncelEsnaf.aktifGunler != null && _guncelEsnaf.aktifGunler!.isNotEmpty) {
+        for (var gunStr in _guncelEsnaf.aktifGunler!) {
+          String tarihKismi = gunStr.toString().split('_')[0];
+          if (tarihKismi.compareTo(bugunStr) >= 0) {
+            ajandaVarMi = true;
+            break;
+          }
+        }
+      }
+    }
+    if (ajandaVarMi) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (c) => RandevuEkrani(
+            esnaf: _guncelEsnaf,
+            kullaniciTel: widget.kullaniciTel,
+          ),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Bu işletmenin henüz yayında olan bir ajanda defteri bulunmuyor."), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating));
+    }
   }
 
   Widget _kaydirmaButonu(IconData icon, Alignment alignment) {

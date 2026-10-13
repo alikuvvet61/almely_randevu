@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:async';
@@ -13,10 +14,13 @@ import 'rehber_ekrani.dart';
 import '../main.dart'; // navigatorKey için
 
 
+import 'taksi/taksi_durak_takip_ekrani.dart';
+import 'taksi/taksi_esnaf_paneli.dart';
 import 'taksi/taksi_mod_secim_ekrani.dart';
-import 'arac_kiralama/arac_kiralama_esnaf_paneli.dart';
+import 'taksi/taksi_talep_dialogu.dart';
+import 'esnaf_mod_secim_ekrani.dart';
 import 'ana_ekran.dart';
-import 'esnaf_paneli.dart';
+import '../yardimcilar/telefon_girdisi.dart';
 
 
 class GirisSecimSayfasi extends StatefulWidget {
@@ -28,7 +32,10 @@ class GirisSecimSayfasi extends StatefulWidget {
 
 class _GirisSecimSayfasiState extends State<GirisSecimSayfasi> {
   final TextEditingController _telController = TextEditingController();
+  final TextEditingController _adController = TextEditingController();
   bool _loading = false;
+  bool _yeniKayit = false;
+  String _bekleyenTel = '';
   int _logoTiklamaSayisi = 0;
   final _firestoreServisi = FirestoreServisi();
 
@@ -49,6 +56,13 @@ class _GirisSecimSayfasiState extends State<GirisSecimSayfasi> {
       _garantiliDeepLinkKontrol();
       _aktifKullaniciyiKontrolEt();
     });
+  }
+
+  @override
+  void dispose() {
+    _telController.dispose();
+    _adController.dispose();
+    super.dispose();
   }
 
   void _aktifKullaniciyiKontrolEt() async {
@@ -88,6 +102,11 @@ class _GirisSecimSayfasiState extends State<GirisSecimSayfasi> {
       }
       
       final data = OneSignalServisi.sonTiklananVeri;
+      if (data != null && data['action'] == 'taksi_cagri' && data['esnafId'] != null) {
+        OneSignalServisi.sonTiklananVeri = null;
+        _taksiCagrisinaGit(data['esnafId'].toString());
+        return;
+      }
       if (data != null && data['action'] == 'uzatma_ekrani' && data['tel'] != null) {
         String tel = data['tel'].toString();
         String? rId = data['randevuId']?.toString();
@@ -103,15 +122,39 @@ class _GirisSecimSayfasiState extends State<GirisSecimSayfasi> {
     });
   }
 
+  Future<void> _taksiCagrisinaGit(String esnafId) async {
+    try {
+      final doc = await FirebaseFirestore.instance.collection('esnaflar').doc(esnafId).get();
+      if (!doc.exists || !mounted) return;
+      final esnaf = EsnafModeli.fromFirestore(doc);
+      final tel = TaksiOturum.telefon;
+      final fs = FirestoreServisi();
+      final yonetici = tel.isNotEmpty && fs.musteriTelefonAnahtari(tel) == fs.musteriTelefonAnahtari(esnaf.telefon);
+      if (!mounted) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (c) => yonetici
+              ? TaksiEsnafPaneli(esnaf: esnaf)
+              : TaksiDurakTakipEkrani(esnaf: esnaf, soforTel: tel.isEmpty ? null : tel),
+        ),
+      );
+    } catch (e) {
+      debugPrint('Taksi çağrısı açılamadı: $e');
+    }
+  }
+
   void _girisYap() async {
     String tel = _telController.text.trim();
     // Test aşaması için kısa numara (örn: 113) kısıtlaması geçici olarak esnetildi
-    if (tel.isEmpty) {
+    if (!TelefonGirdisi.gecerli(tel)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Lütfen bir telefon numarası girin."))
+        SnackBar(content: Text(TelefonGirdisi.hata(tel) ?? 'Geçerli bir telefon yazın.')),
       );
       return;
     }
+    tel = TelefonGirdisi.rakamlar(tel);
+    TaksiOturum.telefon = tel;
 
     setState(() => _loading = true);
 
@@ -127,36 +170,71 @@ class _GirisSecimSayfasiState extends State<GirisSecimSayfasi> {
       setState(() => _loading = false);
 
       if (esnaf != null) {
-        // Taksi → mod seçim; Araç Kiralama → özel panel; diğerleri → EsnafPaneli
+        // Taksi → 3 mod (müşteri/sürücü/yönetici); diğer kategoriler → müşteri/yönetici
         String kat = esnaf.kategori.trim().toLowerCase();
         if (kat == 'taksi') {
           Navigator.push(
             context,
             MaterialPageRoute(builder: (c) => TaksiModSecimEkrani(esnaf: esnaf, girisTel: tel))
           );
-        } else if (kat == 'araç kiralama' || kat == 'arac kiralama') {
-          String? soforTel = (esnaf.telefon != tel) ? tel : null;
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (c) => AracKiralamaEsnafPaneli(esnaf: esnaf, soforTel: soforTel))
-          );
         } else {
-          String? soforTel = (esnaf.telefon != tel) ? tel : null;
-          Navigator.pushReplacement(
+          Navigator.push(
             context,
-            MaterialPageRoute(builder: (c) => EsnafPaneli(esnaf: esnaf, soforTel: soforTel))
+            MaterialPageRoute(builder: (c) => EsnafModSecimEkrani(esnaf: esnaf, girisTel: tel))
           );
         }
-      } else {
-        // NORMAL MÜŞTERİ: Doğrudan ana ekrana
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (c) => AnaEkran(kullaniciTel: tel))
-        );
+        return;
       }
+
+      final kayit = await _firestoreServisi.kullaniciKaydiBul(tel);
+      final ad = (kayit?['adSoyad'] ?? '').toString().trim();
+      if (!mounted) return;
+      if (ad.isEmpty) {
+        setState(() {
+          _yeniKayit = true;
+          _bekleyenTel = tel;
+          _adController.clear();
+        });
+        return;
+      }
+      _musteriyeGit(tel);
     } catch (e) {
       if (mounted) setState(() => _loading = false);
       debugPrint("Giriş Hatası: $e");
+    }
+  }
+
+  void _musteriyeGit(String tel) {
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (c) => AnaEkran(kullaniciTel: tel)),
+    );
+  }
+
+  Future<void> _kaydiTamamla() async {
+    final ad = _adController.text.trim();
+    if (ad.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Ad soyad yazın.')),
+      );
+      return;
+    }
+    setState(() => _loading = true);
+    try {
+      await _firestoreServisi.kullaniciProfiliniGuncelle(_bekleyenTel, {
+        'adSoyad': ad,
+        'telefon': _bekleyenTel,
+        'kayitTarihi': FieldValue.serverTimestamp(),
+      });
+      if (!mounted) return;
+      _musteriyeGit(_bekleyenTel);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _loading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Kayıt açılamadı: $e')),
+        );
+      }
     }
   }
 
@@ -239,7 +317,18 @@ class _GirisSecimSayfasiState extends State<GirisSecimSayfasi> {
                 ),
               ),
             ),
-            const SizedBox(height: 40),
+            const SizedBox(height: 20),
+            const Text(
+              "Zamanınız bizim için kıymetli.",
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 16,
+                fontStyle: FontStyle.italic,
+                color: Colors.blueGrey,
+                height: 1.3,
+              ),
+            ),
+            const SizedBox(height: 24),
             
             const Text(
               "Hoş Geldiniz",
@@ -247,7 +336,7 @@ class _GirisSecimSayfasiState extends State<GirisSecimSayfasi> {
             ),
             const SizedBox(height: 10),
             const Text(
-              "İşlemlerinize devam etmek için telefon numaranızla giriş yapın.",
+              "İşlemlerinize devam etmek için telefon numaranızla giriş yapın. İlk girişte adınız kaydedilir. SMS gerekmez.",
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.grey, fontSize: 13),
             ),
@@ -255,7 +344,9 @@ class _GirisSecimSayfasiState extends State<GirisSecimSayfasi> {
 
             TextField(
               controller: _telController,
+              enabled: !_yeniKayit,
               keyboardType: TextInputType.phone,
+              inputFormatters: TelefonGirdisi.bicim,
               decoration: InputDecoration(
                 labelText: 'Telefon Numaranız', 
                 hintText: '05xx xxx xx xx',
@@ -269,8 +360,33 @@ class _GirisSecimSayfasiState extends State<GirisSecimSayfasi> {
             ),
             const SizedBox(height: 25),
 
+            if (_yeniKayit) ...[
+              TextField(
+                controller: _adController,
+                textCapitalization: TextCapitalization.words,
+                decoration: InputDecoration(
+                  labelText: 'Ad Soyad',
+                  helperText: '$_bekleyenTel ilk kez giriyor. Bu ad kişi kaydına yazılır.',
+                  prefixIcon: const Icon(Icons.person_outline, color: Colors.blue),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
             if (_loading)
               const CircularProgressIndicator()
+            else if (_yeniKayit)
+              ElevatedButton(
+                onPressed: _kaydiTamamla,
+                style: ElevatedButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 55),
+                  backgroundColor: Colors.blue.shade700,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                  elevation: 3,
+                ),
+                child: const Text('Kaydı tamamla', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              )
             else
               ElevatedButton(
                 onPressed: _girisYap,
@@ -282,6 +398,11 @@ class _GirisSecimSayfasiState extends State<GirisSecimSayfasi> {
                   elevation: 3,
                 ),
                 child: const Text("Giriş Yap", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              ),
+            if (_yeniKayit && !_loading)
+              TextButton(
+                onPressed: () => setState(() => _yeniKayit = false),
+                child: const Text('Numarayı değiştir'),
               ),
             
             const SizedBox(height: 15),

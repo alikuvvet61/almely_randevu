@@ -8,6 +8,8 @@ import '../servisler/onesignal_servisi.dart';
 import '../servisler/firestore_servisi.dart';
 import '../modeller/randevu_modeli.dart';
 import '../modeller/esnaf_modeli.dart';
+import '../modeller/bekleme_listesi_modeli.dart';
+import '../yardimcilar/hizmet_paketi.dart';
 import '../widgets/medya_goruntuleyici.dart';
 import 'arac_kiralama/kaza_bildirim_ekrani.dart';
 
@@ -55,7 +57,7 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 2,
+      length: 4,
       child: Scaffold(
         appBar: AppBar(
           title: const Text("Randevularım"),
@@ -71,10 +73,12 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
           bottom: const TabBar(
              tabs: [
                Tab(text: "Mevcut"),
+               Tab(text: "Paket"),
+               Tab(text: "Bekleme"),
                Tab(text: "Geçmiş"),
              ],
              indicatorColor: Colors.blue,
-             labelStyle: TextStyle(fontWeight: FontWeight.bold),
+             labelStyle: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
            ),
         ),
         body: StreamBuilder<List<RandevuModeli>>(
@@ -97,7 +101,7 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
               // [GÜNCELLEME]: Esnaf tarafıyla tam senkronize arşivleme mantığı
               // 'Onaylandı', 'Kullanımda' veya 'Kaza' olan randevular teslim alınana kadar (Tamamlandı olana kadar) 
               // GEÇMİŞ değil MEVCUT sayılmalı.
-              bool teslimAlindiMi = r.durum == 'Tamamlandı' || r.durum == 'İptal Edildi' || r.durum == 'Reddedildi';
+              bool teslimAlindiMi = r.durum == 'Tamamlandı' || r.durum == 'İptal Edildi' || r.durum == 'Reddedildi' || r.durum == 'Gelmedi';
               bool zamanGectiMi = rBit.isBefore(simdi);
               bool isDosyaAcik = r.durum == 'KAZA BİLDİRİLDİ' || r.durum == 'Kullanımda' || r.durum == 'Onaylandı';
               
@@ -118,12 +122,120 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
             return TabBarView(
               children: [
                 _randevuListesi(context, mevcutler, false),
+                _paketSekmesi(),
+                _beklemeListesiSekmesi(),
                 _randevuListesi(context, gecmisler, true),
               ],
             );
           },
         ),
       ),
+    );
+  }
+
+  Widget _paketSekmesi() {
+    return StreamBuilder<List<MusteriPaketKaydi>>(
+      stream: _firestoreServisi.musteriPaketleri(widget.telefon),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final liste = snapshot.data ?? [];
+        if (liste.isEmpty) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(
+                "Aktif paketiniz yok.\nRandevu alırken tek seans yerine paket seçebilirsiniz.",
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey.shade600, fontSize: 15),
+              ),
+            ),
+          );
+        }
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: liste.length,
+          itemBuilder: (context, i) {
+            final p = liste[i];
+            final renk = p.kullanilabilir ? Colors.indigo : Colors.grey;
+            return Card(
+              margin: const EdgeInsets.only(bottom: 10),
+              child: ListTile(
+                leading: Icon(Icons.inventory_2_outlined, color: renk),
+                title: Text(p.paketAdi, style: const TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: Text(
+                  "${p.esnafAdi} · ${p.hizmetAdi}\n"
+                  "${p.durumYazisi} · ${p.kalanSeans}/${p.toplamSeans} · ${DateFormat('dd.MM.yyyy').format(p.bitis)}",
+                ),
+                isThreeLine: true,
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _beklemeListesiSekmesi() {
+    return StreamBuilder<List<BeklemeListesiModeli>>(
+      stream: _firestoreServisi.kullaniciBeklemeListesiniGetir(widget.telefon),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final liste = snapshot.data ?? [];
+        if (liste.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.hourglass_empty, size: 80, color: Colors.grey.withValues(alpha: 0.3)),
+                const SizedBox(height: 20),
+                Text("Bekleme listeniz boş.", style: TextStyle(color: Colors.grey.shade600, fontSize: 16)),
+                const SizedBox(height: 8),
+                Text(
+                  "Dolu bir saate dokunarak yazılabilirsiniz.",
+                  style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          );
+        }
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: liste.length,
+          itemBuilder: (context, i) {
+            final b = liste[i];
+            final tarihStr = DateFormat('dd.MM.yyyy').format(b.tarih);
+            return Card(
+              margin: const EdgeInsets.only(bottom: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              child: ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: Colors.orange.shade50,
+                  child: Icon(Icons.hourglass_top, color: Colors.orange.shade800),
+                ),
+                title: Text(b.esnafAdi, style: const TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: Text("$tarihStr · ${b.saat}${b.durum == 'bildirildi' ? ' · Slot boşaldı bildirimi gitti' : ' · Bekleniyor'}"),
+                trailing: IconButton(
+                  icon: const Icon(Icons.close, color: Colors.redAccent),
+                  tooltip: 'Listeden çıkar',
+                  onPressed: () async {
+                    await _firestoreServisi.beklemeListesiIptalEt(b.id);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text("Bekleme listesinden çıkarıldı")),
+                      );
+                    }
+                  },
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -182,6 +294,20 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
         title: Row(
           children: [
             Expanded(child: Text(r.esnafAdi, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16))),
+            if (r.seriId != null && r.seriId!.isNotEmpty && !isKaza)
+              Container(
+                margin: const EdgeInsets.only(right: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.indigo.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.indigo.shade200),
+                ),
+                child: Text(
+                  "TEKRARLAYAN",
+                  style: TextStyle(color: Colors.indigo.shade800, fontSize: 10, fontWeight: FontWeight.bold),
+                ),
+              ),
             if (isKaza)
                Container(
                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -264,7 +390,19 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
             child: Column(
               children: [
                 // Hizmet ve Araç bilgileri (başlık stili iade ile uyumlu)
-                _bilgiSatiri(Icons.content_cut, "Hizmet: ${r.hizmetAdi}", bold: true),
+                _bilgiSatiri(
+                  Icons.content_cut,
+                  r.paketAdi != null && r.paketAdi!.isNotEmpty
+                      ? "Hizmet: ${r.hizmetAdi} · ${r.paketAdi}"
+                      : "Hizmet: ${r.hizmetAdi}",
+                  bold: true,
+                ),
+                if (r.sadakatYuzde > 0)
+                  _bilgiSatiri(
+                    Icons.card_giftcard,
+                    "${r.sadakatSira}. randevu · %${r.sadakatYuzde} indirim. Kasada uygulanır.",
+                    bold: true,
+                  ),
                 if (r.randevuKanali != null)
                   _bilgiSatiri(Icons.layers, r.randevuKanali!.contains(RegExp(r'[0-9]{2}\s[A-Z]+\s[0-9]+')) ? "Araç: ${r.randevuKanali}" : "Bölüm: ${r.randevuKanali}", bold: true),
                 if (r.calisanPersonel != null && (r.randevuKanali == null || !r.randevuKanali!.contains(RegExp(r'[0-9]{2}\s[A-Z]+\s[0-9]+'))))
@@ -314,7 +452,7 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton.icon(
-                          onPressed: () => _randevuIptalDialog(context, r),
+                          onPressed: () => _iptaleBasla(context, r),
                           icon: const Icon(Icons.cancel_outlined),
                           label: const Text("Randevuyu İptal Et"),
                           style: ElevatedButton.styleFrom(
@@ -326,6 +464,24 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
                           ),
                         ),
                       ),
+                      if (r.seriId != null && r.seriId!.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: () => _seriIptalDialog(context, r),
+                            icon: const Icon(Icons.event_busy),
+                            label: const Text("Tüm Tekrarlayan Seriyi İptal Et"),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.indigo.shade50,
+                              foregroundColor: Colors.indigo.shade900,
+                              elevation: 0,
+                              side: BorderSide(color: Colors.indigo.shade300),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
               ],
@@ -414,7 +570,7 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
       renk = Colors.blue;
       gosterimMetni = 'Kirada';
     }
-    if (durum == 'Reddedildi' || durum == 'İptal Edildi' || durum == 'KAZA BİLDİRİLDİ') renk = Colors.red;
+    if (durum == 'Reddedildi' || durum == 'İptal Edildi' || durum == 'KAZA BİLDİRİLDİ' || durum == 'Gelmedi') renk = Colors.red;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -635,8 +791,188 @@ class _KullaniciRandevuEkraniState extends State<KullaniciRandevuEkrani> {
     );
   }
 
-  void _randevuIptalDialog(BuildContext context, RandevuModeli r) {
-    // ... mevcut kod ...
+  Future<void> _iptaleBasla(BuildContext context, RandevuModeli r) async {
+    final esnaf = await _firestoreServisi.esnafGetirDoc(r.esnafId);
+    final sinir = esnaf?.iptalSinirSaati ?? 0;
+    final baslangic = _randevuZamaniHesapla(r);
+    final gecIptal = sinir > 0 && !DateTime.now().isBefore(baslangic.subtract(Duration(hours: sinir)));
+    if (!context.mounted) return;
+    if (gecIptal) {
+      final devam = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text("Geç iptal"),
+          content: Text(
+            "Bu işletme randevuya $sinir saat kala yapılan iptali geç iptal sayar. "
+            "Saat yine açılır; kaydınıza not düşer. Eşik dolarsa yeni randevu alamazsınız.",
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Vazgeç")),
+            TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text("Yine de iptal et")),
+          ],
+        ),
+      );
+      if (devam != true || !context.mounted) return;
+    }
+    final bagli = await _firestoreServisi.bagliRandevulariGetir(r);
+    if (!context.mounted) return;
+    var hedefler = <RandevuModeli>[r];
+    if (bagli.length > 1) {
+      final secim = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text("Randevuyu İptal Et"),
+          content: Text("Bu randevuya bağlı ${bagli.length} kayıt var. Sadece bunu mu, bağlıların hepsini mi iptal edelim?"),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Vazgeç")),
+            TextButton(onPressed: () => Navigator.pop(ctx, 'secili'), child: const Text("Sadece bunu")),
+            ElevatedButton(onPressed: () => Navigator.pop(ctx, 'hepsi'), child: const Text("Bağlıların hepsini")),
+          ],
+        ),
+      );
+      if (secim == null || !context.mounted) return;
+      hedefler = secim == 'hepsi' ? bagli : [r];
+    }
+    _randevuIptalDialog(context, r, hedefler: hedefler, gecIptal: gecIptal, esik: esnaf?.karaListeEsik ?? 0);
+  }
+
+  void _randevuIptalDialog(BuildContext context, RandevuModeli r, {List<RandevuModeli>? hedefler, bool gecIptal = false, int esik = 0}) {
+    final liste = hedefler ?? [r];
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
+      builder: (c) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text("Randevu İptal Nedeni", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 10),
+            const Text("Lütfen randevuyu iptal etme nedeninizi seçiniz:", style: TextStyle(color: Colors.grey)),
+            const Divider(height: 30),
+            Flexible(
+              child: StreamBuilder<List<String>>(
+                stream: _firestoreServisi.iptalNedenleriniGetir('kullanici'),
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+                  final nedenler = snapshot.data!;
+                  return ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: nedenler.length,
+                    itemBuilder: (context, index) {
+                      return ListTile(
+                        title: Text(nedenler[index]),
+                        leading: const Icon(Icons.radio_button_off, color: Colors.blue),
+                        onTap: () async {
+                          final neden = gecIptal ? "Geç iptal — ${nedenler[index]}" : nedenler[index];
+                          for (final hedef in liste) {
+                            await _firestoreServisi.randevuIptalEt(hedef.id, neden);
+                          }
+                          String mesaj = liste.length > 1
+                              ? "${liste.length} bağlı randevu iptal edildi."
+                              : "Randevunuz başarıyla iptal edildi.";
+                          if (gecIptal) {
+                            final kayit = await _firestoreServisi.musteriCezaNotuIsle(
+                              esnafId: r.esnafId,
+                              telefon: r.kullaniciTel,
+                              ad: r.kullaniciAd,
+                              tip: 'gec_iptal',
+                              esik: esik,
+                            );
+                            mesaj = kayit.karaListede
+                                ? "Geç iptal işlendi. Bu işletmeden yeni randevu alamazsınız."
+                                : "Geç iptal olarak kaydedildi.";
+                          }
+                          if (context.mounted) {
+                            Navigator.pop(c);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text(mesaj)),
+                            );
+                          }
+                        },
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextButton(onPressed: () => Navigator.pop(c), child: const Text("Vazgeç")),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _seriIptalDialog(BuildContext context, RandevuModeli r) {
+    final seriId = r.seriId;
+    if (seriId == null || seriId.isEmpty) return;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Tekrarlayan seriyi iptal et"),
+        content: const Text(
+          "Bu randevuyla aynı serideki henüz gelmemiş tüm randevular iptal edilir. "
+          "Geçmiş veya tamamlanmış kayıtlar kalır. Devam edilsin mi?",
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Vazgeç")),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              showModalBottomSheet(
+                context: context,
+                shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
+                builder: (c) => Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text("Seri İptal Nedeni", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 10),
+                      const Text("Neden seçin (tüm gelecek randevulara uygulanır):", style: TextStyle(color: Colors.grey)),
+                      const Divider(height: 30),
+                      Flexible(
+                        child: StreamBuilder<List<String>>(
+                          stream: _firestoreServisi.iptalNedenleriniGetir('kullanici'),
+                          builder: (context, snapshot) {
+                            if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+                            final nedenler = snapshot.data!;
+                            return ListView.builder(
+                              shrinkWrap: true,
+                              itemCount: nedenler.length,
+                              itemBuilder: (context, index) {
+                                return ListTile(
+                                  title: Text(nedenler[index]),
+                                  leading: const Icon(Icons.radio_button_off, color: Colors.indigo),
+                                  onTap: () async {
+                                    final sayi = await _firestoreServisi.randevuSerisiniIptalEt(seriId, nedenler[index]);
+                                    if (context.mounted) {
+                                      Navigator.pop(c);
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(content: Text("Seriden $sayi gelecek randevu iptal edildi.")),
+                                      );
+                                    }
+                                  },
+                                );
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      TextButton(onPressed: () => Navigator.pop(c), child: const Text("Vazgeç")),
+                    ],
+                  ),
+                ),
+              );
+            },
+            child: const Text("Devam", style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _kanitGalerisi(BuildContext context, RandevuModeli r) {

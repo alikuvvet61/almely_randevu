@@ -25,11 +25,17 @@ class RandevuModeli {
   final int uzatmaSuresi; 
   final String? gecikmeBildirimId; 
   final String? uzatmaBildirimId; 
+  final String? oncesiBildirimId; // Randevu öncesi hatırlatma OneSignal ID
+  final String? sonrasiBildirimId; // Randevu sonrası teşekkür/yorum hatırlatması
   final List<String> teslimatGorselleri; // [YENİ] Teslimat anı fotoğraf/video linkleri
   final List<String> iadeGorselleri;     // [YENİ] İade anı fotoğraf/video linkleri
   final Map<String, dynamic>? kazaVerisi; // [YENİ] Hasar/Kaza anındaki tüm detaylar (konum, gorseller, notlar)
   final String? nereden; // [YENİ] Taksi için başlangıç noktası
   final String? nereye;  // [YENİ] Taksi için varış noktası
+  final String? paketKayitId;
+  final String? paketAdi;
+  final int sadakatYuzde;
+  final int sadakatSira;
 
   RandevuModeli({
     required this.id,
@@ -56,11 +62,17 @@ class RandevuModeli {
     this.uzatmaSuresi = 0,
     this.gecikmeBildirimId,
     this.uzatmaBildirimId,
+    this.oncesiBildirimId,
+    this.sonrasiBildirimId,
     this.teslimatGorselleri = const [],
     this.iadeGorselleri = const [],
     this.kazaVerisi,
     this.nereden,
     this.nereye,
+    this.paketKayitId,
+    this.paketAdi,
+    this.sadakatYuzde = 0,
+    this.sadakatSira = 0,
   });
 
   factory RandevuModeli.fromFirestore(DocumentSnapshot doc) {
@@ -101,11 +113,17 @@ class RandevuModeli {
       uzatmaSuresi: data['uzatmaSuresi'] ?? 0,
       gecikmeBildirimId: data['gecikmeBildirimId'],
       uzatmaBildirimId: data['uzatmaBildirimId'],
+      oncesiBildirimId: data['oncesiBildirimId'],
+      sonrasiBildirimId: data['sonrasiBildirimId'],
       teslimatGorselleri: List<String>.from(data['teslimatGorselleri'] ?? []),
       iadeGorselleri: List<String>.from(data['iadeGorselleri'] ?? []),
       kazaVerisi: data['kazaVerisi'] != null ? Map<String, dynamic>.from(data['kazaVerisi']) : null,
       nereden: data['nereden'],
       nereye: data['nereye'],
+      paketKayitId: data['paketKayitId'],
+      paketAdi: data['paketAdi'],
+      sadakatYuzde: (data['sadakatYuzde'] as num?)?.toInt() ?? 0,
+      sadakatSira: (data['sadakatSira'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -138,11 +156,17 @@ class RandevuModeli {
       'uzatmaSuresi': uzatmaSuresi,
       'gecikmeBildirimId': gecikmeBildirimId,
       'uzatmaBildirimId': uzatmaBildirimId,
+      'oncesiBildirimId': oncesiBildirimId,
+      'sonrasiBildirimId': sonrasiBildirimId,
       'teslimatGorselleri': teslimatGorselleri,
       'iadeGorselleri': iadeGorselleri,
       'kazaVerisi': kazaVerisi,
       'nereden': nereden,
       'nereye': nereye,
+      'paketKayitId': paketKayitId,
+      'paketAdi': paketAdi,
+      'sadakatYuzde': sadakatYuzde,
+      'sadakatSira': sadakatSira,
     };
   }
 
@@ -171,11 +195,17 @@ class RandevuModeli {
     int? uzatmaSuresi,
     String? gecikmeBildirimId,
     String? uzatmaBildirimId,
+    String? oncesiBildirimId,
+    String? sonrasiBildirimId,
     List<String>? teslimatGorselleri,
     List<String>? iadeGorselleri,
     Map<String, dynamic>? kazaVerisi,
     String? nereden,
     String? nereye,
+    String? paketKayitId,
+    String? paketAdi,
+    int? sadakatYuzde,
+    int? sadakatSira,
   }) {
     return RandevuModeli(
       id: id ?? this.id,
@@ -202,11 +232,17 @@ class RandevuModeli {
       uzatmaSuresi: uzatmaSuresi ?? this.uzatmaSuresi,
       gecikmeBildirimId: gecikmeBildirimId ?? this.gecikmeBildirimId,
       uzatmaBildirimId: uzatmaBildirimId ?? this.uzatmaBildirimId,
+      oncesiBildirimId: oncesiBildirimId ?? this.oncesiBildirimId,
+      sonrasiBildirimId: sonrasiBildirimId ?? this.sonrasiBildirimId,
       teslimatGorselleri: teslimatGorselleri ?? this.teslimatGorselleri,
       iadeGorselleri: iadeGorselleri ?? this.iadeGorselleri,
       kazaVerisi: kazaVerisi ?? this.kazaVerisi,
       nereden: nereden ?? this.nereden,
       nereye: nereye ?? this.nereye,
+      paketKayitId: paketKayitId ?? this.paketKayitId,
+      paketAdi: paketAdi ?? this.paketAdi,
+      sadakatYuzde: sadakatYuzde ?? this.sadakatYuzde,
+      sadakatSira: sadakatSira ?? this.sadakatSira,
     );
   }
 }

@@ -1,0 +1,41 @@
+---
+description: Değişiklik yapılan her ekranın Kullanım Rehberini güncelle
+alwaysApply: true
+---
+
+# Kullanım Rehberi Güncelleme Zorunluluğu
+
+Her yapılan işlemde **değişiklik yapılan ekranın** Kullanım Rehberi içeriğini güncelle. Dokunulmayan ekranların rehberine dokunma.
+
+## Kaynak
+
+- Katalog: `lib/yardimcilar/ekran_rehber_katalogu.dart`
+- Anahtarlar: widget sınıf adları (ör. `EsnafParametreEkrani`, `EsnafRandevuYonetimEkrani`)
+- Gösterim: `EkranRehberKatmani` / `?` kısayolu
+
+## Kapsam (kritik)
+
+1. Kodda hangi ekran dosyası / widget değiştiyse, katalogda **o ekranın** anahtarını güncelle.
+2. Bir özellik birden fazla ekranı etkiliyorsa, **her etkilenen ekran** için ayrı ayrı ekle/güncelle.
+3. Sadece backend/servis değişti ama UI davranışı değiştiyse, kullanıcının gördüğü ekran(lar)ın rehberini yine güncelle.
+4. Değişmeyen ekranlara gereksiz metin ekleme.
+
+## Ne eklenmeli?
+
+O ekranda kullanıcının görmesi / yapması gerekenler:
+
+- Yeni veya değişen buton, switch, sekme, menü
+- Yeni ayar / parametre ve ne işe yaradığı
+- Değişen iş akışı (onay, iptal, bildirim, WhatsApp vb.)
+- Yer tutucular, kısıtlar, pratik uyarılar
+
+## Nasıl?
+
+1. Bu turda değişen ekran dosyalarını listele.
+2. Her biri için katalog anahtarını bul (yoksa ekle).
+3. `ozet`, `bolumler`, `ipuclari`, `bildirimler` alanlarını **o ekrana özel** güncelle.
+4. Türkçe, kısa, kullanıcı dilinde yaz.
+
+## Kontrol
+
+Özellik bitmeden: “Bu turda dokunduğum her ekranın rehberi, yeni davranışı anlatıyor mu?”

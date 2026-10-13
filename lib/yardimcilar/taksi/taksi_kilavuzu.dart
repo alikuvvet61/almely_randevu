@@ -6,7 +6,7 @@ class TaksiKullanimiKlavuzu {
     },
     {
       'baslik': '2. Taksi çağırma',
-      'icerik': 'Taksi Çağır butonuna bastığınızda sistem, en yakın müsait aracı ve tahmini bekleme süresini hesaplar. Bekleme süresi ekranda görünür.'
+      'icerik': 'Taksi İstiyorum butonuna bastığınızda sistem, en yakın müsait aracı ve tahmini bekleme süresini hesaplar. Bekleme süresi ekranda görünür.'
     },
     {
       'baslik': '3. Randevu alma',

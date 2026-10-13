@@ -44,6 +44,67 @@ class EkranRehberKatalogu {
         sinifAdi == 'EkranRehberDetayEkrani';
   }
 
+  /// Önce [tercih] ekranının metnine bakar. Yoksa bütün rehberlerde arar.
+  static String ara(String soru, {String? tercih}) {
+    final kelimeler = soru
+        .toLowerCase()
+        .split(RegExp(r'[^a-zçğıöşü0-9]+'))
+        .where((k) => k.length > 2)
+        .toList();
+    if (kelimeler.isEmpty) return 'Ne aradığınızı duyamadım.';
+    if (tercih != null) {
+      final kendi = _enIyiParca(_harita[tercih], kelimeler);
+      if (kendi != null) return kendi;
+    }
+    String? enIyi;
+    var enSkor = 0;
+    for (final rehber in _harita.values) {
+      final parcalar = _parcalar(rehber);
+      for (final p in parcalar) {
+        final metin = p.toLowerCase();
+        var skor = 0;
+        for (final k in kelimeler) {
+          if (metin.contains(k)) skor++;
+        }
+        if (skor > enSkor) {
+          enSkor = skor;
+          enIyi = p;
+        }
+      }
+    }
+    if (enIyi == null || enSkor <= 0) {
+      return 'Bunu uygulamada bulamadım. Kategori adı, işletme adı, taksi istiyorum, araç kirala veya randevularım diyebilirsiniz.';
+    }
+    return enIyi;
+  }
+
+  static String? _enIyiParca(EkranRehberIcerik? rehber, List<String> kelimeler) {
+    if (rehber == null) return null;
+    String? enIyi;
+    var enSkor = 0;
+    for (final p in _parcalar(rehber)) {
+      final metin = p.toLowerCase();
+      var skor = 0;
+      for (final k in kelimeler) {
+        if (metin.contains(k)) skor++;
+      }
+      if (skor > enSkor) {
+        enSkor = skor;
+        enIyi = p;
+      }
+    }
+    return enSkor > 0 ? enIyi : null;
+  }
+
+  static List<String> _parcalar(EkranRehberIcerik rehber) {
+    return <String>[
+      rehber.ozet,
+      for (final b in rehber.bolumler) '${b.baslik}. ${b.icerik}',
+      ...rehber.ipuclari,
+      ...rehber.bildirimler,
+    ].where((p) => p.trim().isNotEmpty).toList();
+  }
+
   static EkranRehberIcerik _genelKopya(String sinif) => EkranRehberIcerik(
         baslik: 'Bu Ekran',
         ozet:
@@ -83,15 +144,16 @@ class EkranRehberKatalogu {
     'GirisSecimSayfasi': const EkranRehberIcerik(
       baslik: 'Giriş',
       ozet:
-          'Uygulamaya telefon numaranızla güvenli giriş yaptığınız ekrandır. Esnaf veya müşteri ayrımı numaraya göre otomatik yönlendirilir.',
+          'Telefon numaranızla giriş yaparsınız. Logonun altında “Zamanınız bizim için kıymetli.” yazar. Esnaf numarası tanınırsa (Taksi hariç) Müşteri / Yönetici seçimi gelir.',
       bolumler: [
         RehberBolum(
           baslik: 'Nasıl giriş yapılır?',
           icerik:
-              '1. Telefon numaranızı 05xx… formatında yazın.\n'
+              '1. Telefon numaranızı yazın.\n'
               '2. “Giriş Yap”a basın.\n'
-              '3. Gelen SMS kodunu girin.\n'
-              '4. Sistem sizi müşteri ana sayfasına veya (kayıtlı esnafsanız) ilgili panele yönlendirir.',
+              '3. Bu numara ilk kez geliyorsa ad soyad sorulur ve kişi kaydı açılır. SMS gitmez. Aynı numarayla tekrar girince ad sorulmaz.\n'
+              '4. Kayıtlı esnafsanız ad sorulmaz: Taksi’de 3 mod (müşteri/sürücü/yönetici); diğer kategorilerde 2 mod (müşteri/yönetici).\n'
+              '5. Esnaf değilseniz müşteri ana sayfasına gidersiniz.',
           ikon: Icons.phone_android,
         ),
         RehberBolum(
@@ -108,7 +170,8 @@ class EkranRehberKatalogu {
         ),
       ],
       ipuclari: [
-        'SMS gelmezse operatör filtresi veya yanlış numara olabilir; birkaç dakika bekleyip tekrar deneyin.',
+        'İlk girişte ad soyad yazılır. SMS şimdilik yok. Aynı numara bir daha ad sormaz.',
+        'Telefon alanına yalnızca rakam yazılır. Cep 05xx… veya sabit hat (ör. 0462…) kabul edilir. Harf yazılamaz. Baştaki 0 sayılmaz: 505… ile 0505… aynı numaradır, ikisini ayrı yazmazsınız.',
         'Logo alanına art arda 5 kez dokunmak yönetici girişi içindir (yetkili personel).',
       ],
       bildirimler: [
@@ -119,12 +182,12 @@ class EkranRehberKatalogu {
     'AnaEkran': const EkranRehberIcerik(
       baslik: 'Ana Sayfa',
       ozet:
-          'Kategorilerden hizmet seçtiğiniz merkez ekrandır. Esnafsanız üstteki geçiş ikonuyla işletme paneline dönebilirsiniz.',
+          'Kategorilerden hizmet seçtiğiniz merkez ekrandır. Esnafsanız sol üstteki ⇄ ile Müşteri / Yönetici (veya Taksi’de Sürücü) moduna geçersiniz.',
       bolumler: [
         RehberBolum(
           baslik: 'Kategori seçimi',
           icerik:
-              'Liste veya ızgaradan kategoriye dokunun (ör. Kuaför, Taksi, Araç Kiralama). Seçilen kategoriye göre esnaf listesi veya özel modül açılır.',
+              'Liste veya ızgaradan kategoriye dokunun (ör. Kuaför, Taksi, Araç Kiralama). Telefonda bir satırda 3, geniş ekranda 4 kutu durur. İkon ve ad beyaz, koyu gölgeli ve okunur. Seçilen kategoriye göre esnaf listesi veya özel modül açılır. Listede Profil Bilgilerim’deki fotoğraf varsa soldaki yuvarlakta o durur. Yoksa logo varsa logo durur. İkisi de yoksa mavi dükkan ikonu kalır. Ekrandaki yuvarlak mikrofona dokunup kategori veya işletme adı söyleyince liste açılır. Mikrofonu basılı tutup istediğiniz yere bırakabilirsiniz. “Taksi istiyorum” en yakın taksinin onay penceresini açar; onaylamadan çağrı gitmez. “Araç kirala” kiralama listesini açar. “Randevularım” kendi randevularınızı açar. İlk dokunuşta mikrofon izni hemen sorulur. Ekranda tek mikrofon durur; çekince çoğalmaz. Kısa bir susunca o söz bir kez gider. Yeni komut için yeniden dokunun; önceki sözün üstüne yazılmaz. Aynı mikrofon taksi ve araç kiralama listesinde de durur.',
           ikon: Icons.category_outlined,
         ),
         RehberBolum(
@@ -134,17 +197,87 @@ class EkranRehberKatalogu {
           ikon: Icons.my_location,
         ),
         RehberBolum(
-          baslik: 'Esnaf / müşteri geçişi',
+          baslik: 'Mod değiştir',
           icerik:
-              'Telefonunuz bir işletmeye bağlıysa AppBar’daki geçiş ikonuyla esnaf paneline gidebilirsiniz.',
-          ikon: Icons.swap_horiz,
+              'Telefonunuz bir işletmeye bağlıysa AppBar’daki mavi ⇄ “Mod Değiştir” ikonu giriş modu seçimine döner. Yönetici panelinden de aynı ikonla buraya veya diğer moda geçebilirsiniz. Geçişte mikrofon kapanır.',
+          ikon: Icons.swap_horiz_rounded,
+        ),
+        RehberBolum(
+          baslik: 'İşletmemi ekle',
+          icerik:
+              'Profilde “İşletmemi ekle” vardır. Unvan, şahıs işletmesi veya şirket/kooperatif ve hemen altında Vergi Kimlik No (VKN) yazılır. Levha sizin adınıza ise şahıs, bir şirket ya da kooperatif adına ise ikinci seçilir. Numaranın altında vergi levhası fotoğrafı eklenir. Şahısta bu alana 11 haneli T.C. kimlik numarası, şirket veya kooperatifte 10 haneli VKN girilir. Kategori kutusu Seçiniz yazar. Eski başvuruda Araç Kiralama kayıtlı olsa da seçili gelmez. Kategori seçilmeden Başvur açılmaz. Ayrıca yetkili, e-posta, il, ilçe, açık adres, konum, açılış-kapanış ve kapalı gün vardır. Mahalle ve cadde ayrı sorulmaz. Levha ve iki onay kutusu olmadan Başvur açılmaz. Giriş telefonu aynen durur; SMS ile ayrıca doğrulanmaz.\n'
+              'Hizmet koşulları ve KVKK kutuları elle işaretlenmez. Kutuya dokununca o metin açılır. Sona kadar kaydırıp “Okudum, anladım” denince o kutu dolar.\n'
+              'Sabit hat, web, Instagram, kısa tanıtım ve olanaklar isteğe bağlıdır. Otopark, Wi-Fi, Klima ve Çocuk alanı boş gelir. İki satırdadır: üstte Otopark ve Wi-Fi, altta Klima ve Çocuk alanı. İkinciyi seçince Çocuk alanı kaybolmaz. MERSİS ve ticaret sicil yalnızca şirket veya kooperatifte sorulur. Giriş telefonunun altında isteğe bağlı logo kutusu vardır. Dokununca galeriden seçilir ve kutuda görünür. Boş bırakılabilir. Onaylanınca işletme adının üstünde yuvarlak durur. Mekan fotoğrafları onaydan sonra vitrine eklenir.\n'
+              'Başvurudan sonra profilde işletme adı, durum, Vergi Kimlik No (VKN) ve red notu durur. İnceleniyor, reddedildi veya onaylandı buradan izlenir.\n'
+              'Yönetici onaylayınca aynı telefonla girişte Müşteri / Yönetici çıkar. Onay beklerken müşteri olarak kalırsınız. Reddedilirse yeniden yazabilirsiniz.\n'
+              'Telefonunuz zaten bir işletmedeyse veya şoförseniz bu satır görünmez.\n'
+              'Profil simgesi müşteri, sürücü ve yönetici modunda aynı sayfayı açar. İşletmeye bağlı telefonda ana sayfada durmaz; Giriş Modu Seçin ekranının sağ üstündedir. Bağlı değilse ana sayfadadır. Satırlar Kişi, İşletme, Sürücü ve Hesap diye ayrılır. Grubun koşulu yoksa o grup görünmez. İşletme grubunda işletme kaydı, başvuru kartı, İşletmede çalışıyorum ve İşletmeden çıkıyorum durur. İşletme kaydınız varsa bilgileri düzenle ve işletme kaydını sil de buradadır. Şoförseniz Sürücü grubunda gelişmiş panel, temel bilgiler ve güvenlik doğrulaması durur. Çıkış üç modda da hesabı kapatır.\n'
+              'Profilde ad, telefon ve menü yazıları çerçeve içindedir. Çerçeveler ince ve şeffaftır. Üzerine gelinen çizgi yalnızca bir ton koyulaşır. Profil simgesi, Profil Bilgilerim’de ad veya adres boşsa titrer. 505… ile 0505… aynı kayıttır; adresi bir kez yazmak yeter. Sürücüde plaka da boşsa titrer. Plaka iki rakamdan sonra boşluk bırakır. Örnek: 61 SH 063. İşletme sahibiyseniz işletme adı, telefon, il, ilçe, adres veya harita konumu boşsa da titrer. Alanlar dolunca titreme durur.\n'
+              '“Kaydımı sil” ad ve profili siler. Randevular işletmede kalır. İşletme kaydı varsa o durur. Aynı numarayla tekrar girince ad yeniden sorulur.',
+          ikon: Icons.storefront_outlined,
+        ),
+        RehberBolum(
+          baslik: 'İşletmede çalışıyorum',
+          icerik:
+              'İşletme grubundadır. Kendi işletmesini açmaz.\n'
+              'Kategori, görev ve işletme seçilir. Taksi’de görev Taksi Şoförü’dür ve plaka yazılır. Başvuru o işletmeye gider.\n'
+              'Kabul edilince bu telefonla orada çalışırsınız. Taksi şoföründe araç filoya yazılır ve girişte Sürücü kartı açılır. Nöbet sırasını durak verir. Reddedilirse müşteri olarak kalırsınız. Bekleyen başvuruyu silince durum İptal olur.\n'
+              'Onaylı kayıttaki satırın adı İşletmeden çıkıyorum olur. Dokununca iptal, başvuruyu kabul eden kişiye gider. Onaylanınca kartta İptal yazar. Onay beklerken aynı satır İptal onay bekliyor yazar; dokununca talep geri alınır.\n'
+              'Taksi durağınız varsa bu satır profilde de durur. Kendi durağınız seçilidir. Plakayı yazıp Filoya ekle deyince araç filonuza hemen yazılır. Başka işletmeye başvurulmaz. Nöbet sırasını panelden verirsiniz.\n'
+              'Profilde çalışan başvurunuzun durumu durur: Bekleyen, Onaylandı, İptal onay bekliyor, İptal veya Ret. Onaylandıktan sonra da aynı kart görünür. Kartta ayrı düğme yoktur. İşletmeden çıkıyorum satırı iptali, başvuruyu kabul eden kişiye gönderir.\n'
+              'Başvuru gidince yönetici telefonuna bildirim gider. Yönetici panele girince bekleyen başvuru hatırlatılır.',
+          ikon: Icons.badge_outlined,
         ),
       ],
       ipuclari: [
         'Aradığınız kategoriyi göremiyorsanız aşağı kaydırın veya uygulama güncellemesini kontrol edin.',
+        'Profildeki telefon yalnızca rakamdır. 05xx… veya sabit hat yazılır; harf kabul edilmez. 505… ile 0505… tek profildir.',
+        'Plaka yalnızca taksi sürücüsünün profilinde durur. Müşteri ve esnaf bu alanı görmez.',
       ],
       bildirimler: [
         'Onay bekleyen veya yaklaşan randevularınız için bildirim alırsınız.',
+      ],
+    ),
+
+    'CalisanBasvurusuEkrani': const EkranRehberIcerik(
+      baslik: 'Çalışan başvurusu',
+      ozet: 'Bir işletmede çalışmak için kategori, görev ve işletme seçersiniz.',
+      bolumler: [
+        RehberBolum(
+          baslik: 'Adımlar',
+          icerik:
+              'Kategori listesi işletme başvurusuyla aynıdır.\n'
+              'Göreviniz, seçilen kategoriye göre gelir. Taksi’de Taksi Şoförü vardır ve plaka yazılır. İki rakamdan sonra boşluk gelir. Harflerden sonra sayı ayrı yazılır. Örnek: 61 SH 063.\n'
+              'Taksi şoföründe Kimlik / Ehliyet, Ruhsat Bilgileri (Tescil), Zorunlu Trafik Sigortası ve Taksimetre Kalibrasyon Belgesi fotoğrafı eklenir. Dördü de yoksa Başvur kapalı kalır. Kamera veya galeriden seçilir.\n'
+              'İşletme, o kategorideki işletmelerden seçilir. Başvur deyince kayıt o işletmeye gider. Yönetici telefonuna “Yeni çalışan başvurusu” bildirimi gider.\n'
+              'Durağın sahibi bu ekranda kendi durağını görür. Plakayı yazıp Filoya ekle deyince araç filoya hemen yazılır.',
+          ikon: Icons.badge_outlined,
+        ),
+      ],
+      ipuclari: [
+        'Görevi tanımlanmamış kategoride başvuru gönderilmez.',
+        'Bekleyen başvuru varken form yerine durum yazısı durur. Başvuruyu sil deyince durum İptal olur. İşletme bunu İptal/Ret sekmesinde görür. Profilinizde de durum yazar.',
+        'Onaylı kayıttaki İşletmeden çıkıyorum satırı, iptali başvuruyu kabul eden kişiye gönderir. Onaylanınca kartta İptal yazar. İptal onay bekliyor satırına dokununca talep geri alınır.',
+      ],
+    ),
+
+    'CalisanBasvuruListesiEkrani': const EkranRehberIcerik(
+      baslik: 'Çalışan başvuruları',
+      ozet: 'İşletmenize çalışmak için gelen başvuruları bekleyen, onaylanan ve iptal/ret olarak görürsünüz.',
+      bolumler: [
+        RehberBolum(
+          baslik: 'Kabul ve red',
+          icerik:
+              'Üstte üç sekme vardır: Bekleyen, Onaylanan, İptal/Ret.\n'
+              'Bekleyen sekmesinde Kabul et ve Reddet durur. Kabul, kişiyi bu işletmenin çalışanı yapar.\n'
+              'Taksi şoföründe plaka da filoya yazılır. Nöbet sırasını siz verirsiniz.\n'
+              'Taksi başvurusunda ehliyet, ruhsat, sigorta ve taksimetre fotoğrafı satırda Gör ile açılır. Kabul ve red aynıdır.\n'
+              'Reddedilen kişi müşteri olarak kalır ve İptal/Ret sekmesine düşer. Başvuran silerse durum İptal olur, aynı sekmede görünür.\n'
+              'Onaylanan sekmesi kabul edilmiş başvuruları gösterir.\n'
+              'Onaylı çalışan çalışmayı bırakırsa talep Bekleyen sekmesine düşer. İptali onayla deyince kişi işletmeden çıkar, takside araç filodan silinir ve İptal/Ret sekmesinde İptal görünür. Reddet, kişiyi onaylı bırakır.\n'
+              'Yönetici panele girince bekleyen başvuru veya iptal talebi varsa hatırlatma penceresi açılır.',
+          ikon: Icons.how_to_reg_outlined,
+        ),
       ],
     ),
 
@@ -156,8 +289,24 @@ class EkranRehberKatalogu {
         RehberBolum(
           baslik: 'Listeyi okuma',
           icerik:
-              'Her kartta işletme adı, puan, mesafe ve kısa bilgiler yer alır. Karta dokunarak detaya / randevuya geçin.',
+              'Her kartta işletme adı, puan, mesafe ve kısa bilgiler yer alır. Karta dokunarak detaya / randevuya geçin.\n'
+              'Ortak esnafta fotoğraf varsa adın altında kayar. Logo varsa adın üstünde yuvarlak durur. Adresin altında kısa tanıtım yazısı durur. Taksi ve araç kiralamada bu vitrin yoktur.',
           ikon: Icons.storefront_outlined,
+        ),
+        RehberBolum(
+          baslik: 'Hizmet ve fiyat',
+          icerik:
+              'İşletme sayfasında Hizmetler listesi süre ve, esnaf göstermişse, ücreti yazar. Ön görüşme varsa listenin ilk sırasındadır. Paket varsa üst satır “Tek ders · 60 dakika” ve yanında o sürenin ücreti durur. Altta “Paketler” başlığıyla “30 günde 4 ders 6000 TL” yazar. İlk görüşme ayrıca belirtilir. Randevu bu listeden değil “Hemen Randevu Al” ile açılır. Randevu alımı durmuşsa veya randevuyu yalnızca yönetici veriyorsa bu buton görünmez.\n'
+              'Yönetici yapay zekayı açtıysa ekranda yuvarlak bir mikrofon durur. Basılı tutup istediğiniz yere bırakabilirsiniz. İlk dokunuşta mikrofon izni hemen sorulur. Ekranda tek mikrofon durur; çekince çoğalmaz. Kısa bir susunca o söz bir kez gider. Yeni komut için yeniden dokunun; önceki sözün üstüne yazılmaz. Haritanın üstünde sağa sola çekince mikrofon gider, harita kaymaz. “Randevu al” veya “araç kirala” alttaki düğmeyle aynı ekranı açar. Kapalıysa mikrofon görünmez.',
+          ikon: Icons.sell_outlined,
+        ),
+        RehberBolum(
+          baslik: 'Oyuncu veya Rakip Bul',
+          icerik:
+              'Yalnızca halı sahada, randevu düğmesinin üstünde “Oyuncu veya Rakip Bul” durur. Yazının solunda tek kişi, sağında üç kişi ikonu vardır. İkisi aynı boydadır.\n'
+              'Oyuncu veya rakip arıyorum ile altı seçenekten biri yazılır: Oyuncu arıyorum, Takım arıyorum, Kaleciyim, Kaleci arıyorum, Rakibiz, Rakip arıyoruz.\n'
+              'Telefon yalnızca isteği yazan kişiye görünür. İstek sahayı tutmaz. Saat, Hemen Randevu Al ile alınır.',
+          ikon: Icons.sports_soccer,
         ),
         RehberBolum(
           baslik: 'Sıralama ve filtre',
@@ -167,27 +316,97 @@ class EkranRehberKatalogu {
         ),
       ],
       ipuclari: [
-        'Kapalı veya randevu alımı durdurulmuş işletmelerde randevu butonu görünmeyebilir.',
+        'Kapalı, randevu alımı durdurulmuş veya randevuyu yalnızca yöneticinin verdiği işletmelerde randevu butonu görünmez.',
       ],
       bildirimler: [
         'Randevu oluşturunca esnafa talep bildirimi gider; onay/red sonucu size iletilir.',
       ],
     ),
 
+    'MacIlanlariEkrani': const EkranRehberIcerik(
+      baslik: 'Oyuncu veya Rakip Bul',
+      ozet: 'Halı sahada oyuncu veya rakip takım aranır. Başlığın solunda tek kişi, sağında üç kişi ikonu vardır. İkisi aynı boydadır. Saha saati bu istekle tutulmaz.',
+      bolumler: [
+        RehberBolum(
+          baslik: 'Oyuncu veya rakip arıyorum',
+          icerik:
+              'Oyuncu veya rakip arıyorum düğmesi listenin üstündedir. Altı seçenek vardır: Oyuncu arıyorum, Takım arıyorum, Kaleciyim, Kaleci arıyorum, Rakibiz, Rakip arıyoruz.\n'
+              'Tarih, o günün ayarlı saatleri ve gerekiyorsa saha yazılır. Saat listesi, halı sahanın açılış, kapanış ve aralığına göredir. Aralık açıksa 10:00 - 11:00 gibi durur. Kapalı gün ve kapatılan saat gelmez.\n'
+              'Oyuncu arıyorumda kaç kişi olduğu yazılır. Kaleci arıyorum bir kişiliktir. Rakip arıyoruz ve Rakibiz için takım adı ile oyuncu sayısı yazılır.\n'
+              'İstek, açık olduğunuz halı sahaya aittir. Geçmiş saate istek yazılmaz. Listeye yaz denince herkes görür.',
+          ikon: Icons.add_circle_outline,
+        ),
+        RehberBolum(
+          baslik: 'Katıl ve rakip ol',
+          icerik:
+              'Tümü, bütün istekleri gösterir. Bu saha, yalnızca bu işletmenin istekleridir. Benim, sizin yazdığınız, katıldığınız veya çağırdığınız isteklerdir.\n'
+              'Oyuncu arıyorum ve Kaleci arıyorum isteğinde Katıl denir. Sayı dolunca istek kapanır.\n'
+              'Rakip arıyoruz isteğinde Rakip ol denir ve kendi takım adı yazılır.\n'
+              'Takım arıyorum, Kaleciyim ve Rakibiz isteğinde Çağır denir. Takım arıyorum ve Rakibizde çağıran kendi takım adını yazar. Çağrı gidince durum Çağrıldı olur.\n'
+              'Ad herkese görünür. Telefon yalnızca isteği yazan kişiye görünür.',
+          ikon: Icons.groups_outlined,
+        ),
+        RehberBolum(
+          baslik: 'Sahayı tut',
+          icerik:
+              'İstek sahayı kilitlemez. Sahayı tut, o halı sahanın randevu ekranını açar. Saati oradan alırsınız.\n'
+              'İsteği yazan kişi İptal ile kaldırır. Katılan Ayrıl diyebilir. Rakip veya çağıran Vazgeç derse istek yeniden açılır.\n'
+              'Katılım, ayrılma, rakip kabulü, çağrı ve kaldırma, isteği yazan kişiye bildirim olarak gider.',
+          ikon: Icons.event_available,
+        ),
+      ],
+      ipuclari: [
+        'Kuaför, taksi ve diğer kategorilerde bu liste yoktur.',
+      ],
+    ),
+
     'RandevuEkrani': const EkranRehberIcerik(
       baslik: 'Randevu Alma',
       ozet:
-          'Hizmet, gün ve saat seçerek randevu oluşturursunuz. Onay modu esnafa göre otomatik veya manueldir.',
+          'Hizmet, gün ve saat seçerek randevu oluşturursunuz. Dolu saatlere bekleme listesine yazılabilir; sadık müşteri için tekrarlayan seri açılabilir.',
       bolumler: [
         RehberBolum(
           baslik: 'Adım adım',
           icerik:
-              '1. Hizmet(ler)i seçin.\n'
-              '2. Tarih seçin (esnafın açık günleri gösterilir).\n'
-              '3. Müsait saate dokunun.\n'
-              '4. Not varsa yazın ve onaylayın.\n'
-              '5. “Randevularım”dan durumu takip edin.',
+              '1. Ad / telefon ve hizmet(ler)i seçin. Ön görüşme varsa listenin ilk sırasındadır.\n'
+              '2. Tarih ay takviminden seçilir. Günler, Gelişmiş Ayarlar’daki “Maksimum Randevu İleri Süresi” kadar açıktır (ör. 30 gün). Bu ayın devamı ve sonraki ay sağ ok ile gelir; pencere dışındaki günler soluktur.\n'
+              '3. Müsait saate dokunun ve onaylayın. Geçmiş saatler her hizmette kapalıdır. Hizmet 1 saatten kısa olsa da saat boşsa kayıt olur. Kayıt takılırsa mavi düğme geri gelir ve hata yazar.\n'
+              '4. “Randevularım”dan durumu takip edin.',
           ikon: Icons.event_available,
+        ),
+        RehberBolum(
+          baslik: 'Tekrarlayan randevu (sadık müşteri)',
+          icerik:
+              'İletişim kartında “Tekrarlayan randevu”yu işaretleyin.\n'
+              'Haftalık seçince “Kaç hafta boyunca tekrar edilsin?” sorulur (ör. her Pazartesi 10:00).\n'
+              'Seçilebilecek hafta sayısı, esnafın “Maksimum Randevu İleri Süresi”ne bağlıdır (örn. 365 gün ≈ 52 hafta).\n'
+              'Dolu veya pencere dışı günler atlanır.',
+          ikon: Icons.repeat,
+        ),
+        RehberBolum(
+          baslik: 'Bekleme listesi',
+          icerik:
+              'Turuncu / “Dolu” veya “Rezerve” görünen saate dokunun → Yazıl.\n'
+              'O randevu iptal/red edilince size OneSignal bildirimi gider; ardından tekrar randevu alın.\n'
+              'Kayıtlarınız “Randevularım → Bekleme” sekmesindedir.',
+          ikon: Icons.hourglass_top,
+        ),
+        RehberBolum(
+          baslik: 'Hizmet paketi',
+          icerik:
+              'Kuaför, berber, diyetisyen, fizyoterapi, psikolog, özel ders, pet kuaför, veteriner ve oto yıkamada görünür.\n'
+              'Diyet seçilince Paket kutusu açılır: Tek kontrol ve paketler (ör. 30 günde 4 seans 7000 TL). Tek kontrol bu gelişin ücretidir, paketten hak düşmez.\n'
+              'Diğer paketli hizmetlerde tek ücret kartta durmaz; “Tek seans” satırındadır. Özel derste bu satır “Tek ders”, paket yazısı “30 günde 4 ders” olur.\n'
+              '“Ön görüşme yapılsın mı?” açıksa, ön görüşme randevusu onaylanmadan diğer hizmetler listede görünmez. Onay bekleyen kayıt listeyi açmaz. Onay bekleyen ön görüşme varken yenisi alınamaz.\n'
+              '“Sadece ön görüşme randevusu alınsın” açıksa listede yalnızca ön görüşme vardır.\n'
+              '“Ön görüşme olmadan diğer hizmet açılmasın” açıksa önce ön görüşme alınır. Saati geçip kayıt onaylıysa diğer hizmet ve paket seçilir. Karta basınca ön görüşmeye yönlendirilirsiniz. Bu iki kural birlikte açık olmaz.\n'
+              '“Randevuları Sadece Yönetici versin” açıksa bu ekran müşteriye kapalıdır.\n'
+              'Sadakat açıksa telefon yazılınca onaylı randevu sayısı görünür. Sıra her X. randevuya denk gelirse kasada indirim olacağı yazılır. Paket hakkı değişmez.\n'
+              'Tek hizmet seçince mevcut hakkınız veya yeni paket çıkar. “Paketten kullan”, daha önce açılmış ve hâlâ dersi veya seansı kalan pakettir. O paketi açan randevu iptal edilip bütün hak geri geldiyse bu satır görünmez; alttan yeni paket seçilir. Diyet hizmetinde tek kontrol satırı yoktur; bir paket seçmeden kayıt olmaz. Ön görüşmede paket seçilmez.\n'
+              'Paketi seçerseniz bu randevu 1 hak düşer. Onay kutusunda paket adı, tarih ve saat yazar; bu gelişin 1. ders veya 1. seans olduğu söylenir. Yazı “30 günde 4 seans 7000 TL” biçimindedir; her gün 4 seans değildir.\n'
+              'Kalan hak “Randevularım → Paket” sekmesindedir.\n'
+              'Ücret işletmede tahsil edilir. Tekrarlayan seri ile paket birlikte kullanılmaz.',
+          ikon: Icons.inventory_2_outlined,
         ),
         RehberBolum(
           baslik: 'Otomatik / manuel onay',
@@ -198,20 +417,34 @@ class EkranRehberKatalogu {
         ),
       ],
       ipuclari: [
-        'Geçmiş saatler ve dolu slotlar seçilemez.',
-        'Aynı güne sınır koyan işletmelerde bugün için slot çıkmayabilir.',
+        'Bekleme listesi için önce ad ve telefon doldurun.',
+        'Telefon alanına yalnızca rakam yazılır. Örnek: 05xx xxx xx xx. Harf kabul edilmez.',
+        'Tekrarlayan seri araç kiralama akışında yoktur.',
+        'Geçmiş, öğle arası ve esnafın kapattığı gün veya saate yazılamaz.',
+        'Araç kiralama çok günlük akışında bekleme listesi bu sürümde yok.',
+        'Saatler kısa süre “yükleniyor” gösterebilir; takılırsa tarihi veya sahayı yeniden seçin.',
+        'Kara listedeki telefon bu işletmeden randevu tamamlayamaz; esnafla iletişime geçmesi gerekir.',
       ],
       bildirimler: [
-        'Onay, red ve hatırlatma bildirimleri telefonunuza gelir.',
-        'Randevu saati yaklaşınca hatırlatma planlanabilir.',
+        'Onay, red, hatırlatma ve “slot boşaldı” bildirimleri telefona gelir.',
       ],
     ),
 
     'KullaniciRandevuEkrani': const EkranRehberIcerik(
       baslik: 'Randevularım',
       ozet:
-          'Oluşturduğunuz tüm randevu ve talepleri görür, iptal veya detay işlemlerini buradan yaparsınız.',
+          'Mevcut / Bekleme / Geçmiş sekmelerinde randevu, bekleme listesi ve tekrarlayan serileri yönetirsiniz.',
       bolumler: [
+        RehberBolum(
+          baslik: 'Sekmeler',
+          icerik:
+              'Mevcut: aktif randevular.\n'
+              'Paket: kalan seans hakkı, bitiş tarihi ve hangi işletmeye ait olduğu. İptal edilip bütün hakkı geri gelen paket “İptal edildi” görünür, randevuda kullanılamaz.\n'
+              'Bekleme: dolu saate yazıldığınız kayıtlar; X ile çıkabilirsiniz.\n'
+              'Geçmiş: tamamlanan / iptal / red.\n'
+              'Sadakat indirimi denk gelen kayıtta “5. randevu · %10 indirim” yazar. Bu not kasada uygulanır. Paket hakkı ayrıdır.',
+          ikon: Icons.tab,
+        ),
         RehberBolum(
           baslik: 'Durumlar',
           icerik:
@@ -224,7 +457,10 @@ class EkranRehberKatalogu {
         RehberBolum(
           baslik: 'İptal',
           icerik:
-              'Politika uygunsa iptal butonu görünür. İptal sonrası esnafa bilgi gider; slot yeniden açılabilir.',
+              'Politika uygunsa iptal butonu görünür. İptal sonrası esnafa bilgi gider; slot yeniden açılabilir.\n'
+              'Aynı pakete veya seriye bağlı başka randevu varsa sorulur: sadece bu kayıt ya da bağlıların hepsi. Ayrı alınan ön görüşme bu listeye girmez.\n'
+              'Esnaf “geç iptal sınırı” koymuşsa, o saatten az kala iptal uyarı verir ve kayda not düşer.\n'
+              '“TEKRARLAYAN” rozetli kayıtlarda tek randevu veya tüm gelecek seriyi iptal edebilirsiniz.',
           ikon: Icons.cancel_outlined,
         ),
       ],
@@ -237,12 +473,26 @@ class EkranRehberKatalogu {
     'EsnafPaneli': const EkranRehberIcerik(
       baslik: 'Esnaf Paneli',
       ozet:
-          'İşletmenizin yönetim merkezi: profil, mesai, hizmetler, ajanda ve gelen randevular.',
+          'İşletmenizin yönetim merkezi: profil, mesai, hizmetler, ajanda, hatırlatmalar ve gelen randevular.',
       bolumler: [
         RehberBolum(
           baslik: 'Menü kartları',
           icerik:
-              'Her kart bir yönetim ekranına gider. Önce profil ve mesaiyi tamamlayın; sonra hizmet tanımlayıp randevu alımını açın.',
+              'Her kart bir yönetim ekranına gider. “Gelişmiş Ayarlar” (alt başlık: Hatırlatmalar · Onay · Ajanda) randevu hatırlatma şablonlarını da içerir.\n'
+              'Randevu kanalı veya hizmet ve süre boşsa, işletme adının altında eksikler yazar. Bunlar tanımlanmadan hizmet ve randevu alınamaz.\n'
+              'Hızlı Kurulum, eksik kutunun altındadır. İlk ekranda “Hızlı Kurulum menüsüne hoş geldiniz” yazar ve tercihlerin sonra değiştirilebileceği hatırlatılır. Mavi açıklama soru cümlesinin hemen altındadır. Her sorunun altında yeşil kutu, o anki seçimin ne yapacağını yazar. Sorular sırayla gelir: randevu alınsın mı, 7/24, açılış-kapanış veya nöbet saati (listeden seçilir, dokunulan saat aynen yazılır), çalışma günü, kanal, çalışan adına randevu, kısa tanıtım ve fotoğraf, hizmet, randevu öncesi ve sonrası bildirim, red bildirimi, randevuyu kim alsın (Müşteri ve Yönetici veya Sadece Yönetici), randevu şekli, kim onaylasın, 10 dakikası dolan randevu onaylanmasın mı, aynı gün sınırı, ajanda, ileri gün, geç iptal saati, kara liste, sadakat, aralıklı slot (ör. 10:00-11:00), vitrin. Randevu şeklinde yalnızca hizmetler iki ön görüşme anahtarını kapatır. Yalnızca ön görüşme, “Sadece ön görüşme randevusu alınsın” anahtarını açar. Ön görüşme ardından diğer hizmetler, “Ön görüşme olmadan diğer hizmet açılmasın” anahtarını açar. Süre varsayılan 30 dk gelir. Ücret sorulur; hayırsa 0 yazılır. Kanal ve hizmet boşsa İleri açılmaz. Personel, tanıtım ve vitrin boş geçilebilir. Bitir, Ayarları Kaydet ile aynı kaydı yazar. Yarıda çıkılırsa girdiler panelde kalır, Bitir denmeden kaydolmaz. Son sayfa yapılan bütün tercihleri listeler. Taksi ve araç kiralama panellerinin kendi Hızlı Kurulum düğmesi vardır. Onların soruları daha kısadır ve filo kaydını oda adı yapmaz.\n'
+              'Kanal ve hizmet bilgi kutuları kategoriye göre örnek verir. Diyetisyende kanal kutusunda Oda 1, Bölüm veya Diyetisyenlik yazar. Kuaförde koltuk ve saç kesim yazar. Kanal Ekle ve Hizmet Ekle yazıları aynı kalır. Kanal adını kalemle değiştirince çalışan bağı, bugün ve sonraki ajanda, bekleyen ve gelecek randevu ile bekleme listesi yeni adı alır. Geçmiş ajanda ve bitmiş randevu eski adla kalır; bu kayıt hemen yazılır. Hizmet adını değiştirince bugün ve sonraki randevular, bekleyen bekleme kayıtları ve süresi dolmamış paket hakları yeni adı alır. Geçmiş randevular eski adla kalır. Hizmet adı Ayarları Kaydet ile yazılır. Personel adını değiştirince bugün ve sonraki randevu, bekleme listesi ve ajandadaki çalışan adı yeni adı alır. İşletme adını kaydedince yaklaşan randevu, açık bekleme ve süresi dolmamış paketteki işletme adı yeni adı alır. Geçmiş kayıtlar eski adla kalır.\n'
+              'Hizmetler kartında kutu ikonu paket ekler: seans veya ders sayısı, geçerlilik günü ve ücret. Sayıyı listeden seçmezsiniz; ders veya seans 1–365, geçerlilik en fazla 365 gün (1 yıl) yazılır. Formun altında özet anında güncellenir: örneğin “90 günde 3 ders 6000 TL”. Özel derste seans yerine ders yazar. Kalem ile adı, sayısı, günü ve ücreti değiştirirsiniz. Değişiklik yeni alımları etkiler; daha önce alınan haklar aynı kalır. Yalnızca seanslı kategorilerde görünür. Kaydetmeyi unutmayın.\n'
+              '“Ön görüşme yapılsın mı?” açıkken randevu alınırken ilk olarak Ön görüşme randevusu alımına izin verilir. Ön görüşme randevusu onaylanmadan diğer hizmetler müşteriye görünmez. Onay bekleyen kayıt listeyi açmaz. Hizmet satırı anahtarın hemen altındadır. Tek kayıt: 30 dk, ücret 0. Bu satırda paket kutusu yoktur. Kalemle ad, süre ve ücret değişir; İlk görüşme kutusu yoktur, işareti bu anahtar koyar. İşaret kalkınca listeden silinir. “Sadece ön görüşme randevusu alınsın” açıkken bu anahtar açık kalır ve kilitlenir. Alt yazı “Sadece ön görüşme kapalıyken bu kilit kalkar” der. Hafif gölgeli mavi kutu ve kilit işareti görünür.\n'
+              'Altında “Sadece ön görüşme randevusu alınsın” vardır. Gelişmiş Ayarlar’daki aynı anahtarla bağlıdır; biri değişince diğeri de değişir. Ayarlardan açılırsa ön görüşme satırı yoksa 30 dk Ön Görüşme burada da oluşur. Açıksa müşteri yalnızca ön görüşme randevusu alır. Gelişmiş Ayarlar’da “Ön görüşme olmadan diğer hizmet açılmasın” açıkken bu anahtar pasiftir.\n'
+              '“Randevuları Sadece Yönetici versin” açıkken panelde “Randevu Ver” kartı çıkar; randevuyu siz girersiniz.\n'
+              '“Ajanda Defteri” randevu alımı açıkken her zaman durur. “Ajandayı Kendim Ayarlayacağım” kapalıyken müşteri günleri otomatik açılır; defterde oluşturma formu yoktur, randevular görünür. İşaret açıkken kaydı olmayan günde defteri siz hazırlarsınız. Ajanda hiç yoksa mavi kutu bunu yazar. “Ajandayı Kendim Ayarlayacağım” seçiliyken ajandayı istediğiniz kriterde siz oluşturursunuz. Gelişmiş Ayarlar’dan işareti kapatınca ajanda otomatik oluşur.\n'
+              '“Rapor” kartı doluluk, iptal oranı ve ciro tahminini gösterir. Bu ay ve geçen ay seçilir.\n'
+              '“Çalışan başvuruları” kartı, işletmede çalışmak isteyen kişiyi kabul veya red eder. Bekleyen başvuru veya çalışmayı bırakma talebi varken kartın çerçevesi turuncu olur. Panele girince hatırlatma çıkar. İptali, başvuruyu kabul eden kişi onaylar. Yönetici yapay zekayı açtıysa ekranda yuvarlak bir mikrofon durur. Basılı tutup istediğiniz yere bırakabilirsiniz. Mod değiştirince mikrofon kapanır. Mikrofonla “açılış saatini 9 yap”, “randevu alımını durdur” veya “taksi istiyorum” denebilir. İlk dokunuşta mikrofon izni hemen sorulur. Ekranda tek mikrofon durur; çekince çoğalmaz. Kısa bir susunca o söz bir kez gider. Yeni komut için yeniden dokunun; önceki sözün üstüne yazılmaz. Anlaşılmayan soru bu ekranın rehberinden cevaplanır. Saat ve randevu hemen yazılır. Taksi çağrısı onay penceresini açar.\n'
+              'Vitrin kartında en fazla 6 fotoğraf eklenir; eklenince müşteri sayfasında adın altında görünür. Kısa tanıtım adresin altında durur ve Ayarları Kaydet ile yazılır. Taksi ve araç kiralamada bu kart yoktur.\n'
+              'Üst çubuktaki profil ikonu müşteri, sürücü ve yönetici modunda aynı profili açar. İşletme bilgilerini düzenle, İşletme grubundadır. Zorunlu alan boşsa ikon titrer. İşletme adının üstünde logo vardır. Dokununca galeriden seçilir, zorunlu değildir. Ayarları Kaydet yazınca üst çubukta adın solunda yuvarlak durur. Müşteri ekranında adın üstünde yuvarlak durur. Telefonda pencere ekran genişliğine yayılır ve kaydırılır. Şahısta alanın adı T.C. Kimlik No, şirket veya kooperatifte Vergi Kimlik No (VKN) olur. Levha sizin adınıza ise şahıs, bir şirket ya da kooperatif adına ise ikinci seçilir. Levha varsa “Vergi levhasını gör” ile açılır. Şirket veya kooperatif seçilince yanında “Yeni vergi levhasını yükle” çıkar. Tür, numara veya levha değişince işletme açık kalır; yeni evrak yönetici onayına gider. Adres ve diğer alanlar onaya düşmez. Yetkili, e-posta, sabit hat, web, Instagram, kısa tanıtım, olanaklar ve şirket veya kooperatifte MERSİS ile ticaret sicil durur. Çocuk alanı, Otopark veya Wi-Fi seçilince alt satırda kalır. Mesai satırı çalışma saatinden gelir. Değişiklik Ayarları Kaydet ile yazılır. Tamam, eksik zorunlu alanı kapatmaz; eksikleri listeler. Kapat, bu pencerede değişiklik varsa sorar. Kaydetmeden çık eski haline döner. Kaydet, eksik varsa pencereyi kapatmaz. Açılınca sağda kaydırma çubuğu durur ve altta “Aşağı kaydırın” yazar.\n'
+              'Ayarları Kaydet, açılış, kapanış, çalışma günü, randevu aralığı veya kanal değiştiyse ve gelecek ajanda yoksa 30 gün oluşturup uyarı verir. Yalnızca vitrin, tanıtım veya adres kaydı bu uyarıyı açmaz. Açılış saati veya çalışma günü yoksa oluşturulmaz, eksik uyarılır. Kaydedilmemiş değişiklik varsa kaydet düğmesinin üstünde uyarı çıkar ve düğme turuncu olur. Mod değiştirme, yenileme, çıkış veya geri gitmede Vazgeç, Kaydetmeden çık ve Kaydet sorulur. Vazgeç ekranda bırakır. Kaydetmeden çık yazmaz, kayıtlı haline döner. Kaydet yazar.\n'
+              'Ajanda aralığı hizmet süreleriyle uyuşmazsa üstte “Ayarlar Uyumsuz!” çıkar. Ajanda zaten doğru aralıktaysa (örneğin 30 dk) bu kutu çıkmaz. “Ajandayı şimdi onar ve düzelt” aralığı eşitler. Randevular silinmez.',
           ikon: Icons.dashboard_outlined,
         ),
         RehberBolum(
@@ -254,10 +504,29 @@ class EkranRehberKatalogu {
       ],
       ipuclari: [
         'Parametrelerden “Randevu alımını durdur” ile geçici kapatma yapabilirsiniz.',
+        'İletişim telefonu, WhatsApp ve randevu hattı yalnızca rakam alır. WhatsApp ve randevu hattı boş kalabilir.',
+        'Taksi veya Araç Kiralama paneli kullanıyorsanız bu genel hatırlatma ekranı orada yoktur; Berber/Kuaför vb. genel esnaf paneli gerekir.',
+        'Sol üstteki mavi ⇄ (Mod Değiştir) ile Müşteri / Yönetici seçimine dönebilirsiniz. Geçişte mikrofon kapanır.',
       ],
       bildirimler: [
         'Yeni randevu talebinde anlık bildirim alırsınız.',
         'Bildirim gelmiyorsa OneSignal / telefon iznini kontrol edin.',
+      ],
+    ),
+
+    'EsnafRaporEkrani': const EkranRehberIcerik(
+      baslik: 'Rapor',
+      ozet: 'Bu ay veya geçen ay için doluluk, iptal oranı ve ciro tahmini.',
+      bolumler: [
+        RehberBolum(
+          baslik: 'Sayılar',
+          icerik:
+              'Üstte “Bu ay” ve “Geçen ay” vardır.\n'
+              'Doluluk, mesai saatine göre dolu süreyi gösterir. Açılış ve kapanış yoksa hesaplanmaz.\n'
+              'İptal oranı; iptal, red ve gelmedi kayıtlarının o aydaki randevulara oranıdır.\n'
+              'Ciro tahmini, onaylı tek hizmet ücretleri ile o ay açılan paket ücretlerinin toplamıdır. Paket bir kez sayılır, her ders tekrar eklenmez. Kasada tahsil edilen tutar değildir.',
+          ikon: Icons.insights,
+        ),
       ],
     ),
 
@@ -269,7 +538,22 @@ class EkranRehberKatalogu {
         RehberBolum(
           baslik: 'Kullanım',
           icerik:
-              'Güne dokunarak o günün randevularını görün. Dolu saatler müşteriye kapalı görünür. Manuel blokaj varsa ilgili butonlarla saat kapatabilirsiniz.',
+              'Güne dokunarak o günün randevularını görün. Dolu saatler müşteriye kapalı görünür. Manuel blokaj varsa ilgili butonlarla saat kapatabilirsiniz.\n'
+              '“Ajandayı Kendim Ayarlayacağım” kapalıyken günler otomatik açılır. Oluşturma formu yoktur. Tarihin yanında gün adı yazar. Sağ üstteki kilit tüm günü kapatır; satırdaki kilit o saati kapatır. Kapalı saat müşteriye açılmaz. İşaret açıkken kaydı olmayan günde “Ajanda Defteri Hazırlığı” çıkar.\n'
+              'Sağ üstte, soru işaretinin solunda: günü kilitle ve kırmızı ajanda sil.\n'
+              'Kırmızı sil penceresinde iki yol vardır. Sil, açık olan günü siler; o günde onaylı randevu varsa silinmez. Tarih aralığı seçilip Seçilenleri Sil denirse aralık silinir; onaylı randevusu olan günler atlanır.\n'
+              'Hizmet süreleri ajanda aralığına uymazsa üstte tek kutu çıkar: “Ayarlar Uyumsuz!”. Örneğin ajanda 60 dk, bir hizmet 30 dk ise kutu aralığın 30 dk olacağını söyler. “Ajandayı şimdi onar ve düzelt” ile güncellenir. Randevular silinmez.\n'
+              'Saate randevu eklerken tüm hizmetler görünür. Ön görüşme şartı aranmaz; randevu onaylı yazılır.\n'
+              'Paketi olan hizmet işaretlenince Paket kutusu açılır: Tek kontrol ve paket kartları. Paketi olmayan hizmet listede kalır, kutu açılmaz. Geri ile forma dönülür.\n'
+              'Paket, ajandada olmayan günlere denk gelirse “Ajanda oluşturulmamış. Oluşturulacak.” denir ve o günler yazılır.\n'
+              '4 seans gibi bir paket, seçilen günden başlayarak her hafta aynı saate bir randevu yazar. Örneğin 29.09 ise sıradaki gün 06.10 olur. Özel derste aynı yazı “4 ders” der.\n'
+              'Müşterinin aldığı aylık paket onaylanınca sonraki ders günlerine de aynı isim ve saat yazılır. Ajanda ilk ders gününden son ders gününe kadar her gün açılır, ara gün atlanmaz. Aralık, hizmet sürelerinin uyduğu süredir: ön görüşme 30 dk ise 30, daha kısa hizmet varsa ona göre.\n'
+              'İptalde bu kayda bağlı başka randevu varsa sorulur: sadece bu kayıt ya da bağlıların hepsi. Bağlı olanlar aynı hizmetin paketi veya serisidir. Ayrı alınan ön görüşme bu listeye girmez.\n'
+              'Geçmiş saatler pasiftir. Gelişmiş Ayarlar’da “Yönetici geçmişe randevu oluşturabilsin” açıksa geçmiş saate de yazılır.\n'
+              'Not varsa ismin altında yazar. İsme basınca açılan pencerede nota dokunup yazarsınız. Not telefona bağlıdır, sonraki gelişte de durur. Müşteri görmez.\n'
+              'Aynı pencerede “Kullanıcıya bildirim gönder” ile yazdığınız metin, Gönder deyince müşterinin telefonuna bildirim gider. Yeşil not müşteriye gitmez.\n'
+              'Sadakat denk gelirse “5. randevu · %10 indirim” yazar. İndirim kasada uygulanır.\n'
+              'Randevu eklerken telefon yalnızca rakamdır. 05xx veya sabit hat yazılır; harf yazılamaz.',
           ikon: Icons.calendar_month,
         ),
       ],
@@ -281,23 +565,43 @@ class EkranRehberKatalogu {
     'EsnafParametreEkrani': const EkranRehberIcerik(
       baslik: 'Gelişmiş Ayarlar',
       ozet:
-          'Onay modu, ileriye dönük gün limiti, minimum süre gibi işletme kurallarını ayarlarsınız.',
+          'İlk kart “Randevu Hatırlatmaları”dır. Onay, ajanda ve personel ayarları altta devam eder. Aynı gruplar Hızlı Kurulum’da da sorulur.',
       bolumler: [
         RehberBolum(
-          baslik: 'Önemli ayarlar',
+          baslik: 'Randevu Hatırlatmaları',
+          icerik:
+              'İlk küçük kartta “Hatırlatmaları Aç” vardır. Açılınca hemen altında Randevu Öncesi ve Randevu Sonrası kartları gelir. Her kartın kendi anahtarı, süresi, şablonu ve önizlemesi vardır. Anahtar kapalıyken yalnızca kart başlığı durur; süreyi görmek için o kartın anahtarını da açın.\n'
+              'Onay mesajı ve red mesajı bu kartların altında her zaman durur. Onaylanınca veya siz reddedince müşterinin telefonuna gider. Metni yazıp “Onay ve red metnini kaydet”e basın. {neden} red nedenini yazar. Müşterinin kendi iptali red mesajını göndermez.\n'
+              'Alttaki aksiyonlar: tam genişlik “Şablonları Kaydet”; altında yan yana “Varsayılan” ve “Kopyala”.',
+          ikon: Icons.notifications_active_outlined,
+        ),
+        RehberBolum(
+          baslik: 'Diğer ayarlar',
           icerik:
               '• Randevu onay modu (Otomatik / Manuel)\n'
-              '• Maksimum randevu günü (kaç gün ileriye açılsın)\n'
-              '• Minimum randevu süresi\n'
-              '• Randevu alımını durdur (acil kapatma)',
+              '• Süresi dolan randevu onaylanmasın: açıkken 10 dk onay süresi biten bekleyen kayıt onaylanamaz. Reddetme durur\n'
+              '• İşletmeye Aynı Gün Randevu Sınırı: açıkken bir müşteri bu işletmede aynı güne yalnızca 1 randevu alır. Hizmet veya kanal değiştirmek ikinci hak açmaz\n'
+              '• Ajandayı Kendim Ayarlayacağım: açıkken ajanda günlerini siz hazırlarsınız; kaydı olmayan günde oluşturma formu çıkar. Kapalıyken müşteri günleri otomatik açılır, oluşturma formu gizlenir. Yine de Ajanda Defteri’nde bir günü veya bir saati kapatabilirsiniz; müşteri o saati alamaz\n'
+              '• Maksimum randevu ileri süresi (1–365 gün): müşteri ve tekrarlayan serinin ne kadar ileriye yazılabileceği\n'
+              '• Geç iptal sınırı: randevuya X saat kala iptal “geç iptal” notu olur (0 = kapalı)\n'
+              '• Kara liste eşiği: geç iptal + gelmedi bu sayıya ulaşınca müşteri yeni randevu alamaz (0 = kapalı). Listedekini “Çıkar” ile affedebilirsiniz\n'
+              '• Sadakat indirimi: alttaki yazı seçtiğiniz sayıya göre değişir (ör. her 5. onaylı randevuda kasada %10). Paket hakkı değişmez. Kapalıyken işlenmez\n'
+              '• Sadece ön görüşme randevusu alınsın: Hizmetler’deki anahtarla aynıdır. Buradan açınca Hizmetler’de ön görüşme satırı da açılır. Açıksa müşteri yalnızca ön görüşme randevusu alır. Alttaki kural bu sırada pasif kalır. Alttaki kural açıkken bu anahtar pasiftir\n'
+              '• Ön görüşme olmadan diğer hizmet açılmasın: seanslı kategorilerde. Ön görüşmenin saati geçip onaylı olunca diğer hizmetler açılır. Açıkken üstteki “Sadece ön görüşme” pasif ve kapalı kalır. Sadece ön görüşme açıkken bu anahtar pasiftir\n'
+              '• Randevu alımını durdur: müşteri butonu kapanır. Açılınca “Randevuları Sadece Yönetici versin” gizlenir\n'
+              '• Randevuları Sadece Yönetici versin: randevu alımı açıkken görünür. Müşteri kendi randevusunu alamaz; siz verirsiniz\n'
+              '• Yönetici geçmişe randevu oluşturabilsin: kapalıyken ajandada geçmiş saatler pasiftir. Açıkken geçmiş saate randevu yazılır\n'
+              '• Personel odaklı sistem',
           ikon: Icons.tune,
         ),
       ],
       ipuclari: [
-        'Değişiklikleri kaydetmeden çıkarsanız uygulanmaz.',
+        'Kod güncellemesinden sonra Hot Restart veya uygulamayı yeniden başlatın; eski ekran kalabilir.',
+        'Bu ekran yalnızca genel esnaf panelindedir (Taksi / Araç Kiralama Gelişmiş Ayarları farklıdır).',
+        'Push için müşterinin telefonda uygulamaya giriş yapmış olması gerekir.',
       ],
       bildirimler: [
-        'Ayarlar müşteri tarafındaki müsaitlik hesaplamasını hemen etkiler.',
+        'Onaylı randevularda hatırlatmalar otomatik planlanır.',
       ],
     ),
 
@@ -309,13 +613,28 @@ class EkranRehberKatalogu {
         RehberBolum(
           baslik: 'Onay / red',
           icerik:
-              'Bekleyen kayda girip onaylayın veya red nedeni ile reddedin. Onay slotu kilitler; red müşteriye bildirilir.',
+              'Bekleyen kayda girip onaylayın veya red nedeni ile reddedin. Onay slotu kilitler; red müşteriye bildirilir.\n'
+              'İptalde bu kayda bağlı başka randevu varsa sorulur: sadece bu kayıt ya da bağlıların hepsi. Bağlı olanlar aynı hizmetin paketi veya serisidir. Ayrı alınan ön görüşme bu listeye girmez.\n'
+              'Tarih, saat ve hizmet kartın üstünde yazar; aynı bilgiler tekrar kutuya yazılmaz. Paketli kayıtta kutu kaçıncı ders veya seans olduğunu, kalan hakkı ve sonraki ders günlerini gösterir. Onaylanınca o günlere de aynı isim ve saat ajandaya yazılır; ayrı onay gerekmez. Ajandası yoksa “Ajanda oluşturulmamış. Oluşturulacak.” denir.\n'
+              '“Süre doldu” yazan kayıt, Gelişmiş Ayarlar’da “Süresi dolan randevu onaylanmasın” açıksa onaylanamaz. Reddetme durur. Ayar kapalıysa yine de onay sorulur.\n'
+              'Kayıtta paket adı varsa bu geliş bir haktan düşmüştür. Red veya iptal hakkı geri verir. Paketin bütün hakları geri gelirse paket kapanır, “Paketten kullan” kalkar. “Gelmedi” hakkı geri vermez.\n'
+              'Onaylı kayıtta “Gelmedi”: randevu kapanır, saate not düşer. Eşik dolmuşsa telefon kara listeye girer.\n'
+              'Kartta müşteri notu varsa adın altında görünür. Nota basınca düzenlersiniz. Not telefona bağlıdır; aynı kişinin sonraki randevularında da durur. Müşteri bu notu görmez.\n'
+              '“Kullanıcıya bildirim gönder”e yazdığınız metin, Gönder deyince müşterinin telefonuna gider. Karttaki not otomatik gitmez.\n'
+              'Sadakat denk gelirse kartta “5. randevu · %10 indirim” yazar. İndirim kasada uygulanır. Paket hakkı değişmez.',
           ikon: Icons.fact_check_outlined,
+        ),
+        RehberBolum(
+          baslik: 'WhatsApp hatırlatma',
+          icerik:
+              'Onaylı kayıtlarda “WhatsApp hatırlat” ile şablon metni açılır; panoya da kopyalanabilir.',
+          ikon: Icons.chat,
         ),
       ],
       bildirimler: [
-        'Onay veya red sonrası müşteriye bildirim gider.',
+        'Onay veya red sonrası müşteriye şablondaki bildirim gider. Metin Gelişmiş Ayarlar’daki onay ve red kartındadır.',
         'Yeni talep geldiğinde size bildirim düşer.',
+        'Hatırlatmalar açıksa onayda OneSignal planlanır.',
       ],
     ),
 
@@ -338,14 +657,24 @@ class EkranRehberKatalogu {
           'Esnaf onayları, kategori yönetimi ve sistem ayarlarının yapıldığı yetkili ekrandır.',
       bolumler: [
         RehberBolum(
-          baslik: 'Esnaf onayı',
+          baslik: 'İşletme başvurusu',
           icerik:
-              'Bekleyen işletmeleri inceleyip onaylayın veya reddedin. Onaysız esnaf müşteriye görünmez.',
+              'Panele girince bekleyen başvuru varsa “İşletme bildirimi var” der.\n'
+              '“İşletme Başvurusu” talepleri listeler. Üstte üç sekme vardır: Bekleyen, Onaylanan, İptal/Red. Onay ve red yalnızca Bekleyen sekmesindedir. Red notu ve iptal edilen başvuru İptal/Red sekmesinde durur. Sayı, bekleyen adedi kadardır. Satırda şahıs işletmesi ya da şirket/kooperatif ve vergi numarası yazar. Satıra dokununca adres, e-posta, mesai ve isteğe bağlı bilgiler açılır; levha fotoğrafı ve varsa logo oradan görüntülenir. Levha pencerenin içinde kalır, Kapat görünür. İki parmakla yakınlaştırılır.\n'
+              'Onay, esnaf kaydı açar, telefonu işletmeye yazar ve çalışma saatini panele taşır. Kişi bir sonraki girişte Müşteri / Yönetici görür.\n'
+              'Aynı listede “Vergi güncellemesi” de durur. Kayıtlı işletme türünü, numarasını veya levhasını değiştirince buraya düşer. Onay yeni evrakı işletmeye yazar. Red, eski levhayı bırakır.\n'
+              'Red, kişiyi müşteri bırakır. Not yazılırsa profilde görür ve yeniden başvurabilir.\n'
+              '“Esnaf Ekle” sizin doğrudan kaydınızdır. Başvuru ve evrak beklemez.\n'
+              'Kayıtlı esnaf kartında “Yapay zeka / Bu işletme kullansın” anahtarı vardır. Kapalıyken müşteri kutusu görünmez. İşletme bu anahtarı kendi panelinden açamaz.',
           ikon: Icons.admin_panel_settings,
         ),
       ],
       bildirimler: [
         'Kritik sistem bildirimleri yönetici kanalına düşebilir.',
+      ],
+      ipuclari: [
+        'Esnaf telefonu yalnızca rakamdır. 05xx veya sabit hat kabul edilir; harf yazılamaz.',
+        'Kategori Yönetimi’nde ad yazılınca ikon ada göre seçilir ve hemen görünür. Ekle deyince kaydolur. Örnek: Berber makas, Eczane eczane simgesi, Kafe fincan. Kalemle ad değişince ikon da yeniden seçilir. Tanınmayan ada işletme ikonu gelir.',
       ],
     ),
 
@@ -357,7 +686,8 @@ class EkranRehberKatalogu {
         RehberBolum(
           baslik: 'Firma seçimi',
           icerik:
-              'Firmaya dokunun. Filo, fiyat ve müsaitlik bilgisi sonraki adımlarda gelir.',
+              'Firmaya dokunun. Filo, fiyat ve müsaitlik bilgisi sonraki adımlarda gelir. Logo varsa firma adının üstünde yuvarlak durur.\n'
+              'Yönetici yapay zekayı açtıysa ekranda yuvarlak bir mikrofon durur. Basılı tutup istediğiniz yere bırakabilirsiniz. İlk dokunuşta mikrofon izni hemen sorulur. Ekranda tek mikrofon durur; çekince çoğalmaz. Kısa bir susunca o söz bir kez gider. Yeni komut için yeniden dokunun; önceki sözün üstüne yazılmaz. Haritanın üstünde sağa sola çekince mikrofon gider, harita kaymaz. “Randevu al” veya “araç kirala” alttaki düğmeyle aynı ekranı açar. Kapalıysa mikrofon görünmez.',
           ikon: Icons.directions_car,
         ),
       ],
@@ -386,41 +716,57 @@ class EkranRehberKatalogu {
       ],
       ipuclari: [
         'Teslimat / iade ekranları kira sürecinde fotoğraf ve kilometre kaydı için kullanılır.',
+        'Telefon alanına yalnızca rakam yazılır. Örnek: 05xx xxx xx xx.',
       ],
       bildirimler: [
-        'Akıllı takip açıksa süre bitimine yakın uzatma hatırlatması alırsınız.',
-        'Gecikme durumunda firmaya gecikme uyarısı planlanabilir.',
+        'Talebiniz işletmeye gider (ayar açıksa).',
+        'Otomatik onaydaysa size hemen “onaylandı” gelir. Manuel onayda, esnaf onaylayınca veya reddedince gelir.',
+        'Akıllı takip açıksa iadeden önce “süreniz doluyor” hatırlatması alırsınız.',
       ],
     ),
 
     'AracKiralamaEsnafPaneli': const EkranRehberIcerik(
       baslik: 'Araç Kiralama – İşletme Paneli',
       ozet:
-          'Filo, kanallar, kiralama kayıtları, parametreler ve teslimat süreçlerini yönetirsiniz.',
+          'Filo, kanallar, kiralama kayıtları, parametreler ve teslimat süreçlerini yönetirsiniz. Hızlı Kurulum listenin üstündedir.',
       bolumler: [
         RehberBolum(
           baslik: 'Filo',
           icerik:
-              'Araç ekleyin / düzenleyin. Plaka, durum ve müsaitlik rezervasyon motorunu besler.',
+              'Araç ekleyin / düzenleyin. Plaka, durum ve müsaitlik rezervasyon motorunu besler. Plaka iki rakamdan sonra boşluk bırakır. Örnek: 61 SH 063. Kanal veya hizmet adı değişince bugün ve sonraki kayıtlar yeni adı alır. Personel ve işletme adı da yaklaşan kayıtlarda güncellenir. Geçmiş ve bitmiş kayıtlar eski adla kalır.\n'
+              'Üst çubuktaki profil ikonu müşteri, sürücü ve yönetici modunda aynı profili açar. İşletme bilgilerini düzenle, İşletme grubundadır. Zorunlu alan boşsa ikon titrer. İşletme adının üstünde logo vardır. Dokununca galeriden seçilir, zorunlu değildir. Ayarları Kaydet yazınca üst çubukta adın solunda yuvarlak durur. Müşteri ekranında adın üstünde yuvarlak durur. Telefonda pencere ekran genişliğine yayılır ve kaydırılır. Şahısta alan T.C. Kimlik No, şirket veya kooperatifte Vergi Kimlik No (VKN) olur. Levha sizin adınıza ise şahıs, bir şirket ya da kooperatif adına ise ikinci seçilir. Levha varsa “Vergi levhasını gör” ile açılır. Şirket veya kooperatif seçilince “Yeni vergi levhasını yükle” çıkar. Tür, numara veya levha değişince işletme açık kalır; yeni evrak yönetici onayına gider. Yetkili, e-posta, sabit hat, web, Instagram, tanıtım ve olanaklar durur. Çocuk alanı, Otopark veya Wi-Fi seçilince alt satırda kalır. Şirket veya kooperatifte MERSİS ve ticaret sicil vardır. Kaydedilmemiş değişiklik varsa kaydet düğmesinin üstünde uyarı çıkar ve düğme turuncu olur. Mod değiştirme, yenileme, çıkış veya geri gitmede Vazgeç, Kaydetmeden çık ve Kaydet sorulur. Vazgeç ekranda bırakır. Kaydetmeden çık yazmaz, kayıtlı haline döner. Kaydet yazar. Tamam, eksik zorunlu alanı kapatmaz; eksikleri listeler. Kapat, bu pencerede değişiklik varsa sorar. Kaydetmeden çık eski haline döner. Kaydet, eksik varsa pencereyi kapatmaz. Açılınca sağda kaydırma çubuğu durur ve altta “Aşağı kaydırın” yazar.',
           ikon: Icons.local_shipping_outlined,
         ),
         RehberBolum(
           baslik: 'Kayıtlar',
           icerik:
-              'Gelen kiralama taleplerini onaylayın. Teslim / iade ve kaza bildirimi ilgili kayıttan açılır.',
+              'Gelen kiralama taleplerini onaylayın. Teslim / iade ve kaza bildirimi ilgili kayıttan açılır.\n'
+              '“Çalışan başvuruları” kartı, işletmede çalışmak isteyen kişiyi kabul veya red eder. Bekleyen başvuru veya çalışmayı bırakma talebi varken kartın çerçevesi turuncu olur. Panele girince hatırlatma çıkar. İptali, başvuruyu kabul eden kişi onaylar. Yönetici yapay zekayı açtıysa ekranda yuvarlak bir mikrofon durur. Basılı tutup istediğiniz yere bırakabilirsiniz. Mod değiştirince mikrofon kapanır. Mikrofonla “açılış saatini 9 yap”, “randevu alımını durdur” veya “taksi istiyorum” denebilir. İlk dokunuşta mikrofon izni hemen sorulur. Ekranda tek mikrofon durur; çekince çoğalmaz. Kısa bir susunca o söz bir kez gider. Yeni komut için yeniden dokunun; önceki sözün üstüne yazılmaz. Anlaşılmayan soru bu ekranın rehberinden cevaplanır. Saat ve randevu hemen yazılır. Taksi çağrısı onay penceresini açar.',
           ikon: Icons.assignment,
+        ),
+        RehberBolum(
+          baslik: 'Hızlı Kurulum',
+          icerik:
+              'Listenin üstündeki düğme bu panele özel kurulumu açar. Sorular: randevu alınsın mı, 7/24, açılış ve kapanış (7/24 ise başlangıç ve bitiş), çalışma günü, plaka, saatlik veya günlük süre, kim onaylasın. Mavi açıklama sorunun hemen altındadır. Yeşil kutu seçimin ne yapacağını yazar. Saat listeden seçilir. Plaka filo kaydına yazılır. İki rakamdan sonra boşluk gelir. Örnek: 61 SH 063. Saatlik 2 ile 8 saat, günlük 24 saatin katıdır. En az biri açık kalmalıdır. Bitir, Ayarları Kaydet ile aynı kaydı yazar. Yarıda çıkılırsa girdiler panelde kalır, Bitir denmeden kaydolmaz. Son sayfa bütün tercihleri listeler.',
+          ikon: Icons.flash_on,
         ),
       ],
       bildirimler: [
-        'Yeni kira talebi bildirimi.',
-        'Akıllı takip: gecikme / uzatma hatırlatmaları (ayar açıksa).',
+        'Yeni rezervasyon işletme telefonuna gider (Gelişmiş Ayarlar’da kapatılabilir).',
+        'Akıllı takip açıksa iade yaklaşınca müşteriye, arkada müşteri varsa size gecikme gider.',
+      ],
+      ipuclari: [
+        'İletişim, WhatsApp ve randevu hattı yalnızca rakam alır. WhatsApp ve randevu hattı boş kalabilir.',
+        'Kanal bilgi kutusu her aracı plakasıyla yazın der. Hizmet bilgi kutusu saatlik için dakika, günlük için 1440 der. Kanal Ekle ve Hizmet Ekle yazıları aynı kalır.',
+        'Açılış ve kapanış listeden seçilir. Dokunulan saat aynen yazılır.',
+        'Hızlı Kurulum listenin üstündedir. Randevu alınsın mı, 7/24, açılış ve kapanış veya 7/24 ise başlangıç ve bitiş, çalışma günü, plaka, saatlik veya günlük süre ve kim onaylasın sorulur. Saat listeden seçilir. Plaka filo kaydına yazılır; marka sonra karttan tamamlanır. Saatlik 2 ile 8 saat, günlük 24 saatin katıdır. Bitir, Ayarları Kaydet ile aynı kaydı yazar. Yarıda çıkılırsa girdiler panelde kalır.',
       ],
     ),
 
     'AracParametreEkrani': const EkranRehberIcerik(
       baslik: 'Araç Kiralama – Parametreler',
       ozet:
-          'Bakım/temizlik süresi, akıllı takip, onay modu gibi kiralama kurallarını ayarlarsınız.',
+          'Bakım süresi, akıllı takip ve talep bildirimlerini buradan açıp kapatırsınız.',
       bolumler: [
         RehberBolum(
           baslik: 'Bakım / temizlik süresi',
@@ -431,8 +777,17 @@ class EkranRehberKatalogu {
         RehberBolum(
           baslik: 'Akıllı takip',
           icerik:
-              'Açıksa müşteriye süre uzatma, size gecikme uyarıları zamanlanır.',
+              'Açıksa iadeden seçtiğiniz dakika önce müşteriye “süreniz doluyor” gider.\n'
+              'Aynı araçta hemen ardından başka müşteri varsa size “kritik gecikme” gider.\n'
+              'Teslimde “kiralama başladı”, kapanışta “kiralama tamamlandı” gider. Bunlar bu anahtardan bağımsızdır.',
           ikon: Icons.notifications_active_outlined,
+        ),
+        RehberBolum(
+          baslik: 'Talep bildirimleri',
+          icerik:
+              'Yeni talep bana gelsin: müşteri rezervasyon yapınca işletme telefonuna haber gider.\n'
+              'Onay ve red müşteriye gitsin: siz onaylayınca veya reddedince müşteriye gider. Otomatik onayda talep düşünce de gider.',
+          ikon: Icons.campaign_outlined,
         ),
       ],
       bildirimler: [
@@ -447,13 +802,16 @@ class EkranRehberKatalogu {
         RehberBolum(
           baslik: 'Onay akışı',
           icerik:
-              'Bekleyen talebi açın → aracı / tarihleri kontrol edin → onay veya red. Onay sonrası müşteriye bildirim gider.',
+              'Bekleyen talebi açın → aracı ve tarihleri kontrol edin → Onayla veya Reddet.\n'
+              'Onay: müşteriye “rezervasyonunuz onaylandı”.\n'
+              'Red veya iptal: müşteriye “kabul edilmedi”. Bu iki mesaj Gelişmiş Ayarlar’daki anahtar açıksa gider.',
           ikon: Icons.task_alt,
         ),
       ],
       bildirimler: [
-        'Onay/red müşteriye iletilir.',
-        'Yeni talep size anlık bildirilir.',
+        'Yeni talep, rezervasyon anında işletme telefonuna düşer (ayar açıksa).',
+        'Teslimde müşteriye “kiralama başladı”, kapanışta “kiralama tamamlandı” gider.',
+        'Kaza bildiriminde size acil konum gider.',
       ],
     ),
 
@@ -502,16 +860,47 @@ class EkranRehberKatalogu {
     'TaksiModSecimEkrani': const EkranRehberIcerik(
       baslik: 'Taksi Mod Seçimi',
       ozet:
-          'Yönetici paneli, sürücü / durak takibi veya yolcu ekranı arasında seçim yaparsınız.',
+          'Yönetici paneli, sürücü / durak takibi veya yolcu ekranı arasında seçim yaparsınız. Her moddan ⇄ ile buraya dönebilirsiniz.',
       bolumler: [
         RehberBolum(
           baslik: 'Roller',
           icerik:
-              '• Yönetici: filo, çizelge, parametreler\n'
-              '• Sürücü: sıra, profil, SOS\n'
-              '• Yolcu: çağrı / rezervasyon',
+              '• Müşteri: Hizmet ve randevulardan faydalanın.\n'
+              '• Sürücü: Durak takibini yapın.\n'
+              '• Yönetici: İşletmenizi yönetin. Bu yazı her kategoride aynıdır. Giriş telefonu durak telefonuyla aynıysa kart çıkar; başındaki 0 fark etmez.',
           ikon: Icons.groups_outlined,
         ),
+        RehberBolum(
+          baslik: 'Mod değiştir',
+          icerik:
+              'Yönetici paneli, sürücü takip veya müşteri ana sayfasındaki sol üst mavi ⇄ ikonu ile bu seçim ekranına dönersiniz. Ekranın üstünde Profil Bilgilerim’deki ad soyad ve profil resmi durur. Resme veya sağ üstteki simgeye basınca aynı profil sayfası açılır. Resim yoksa kişi ikonu görünür.',
+          ikon: Icons.swap_horiz_rounded,
+        ),
+      ],
+    ),
+
+    'EsnafModSecimEkrani': const EkranRehberIcerik(
+      baslik: 'Giriş Modu Seçin',
+      ozet:
+          'Esnaf numarası tanındığında (Taksi hariç) Müşteri veya Yönetici modunu seçersiniz. Her iki moddan da yeniden buraya dönebilirsiniz.',
+      bolumler: [
+        RehberBolum(
+          baslik: 'İki seçenek',
+          icerik:
+              '• Müşteri: Hizmet ve randevulardan faydalanın.\n'
+              '• Yönetici: İşletmenizi yönetin. Bu yazı her kategoride aynıdır.\n'
+              'Sürücü / durak modu yalnızca Taksi kategorisinde vardır.',
+          ikon: Icons.swap_horiz,
+        ),
+        RehberBolum(
+          baslik: 'Mod değiştir',
+          icerik:
+              'Müşteri ana sayfasında ve yönetici / sürücü panellerinde sol üstteki mavi ⇄ ikonu ile bu ekrana dönüp diğer moda geçebilirsiniz. Ekranın üstünde Profil Bilgilerim’deki ad soyad ve profil resmi durur. Resme veya sağ üstteki simgeye basınca aynı profil sayfası açılır. Resim yoksa kişi ikonu görünür.',
+          ikon: Icons.swap_horiz_rounded,
+        ),
+      ],
+      ipuclari: [
+        'Yanlış numara ise “Farklı bir numara ile giriş yap”a basıp geri dönün.',
       ],
     ),
 
@@ -522,12 +911,18 @@ class EkranRehberKatalogu {
         RehberBolum(
           baslik: 'Çağrı / rezervasyon',
           icerik:
-              'Konumunuz alış noktası olur. Varış yazarak (mekan adı da olur) talep oluşturun. Bugün çalışan / nöbetçi araçlar listelenir; istirahatli araçlar gizlenebilir.',
+              'Logo varsa durak adının üstünde yuvarlak durur. Alttaki sarı düğmenin adı Taksi İstiyorum’dur. Onay penceresinin sarı başlığında durak adı yazar. Konumunuz alış noktası olur. Nereye alanına yazdıkça gelen yer listesi, rezervasyon ekranındaki Nereye ile aynıdır. Birine dokununca varış o adrese döner. Ücret taksimetrededir, burada fiyat çıkmaz. Tahmini geliş, durağın size uzaklığıdır. Bugün çalışan / nöbetçi araçlar listelenir; istirahatli araçlar gizlenebilir.\n'
+              'Çağrı gidince durak sayfası kapanır. Onay beklerken Vazgeç ve Durağı ara vardır. 25 saniye cevap yoksa sıradaki araca geçilir. 2 dakika dolunca kart kapanır ve durak sayfası geri gelir. Kabulden sonra ekranda yalnız harita, plaka ve dakika kalır. Taksi yoldayken veya kapıdayken, binmeden Vazgeç ile çağrı kapanır. Şoför kabul etmeden Vazgeç ücretsizdir, araç sırada kalır. Şoför kabul edince araç sıradan çıkar. Ondan sonra Vazgeç deyince onay penceresinde iptal bedeli görünür. Tutar en az durağın taban ücretidir. Uzun yolda kilometre ve dakika tabanı geçerse o toplam yazılır. Şoför yolcuya doğru gitmezse yolcu ödeme yapmaz. Şoför yolcunun yanına söylenen süreden 5 dakika geç kalırsa ve yolcu o sırada vazgeçerse de ödeme yapmaz. Üç tarife de 0 ise bedel çıkmaz. Tutar yolcudan şoföre ödenir. Yolcu binince Vazgeç kalkar. Şoförü ara, şoförün telefonunu açar. Kabulden sonra plaka haritada siyah iğneyle görünür. Dakika, arabanın konumuna göre yenilenir. Şoför ekrandan çıksa da konum gider. Kabulden sonra Yakınıma gönder, durağın adını, plakayı, şoförün durumunu ve canlı konum linkini WhatsApp ile bir yakına yollar. Ücret yazılmaz. Ehliyet, ruhsat, sigorta ve taksimetre durakça onaylıysa plakanın yanında Belgeli yazar. Yolculuk bitince durak sayfası geri gelir ve plaka, alış, varsa varış ve saat yazan bir kayıt açılır. Ücret taksimetrededir.\n'
+              'Yönetici bu işletme için yapay zekayı açtıysa ekranda yuvarlak bir mikrofon durur. Basılı tutup istediğiniz yere bırakabilirsiniz. Haritanın üstünde sağa sola çekince mikrofon gider, harita kaymaz. “Taksi istiyorum” deyince aynı onay penceresi açılır; ilk dokunuşta mikrofon izni hemen sorulur, ekranda tek mikrofon durur, kısa bir susunca o söz bir kez gider, yeni komut için yeniden dokunun, onaylamadan çağrı gitmez. “Randevu al” rezervasyon ekranını açar. Anahtar kapalıysa mikrofon yoktur, sarı düğme durur.',
           ikon: Icons.local_taxi,
         ),
       ],
       bildirimler: [
-        'Talebiniz durağa / araca bildirilir; durum değişince size bildirim gelir.',
+        '“Taksi İstiyorum” durağa düşer. Sürücü kabul ederse “Taksiniz yolda” gelir ve plaka haritada görünür.',
+        'Araba size yaklaşık 100 metre kalınca “Taksiniz geldi” kendiliğinden gelir. Şoför buna basmaz.',
+        'Kartta tek düğme vardır. Önce Yolcu bindi, basınca Yolculuk bitti olur. Yolculuk bitti deyince şerit kapanır.',
+        'Sürücü reddederse, sırada araç kalmazsa veya 2 dakika cevap gelmezse “Şu an araç çıkarılamadı” gelir. Vazgeç derseniz durak sayfasına dönersiniz.',
+        'SOS, durak telefonuna konumunuzla gider.',
       ],
     ),
 
@@ -538,29 +933,59 @@ class EkranRehberKatalogu {
         RehberBolum(
           baslik: 'Adımlar',
           icerik:
-              'Alış / varış → tarih-saat → müsait araç/şoför → onay. Araç odaklı sistemde plaka seçilir.',
+              'Alış / varış → tarih-saat.\n'
+              'Araç odaklı sistem açıksa plaka seçilir.\n'
+              'Kapalıysa plaka sorulmaz; rezervasyon durak adına alınır.',
           ikon: Icons.schedule,
         ),
       ],
       bildirimler: [
-        'Onay ve hatırlatma bildirimleri aktifse telefonunuza düşer.',
+        'Rezervasyon düşünce durağa haber gider (ayar açıksa).',
+        'Onay veya red size gelir (ayar açıksa).',
+        'Onaylı rezervasyonda, alıştan 15 / 30 / 60 dk önce hatırlatma gelebilir.',
+      ],
+      ipuclari: [
+        'Telefon alanına yalnızca rakam yazılır. Harf kabul edilmez.',
       ],
     ),
 
     'TaksiEsnafPaneli': const EkranRehberIcerik(
       baslik: 'Taksi – Yönetici Paneli',
       ozet:
-          'Durak yönetimi: filo, nöbet çizelgesi, mesai, takip ve randevu kayıtları.',
+          'Durak yönetimi: filo, nöbet çizelgesi, mesai, takip ve randevu kayıtları. Hızlı Kurulum listenin üstündedir.',
       bolumler: [
         RehberBolum(
           baslik: 'Önerilen sıra',
           icerik:
-              '1. Profil / konum\n2. Mesai ve çalışma günleri\n3. Filoya araç ekle (şoför plaka tanımlı olmalı)\n4. Nöbet çizelgesi\n5. Gelişmiş ayarlar (mesafe, gizleme)',
+              '1. Profil / konum\n2. Mesai ve çalışma günleri\n3. Filoya yalnızca bu durağa kabul edilen şoför eklenir\n4. Nöbet çizelgesi\n5. Gelişmiş ayarlar (onay, mesafe, gizleme)\n'
+              '“Çalışan başvuruları” kartı gelen şoför başvurusunu kabul veya red eder. Kabul, aracı filoya yazar. Nöbet sırasını siz verirsiniz. Yeni Araç Ekle’de şoför seçilmeden Ekle kapalı kalır. Bekleyen başvuru veya çalışmayı bırakma talebi varken kartın çerçevesi turuncu olur. Panele girince hatırlatma çıkar. İptali, başvuruyu kabul eden kişi onaylar. Yönetici yapay zekayı açtıysa ekranda yuvarlak bir mikrofon durur. Basılı tutup istediğiniz yere bırakabilirsiniz. Mod değiştirince mikrofon kapanır. Mikrofonla “açılış saatini 9 yap”, “randevu alımını durdur” veya “taksi istiyorum” denebilir. İlk dokunuşta mikrofon izni hemen sorulur. Ekranda tek mikrofon durur; çekince çoğalmaz. Kısa bir susunca o söz bir kez gider. Yeni komut için yeniden dokunun; önceki sözün üstüne yazılmaz. Anlaşılmayan soru bu ekranın rehberinden cevaplanır. Saat ve randevu hemen yazılır. Taksi çağrısı onay penceresini açar.\n'
+              'Üst çubuktaki profil ikonu müşteri, sürücü ve yönetici modunda aynı profili açar. İşletme bilgilerini düzenle, İşletme grubundadır. Zorunlu alan boşsa ikon titrer. İşletme adının üstünde logo vardır. Dokununca galeriden seçilir, zorunlu değildir. Ayarları Kaydet yazınca üst çubukta adın solunda yuvarlak durur. Müşteri ekranında adın üstünde yuvarlak durur. Telefonda pencere ekran genişliğine yayılır ve kaydırılır. Şahısta alan T.C. Kimlik No, şirket veya kooperatifte Vergi Kimlik No (VKN) olur. Levha sizin adınıza ise şahıs, bir şirket ya da kooperatif adına ise ikinci seçilir. Levha varsa “Vergi levhasını gör” ile açılır. Şirket veya kooperatif seçilince “Yeni vergi levhasını yükle” çıkar. Tür, numara veya levha değişince işletme açık kalır; yeni evrak yönetici onayına gider. Yetkili, e-posta, sabit hat, web, Instagram, tanıtım ve olanaklar durur. Çocuk alanı, Otopark veya Wi-Fi seçilince alt satırda kalır. Şirket veya kooperatifte MERSİS ve ticaret sicil vardır. Kaydedilmemiş değişiklik varsa kaydet düğmesinin üstünde uyarı çıkar ve düğme turuncu olur. Mod değiştirme, yenileme, çıkış veya geri gitmede Vazgeç, Kaydetmeden çık ve Kaydet sorulur. Vazgeç ekranda bırakır. Kaydetmeden çık yazmaz, kayıtlı haline döner. Kaydet yazar. Tamam, eksik zorunlu alanı kapatmaz; eksikleri listeler. Kapat, bu pencerede değişiklik varsa sorar. Kaydetmeden çık eski haline döner. Kaydet, eksik varsa pencereyi kapatmaz. Açılınca sağda kaydırma çubuğu durur ve altta “Aşağı kaydırın” yazar.',
           ikon: Icons.rule,
+        ),
+        RehberBolum(
+          baslik: 'Hızlı Kurulum',
+          icerik:
+              'Listenin üstündeki düğme bu panele özel kurulumu açar. Sorular: randevu alınsın mı, randevu açıksa alınan randevu Plaka mı Durak mı, 7/24, gündüz mesaisinde çalışacak araçların açılış ve kapanışı, 7/24 ise nöbet saati, çalışma günü, kayıtlı şoför, anlık çağrı, yeni rezervasyon, onay ve red, alış hatırlatması, istirahatli araçlar, konum mesafesi, kim onaylasın, navigasyon, iptal bedeli. Navigasyon, yolcu taksi istedikten sonra çağrıyı kabul eden şoföre sorulup sorulmayacağını seçer. Kapalıyken o şoföre sorulur. Açıkken Google Haritalar alış noktasına kendiliğinden açılır. İptal bedelinde kırmızı not, aracın sıradan çıkınca yolcunun tabanı ödeyeceğini, şoför gitmezse veya yolcunun yanına 5 dakika geç kalıp yolcu o sırada vazgeçerse ödeme olmayacağını söyler. Üç soru taban, kilometre ve dakikayı sorar. Yeşil açıklama yazılan tutara göre değişir. Mavi açıklama sorunun hemen altındadır. Yeşil kutu seçimin ne yapacağını yazar. Saat listeden seçilir. Şoför listesinde yalnızca bu durağa kabul edilenler durur. Başka durağın şoförü gelmez. Aynı kişi bir kez yazar. Altta ekli olan üst listede görünmez. Şoför yoksa İleri açık kalır. Şoför seçilmeden Şoför Ekle kapalı kalır. Nöbet sırası listeden seçilir; kayıtlı sıra görünür. Hatırlatma yalnızca onaylanmış taksi rezervasyonunda, alıştan 15, 30 veya 60 dakika önce yolcuya “Taksi rezervasyonunuz yaklaşıyor” bildirimi gönderir. Kapalı derseniz kurulmaz. İstirahat Evet ise müşteriler istirahatteki aracı Bugün Çalışan Araçlarımız listesinde göremez. Konum mesafesi 5 ile 500 metre arasındadır. Bitir, Ayarları Kaydet ile aynı kaydı yazar. Yarıda çıkılırsa girdiler panelde kalır, Bitir denmeden kaydolmaz. Son sayfa bütün tercihleri listeler.',
+          ikon: Icons.flash_on,
+        ),
+        RehberBolum(
+          baslik: 'Şoför belgeleri',
+          icerik:
+              'Filo Yönetiminin altındaki Şoför belgelerini onayla, bu durağın şoförlerini listeler. Ehliyet, ruhsat, sigorta ve taksimetre yalnızca burada onaylanır. Yönetici panelindeki Belge Onaylarına düşmez. Dördü de onaylıysa yolcu o plakanın yanında Belgeli görür.',
+          ikon: Icons.verified_outlined,
         ),
       ],
       bildirimler: [
-        'Yeni rezervasyon ve SOS acil sinyalleri yöneticiye iletilir.',
+        'Yolcu “Taksi İstiyorum” deyince durak telefonuna ve varsa sıradaki şoföre bildirim gider. Uygulama kapalı olsa da gelir. Kabul ve red penceresi, taksi paneli açılınca bekleyen talep için çıkar.',
+        'Kabul: yolcuya “Taksiniz yolda”. Araç sıradan çıkar, durumu Meşgul olur. Bir sonraki duraktaki araç sıradaki olur. Reddet, çağrıyı sıradaki araca geçirir. Araç kalmazsa yolcuya “araç çıkarılamadı” gider. Pencere açılınca zil çalar. Telefonda bildirime basınca bu ekran açılır ve bekleyen çağrı sorulur. Yolcu binmeden vazgeçerse pencere veya kart kapanır ve “Yolcu vazgeçti” gelir. İptal bedeli varsa tutar da yazılır. 25 saniye cevap yoksa sıradaki araca geçilir. 2 dakika dolunca çağrı kapanır.',
+        'Kabulden sonra panelin üstünde sarı yolculuk kartı durur. Geldim, araba yolcuya yaklaşık 100 metre kalınca kendiliğinden yazılır. Kartta tek düğme vardır: önce Yolcu bindi, basınca Yolculuk bitti. Yolculuk bitti aracı Müsait yapar. Sıraya dönmek için durak takipte yeşil ok gerekir. Şoförün telefonunda sahte konum açıksa kartta kırmızı “Sahte konum açık” yazar.',
+        'SOS acil sinyali durak telefonuna gider.',
+      ],
+      ipuclari: [
+        'İletişim, WhatsApp ve randevu hattı yalnızca rakam alır. WhatsApp ve randevu hattı boş kalabilir.',
+        'Açılış ve kapanış listeden seçilir. Dokunulan saat aynen yazılır.',
+        'Durak adı değişince bugün ve sonraki rezervasyon ile açık bekleme yeni adı alır. Geçmiş kayıt eski adla kalır.',
+        'Hızlı Kurulum listenin üstündedir. Randevu alınsın mı, randevu açıksa alınan randevu Plaka mı Durak mı, 7/24, gündüz mesaisinde çalışacak araçların açılış ve kapanışı, 7/24 ise nöbet saati, çalışma günü, kayıtlı şoför, anlık çağrı, yeni rezervasyon, onay ve red, alış hatırlatması, istirahatli araçlar, konum mesafesi, kim onaylasın, navigasyon ve iptal bedeli sorulur. Navigasyon, yolcu taksi istedikten sonra çağrıyı kabul eden şoföre sorulup sorulmayacağını seçer. Kapalıyken o şoföre sorulur. Açıkken Google Haritalar alış noktasına kendiliğinden açılır. İptal bedelinde kırmızı not kuralı yazar. Üç soru taban, kilometre ve dakikayı sorar. Saat listeden seçilir. Şoför listesinde yalnızca bu durağa kabul edilenler durur. Başka durağın şoförü gelmez. Aynı kişi bir kez yazar. Altta ekli olan üst listede görünmez. Şoför yoksa İleri açık kalır. Şoför seçilmeden Şoför Ekle kapalı kalır. Bitir, Ayarları Kaydet ile aynı kaydı yazar. Yarıda çıkılırsa girdiler panelde kalır.',
       ],
     ),
 
@@ -603,41 +1028,88 @@ class EkranRehberKatalogu {
           icerik:
               'Yeşil: sıraya gir (durak merkezine tanımlı mesafede olmalısınız).\n'
               'Turuncu: sıradan çık.\n'
-              'Mesafe aşımı varsa yeşil ok reddedilir.',
+              'Mesafe aşımı varsa yeşil ok reddedilir.\n'
+              'Filoya eklenen araç, bu ayın nöbet çizelgesine yazılmadan bu listede görünmez. Adı üstte “Nöbet çizelgesi yok” kutusunda durur. Çizelgeye yazınca listeye gelir.\n'
+              'Size düşen çağrı bu ekrandayken pencere olarak gelir ve zil çalar. 25 saniye cevap yoksa sıradaki araca geçer. Kabul edince listenin üstünde sarı kart çıkar. Yolcu binmeden vazgeçerse kart kapanır ve “Yolcu vazgeçti” yazılır. İptal bedeli varsa tutar da yazılır. Yolcuya yaklaşık 100 metre kalınca geldi kendiliğinden yazılır, yolcuya haber gider. Buna basılmaz. Kartta tek düğme vardır: önce Yolcu bindi, basınca Yolculuk bitti. Yolculuk bitti kartı kapatır, aracı Müsait yapar ve sıradan çıkarır. Konum, bu ekrandan çıksanız da yolcunun haritasına gider. Telefonda “Taksi yolda” bildirimi durur. Konum izni her zaman olarak sorulur. Uygulama açık kaldığı sürece konum gider. Uygulama kaydırılıp kapatılırsa veya tarayıcı sekmesi kapanırsa konum durur. Bu telefonda sahte konum açıksa listenin üstünde kırmızı uyarı çıkar ve kendi aracınızda SAHTE KONUM yazar. Yoldaki bir aracın telefonunda sahte konum açıksa o plakada da SAHTE KONUM yazar. Sarı kartta aynı uyarı durur.\n'
+              'Liste, bu ayın nöbet çizelgesi gelene kadar “Nöbet çizelgesi yükleniyor” yazar. Çizelge okunamazsa araçlar yine görünür.',
           ikon: Icons.alt_route,
+        ),
+        RehberBolum(
+          baslik: 'Bilgilerimi güncelle',
+          icerik:
+              'Profil simgesi üç modda da aynı sayfayı açar. Sürücü grubunda Temel Bilgileri Güncelle vardır. Plaka, ad veya telefon değişince aynı bilgi durağın araç listesine de yazılır.\n'
+              'Plaka iki rakamdan sonra boşluk bırakır. Örnek: 61 SH 063.\n'
+              'Plaka değişince nöbet çizelgesindeki günler ve size ait rezervasyonlar yeni plakaya geçer.\n'
+              'Telefon değişince profil fotoğrafı ve belgeler yeni numaraya da yazılır; durak listesinde resim kaybolmaz.\n'
+              'Telefon yalnızca rakamdır. 05xx veya sabit hat yazılır; harf yazılamaz.\n'
+              'Profilde çalışan başvurunuzun durumu da durur: Bekleyen, Onaylandı, İptal veya Ret.',
+          ikon: Icons.manage_accounts_outlined,
         ),
       ],
       bildirimler: [
         'Sıra değişiklikleri anlık yansır; SOS sinyali bu ekosistemde yöneticilere gider.',
       ],
+      ipuclari: [
+        'Sağ üstteki profil simgesi, ad, adres veya plaka boşsa titrer. Alanlar dolunca titreme durur. Giriş telefonunuz listedeki araçla aynıysa sürücü sayfanızı açar. Başındaki 0 fark etmez.',
+      ],
     ),
 
     'TaksiParametreEkrani': const EkranRehberIcerik(
       baslik: 'Taksi – Gelişmiş Ayarlar',
-      ozet: 'Konum doğrulama mesafesi, araç odaklı sistem, istirahat gizleme ve randevu durdurma.',
+      ozet: 'Çağrı bildirimleri, rezervasyon onayı, konum mesafesi ve araç listesi.',
       bolumler: [
+        RehberBolum(
+          baslik: 'Çağrı ve rezervasyon bildirimleri',
+          icerik:
+              'Anlık çağrı: yolcu taksi isteyince durak telefonuna ve varsa sıradaki şoföre bildirim gider. Uygulama kapalı olsa da gelir. Kabul ve red penceresi, taksi paneli açılınca çıkar. Kapalıysa bu bildirim gitmez.\n'
+              'Yeni rezervasyon: ileri saatli kayıt düşünce durak telefonuna gider.\n'
+              'Onay ve red: sonucu yolcuya iletir.\n'
+              'Hatırlatma: yalnızca onaylanmış taksi rezervasyonunda, alıştan 15, 30 veya 60 dakika önce yolcuya “Taksi rezervasyonunuz yaklaşıyor” bildirimi gider. “Kapalı” derseniz kurulmaz.',
+          ikon: Icons.notifications_active_outlined,
+        ),
         RehberBolum(
           baslik: 'Konum doğrulama mesafesi',
           icerik:
-              'Şoförün sıraya girebilmesi için durağa maksimum metre. Uzaktan haksız sıra girişini engeller.',
+              'Şoför yeşil okla sıraya girerken durağa bu kadar yakın olmalıdır. Daha uzaktaysa sıraya alınmaz. 5 ile 500 metre arasındadır.',
           ikon: Icons.social_distance,
+        ),
+        RehberBolum(
+          baslik: 'Navigasyon',
+          icerik:
+              'Yolcu taksi istedikten sonra, çağrıyı kabul eden şoföre sorulup sorulmayacağını seçer. Kapalıyken o şoföre “Navigasyon başlasın mı?” diye sorulur. Açıkken sorulmaz, Google Haritalar alış noktasına kendiliğinden açılır. Varsayılan kapalıdır.',
+          ikon: Icons.navigation,
+        ),
+        RehberBolum(
+          baslik: 'İptal bedeli',
+          icerik:
+              'Bu kart, yolcu vazgeçince şoföre ödeyeceği tutarı belirler. Üstte kırmızı not vardır: şoför çağrıyı kabul edince araç sıradan çıkar, yolcu vazgeçerse en az tabanı öder. Şoför yolcuya doğru gitmezse yolcu ödeme yapmaz. Şoför yolcunun yanına söylenen süreden 5 dakika geç kalırsa ve yolcu o sırada vazgeçerse de ödeme yapmaz. Altta üç soru vardır: vazgeçince taban ücreti kaç TL, şoförün gittiği her kilometre başına kaç TL, şoförün çağrıyı kabul ettiği andan yolcunun vazgeçtiği ana kadar geçen her dakika için kaç TL. Alanlar boş açılır. Boş alan 0 sayılır, bedel yazılmaz. Yazılan tutara göre alttaki açıklama ve 2 km / 6 km örneği değişir. Kaydet yazınca durur.',
+          ikon: Icons.money_off_csred_outlined,
         ),
         RehberBolum(
           baslik: 'Araç odaklı sistem',
           icerik:
-              'Açıksa rezervasyonlar plaka üzerine alınır; müşteri plaka görür.',
+              'Açık: yolcu rezervasyonda plaka seçer, randevu o araca yazılır.\n'
+              'Kapalı: yolcu plaka seçmez. Randevu durak adına alınır; aracı durak ayırır.',
           ikon: Icons.pin,
         ),
         RehberBolum(
           baslik: 'İstirahatli araçları gizle',
           icerik:
-              'İ işaretli araçlar yolcu listesinde görünmez.',
+              'Evet ise istirahatteki araçları müşteriler “Bugün Çalışan Araçlarımız” listesinde göremez. Hayır ise müşteriler o listede de görür.',
           ikon: Icons.visibility_off,
+        ),
+        RehberBolum(
+          baslik: 'Randevuyu kim onaylasın',
+          icerik:
+              'Ben onaylayacağım: yeni rezervasyon Randevu Kayıtları’nda onay bekler.\n'
+              'Otomatik onaylansın: kayıt hemen onaylanır.\n'
+              'Seçim kaydolur. Hızlı Kurulum’daki soru ile aynı ayardır.',
+          ikon: Icons.how_to_reg_outlined,
         ),
         RehberBolum(
           baslik: 'Randevu alımını durdur',
           icerik:
-              'Online rezervasyonu geçici kapatır; mevcut kayıtlar silinmez.',
+              'Online rezervasyonu geçici kapatır; mevcut kayıtlar silinmez. Anlık çağrı ayrıca kapanmaz.',
           ikon: Icons.block,
         ),
       ],
@@ -655,7 +1127,8 @@ class EkranRehberKatalogu {
         ),
       ],
       bildirimler: [
-        'Sonuç yolcuya bildirilir.',
+        'Onaylayınca yolcuya “rezervasyonunuz onaylandı” gider (ayar açıksa) ve hatırlatma kurulur.',
+        'Red veya iptalde yolcuya haber gider; kurulmuş hatırlatma silinir.',
       ],
     ),
 
@@ -688,8 +1161,21 @@ class EkranRehberKatalogu {
         RehberBolum(
           baslik: 'Belge yükleme',
           icerik:
-              'İstenen belgelerin net fotoğraflarını ekleyin. Onay süreci yönetici / sistem tarafındadır.',
+              'Ehliyet, ruhsat, sigorta ve taksimetre fotoğrafını yükleyin. Onay yalnızca duraktadır. Yönetici kuyruğuna düşmez. Durak dördünü de onaylayınca yolcu plakanın yanında Belgeli görür.',
           ikon: Icons.badge_outlined,
+        ),
+      ],
+    ),
+
+    'TaksiBelgeOnayEkrani': const EkranRehberIcerik(
+      baslik: 'Şoför belgeleri',
+      ozet: 'Durak, kendi şoförünün belgesini onaylar. Yolcu plakada Belgeli görür.',
+      bolumler: [
+        RehberBolum(
+          baslik: 'Onay',
+          icerik:
+              'Her araç için ehliyet, ruhsat, sigorta ve taksimetre ayrı durur. Gör ile fotoğraf açılır. Onayla veya Reddet yazılır. İkinci bir yönetici onayı yoktur. Dördü de onaylıysa yolcu o plakanın yanında Belgeli görür.',
+          ikon: Icons.verified_outlined,
         ),
       ],
     ),

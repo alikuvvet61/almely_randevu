@@ -6,6 +6,7 @@ import '../../modeller/randevu_modeli.dart';
 import '../../servisler/firestore_servisi.dart';
 import '../../servisler/bildirim_servisi.dart';
 import '../../widgets/ana_buton.dart';
+import '../../yardimcilar/telefon_girdisi.dart';
 
 /// Araç Kiralama için randevu / kiralama ekranı.
 class AracKiralamaRandevuEkrani extends StatefulWidget {
@@ -475,6 +476,12 @@ class _AracKiralamaRandevuEkraniState extends State<AracKiralamaRandevuEkrani> {
       _islemYapiliyorNotifier.value = false; // [KRİTİK] Hata durumunda butonu tekrar aktif et
       return;
     }
+    final telefonMesaji = TelefonGirdisi.hata(_telController.text);
+    if (telefonMesaji != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(telefonMesaji)));
+      _islemYapiliyorNotifier.value = false;
+      return;
+    }
 
     int toplamSure = _getToplamSure(hizmetler, esnaf);
 
@@ -549,6 +556,16 @@ class _AracKiralamaRandevuEkraniState extends State<AracKiralamaRandevuEkrani> {
     try {
       // Randevuyu ekle ve sonucunu al (Bildirim durumu için)
       final String? resHata = await _firestoreServisi.randevuEkle(yeniRandevu);
+      final tarihSaat = '${DateFormat('dd.MM.yyyy').format(tarih)} $saat';
+      await BildirimServisi.kiralamaYeniTalepEsnafa(esnaf: esnaf, tarihSaat: tarihSaat);
+      if (durm == 'Onaylandı') {
+        await BildirimServisi.kiralamaDurumMusteriye(
+          esnaf: esnaf,
+          musteriTel: temizTel,
+          onaylandi: true,
+          tarihSaat: tarihSaat,
+        );
+      }
       
       _islemYapiliyorNotifier.value = false;
 
@@ -903,8 +920,10 @@ class _AracKiralamaRandevuEkraniState extends State<AracKiralamaRandevuEkrani> {
                                         TextField(
                                             controller: _telController,
                                             keyboardType: TextInputType.phone,
+                                            inputFormatters: TelefonGirdisi.bicim,
                                             decoration: const InputDecoration(
                                                 labelText: "Telefon Numarası",
+                                                hintText: "05xx xxx xx xx",
                                                 prefixIcon: Icon(Icons.phone_outlined),
                                                 border: OutlineInputBorder())),
                                       ],

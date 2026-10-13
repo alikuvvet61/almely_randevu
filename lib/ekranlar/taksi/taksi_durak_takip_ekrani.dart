@@ -4,9 +4,17 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import '../../modeller/esnaf_modeli.dart';
+import '../../servisler/bildirim_servisi.dart';
 import '../../servisler/firestore_servisi.dart';
 import 'taksi_surucu_dogrulama_ekrani.dart';
-import 'taksi_surucu_profil_detay_ekrani.dart';
+import 'taksi_mod_secim_ekrani.dart';
+import '../../yardimcilar/telefon_girdisi.dart';
+import '../../yardimcilar/plaka_girdisi.dart';
+import '../../widgets/sallanan_profil_ikonu.dart';
+import '../../widgets/ortak_profil_sayfasi.dart';
+import '../../widgets/yonetici_ses_kutusu.dart';
+import 'taksi_talep_dialogu.dart';
+import 'taksi_yolculuk_karti.dart';
 
 class TaksiDurakTakipEkrani extends StatefulWidget {
   final EsnafModeli esnaf;
@@ -21,15 +29,31 @@ class TaksiDurakTakipEkrani extends StatefulWidget {
 class _TaksiDurakTakipEkraniState extends State<TaksiDurakTakipEkrani> {
   List<Map<String, dynamic>> araclar = [];
   Map<String, dynamic> gunlukAjanda = {};
+  Set<String> _cizelgePlakalari = {};
+  bool _ajandaGeldi = false;
   Map<String, Map<String, dynamic>> kullaniciProfilleri = {};
   StreamSubscription? _aracSubscription;
   StreamSubscription? _ajandaSubscription;
   StreamSubscription? _kullaniciSubscription;
+  StreamSubscription? _profilSubscription;
+  StreamSubscription? _talepAboneligi;
+  StreamSubscription? _sahteAboneligi;
+  final Set<String> _sahtePlakalar = {};
+  late String? _aktifSoforTel;
+  Map<String, dynamic>? _kendiKayit;
+  bool _profilUyariGosterildi = false;
+  bool _sahteKonum = false;
 
   @override
   void initState() {
     super.initState();
+    _aktifSoforTel = widget.soforTel;
+    if ((widget.soforTel ?? '').isNotEmpty) TaksiOturum.telefon = widget.soforTel!;
     _verileriDinle();
+    _kendiProfiliDinle();
+    _talepleriDinle();
+    _sahtePlakalariDinle();
+    _sahteKonumBak();
   }
 
   @override
@@ -37,7 +61,64 @@ class _TaksiDurakTakipEkraniState extends State<TaksiDurakTakipEkrani> {
     _aracSubscription?.cancel();
     _ajandaSubscription?.cancel();
     _kullaniciSubscription?.cancel();
+    _profilSubscription?.cancel();
+    _talepAboneligi?.cancel();
+    _sahteAboneligi?.cancel();
     super.dispose();
+  }
+
+  Future<void> _sahteKonumBak() async {
+    try {
+      final izin = await Geolocator.checkPermission();
+      if (izin == LocationPermission.denied || izin == LocationPermission.deniedForever) return;
+      final pos = await Geolocator.getCurrentPosition().timeout(const Duration(seconds: 8));
+      if (mounted && pos.isMocked) setState(() => _sahteKonum = true);
+    } catch (_) {}
+  }
+
+  void _sahtePlakalariDinle() {
+    _sahteAboneligi = FirebaseFirestore.instance
+        .collection('taksi_talepleri')
+        .where('esnafId', isEqualTo: widget.esnaf.id)
+        .snapshots()
+        .listen((snap) {
+      final plakalar = <String>{};
+      for (final d in snap.docs) {
+        final data = d.data();
+        final durum = (data['durum'] ?? '').toString();
+        if (durum != 'yolda' && durum != 'geldim' && durum != 'bindi') continue;
+        if (data['sahteKonum'] != true) continue;
+        final plaka = (data['plaka'] ?? '').toString().trim();
+        if (plaka.isNotEmpty) plakalar.add(plaka);
+      }
+      if (!mounted) return;
+      setState(() {
+        _sahtePlakalar
+          ..clear()
+          ..addAll(plakalar);
+      });
+    });
+  }
+
+  void _talepleriDinle() {
+    _talepAboneligi = FirebaseFirestore.instance
+        .collection('taksi_talepleri')
+        .where('esnafId', isEqualTo: widget.esnaf.id)
+        .where('durum', isEqualTo: 'bekliyor')
+        .snapshots()
+        .listen((snap) {
+      for (final change in snap.docChanges) {
+        if (change.type != DocumentChangeType.added && change.type != DocumentChangeType.modified) continue;
+        final data = change.doc.data();
+        if (data == null || (data['durum'] ?? '').toString() != 'bekliyor') continue;
+        final sofor = (data['soforTel'] ?? '').toString();
+        final benim = FirestoreServisi().musteriTelefonAnahtari(sofor);
+        final tel = FirestoreServisi().musteriTelefonAnahtari(_aktifSoforTel ?? '');
+        if (benim.isNotEmpty && tel.isNotEmpty && benim != tel) continue;
+        if (!mounted) return;
+        taksiTalepPenceresiAc(context, doc: change.doc, esnaf: widget.esnaf, soforTel: _aktifSoforTel, isSofor: true);
+      }
+    });
   }
 
   void _verileriDinle() {
@@ -67,11 +148,44 @@ class _TaksiDurakTakipEkraniState extends State<TaksiDurakTakipEkrani> {
         .doc(ayKey)
         .snapshots()
         .listen((snapshot) {
-      if (snapshot.exists && mounted) {
-        gunlukAjanda = Map<String, dynamic>.from(snapshot.data()?[gunKey] ?? {});
-        _sirala();
+      if (!mounted) return;
+      try {
+        _ajandayiIsle(snapshot.data(), gunKey);
+      } catch (_) {
+        _ajandaGeldi = true;
       }
+      _sirala();
+    }, onError: (_) {
+      if (!mounted || _ajandaGeldi) return;
+      setState(() => _ajandaGeldi = true);
     });
+  }
+
+  void _ajandayiIsle(Map<String, dynamic>? data, String gunKey) {
+    final plakalar = <String>{};
+    Map<String, dynamic> bugun = {};
+    data?.forEach((tarih, gun) {
+      if (gun is! Map) return;
+      final gunMap = Map<String, dynamic>.from(gun);
+      if (tarih == gunKey) bugun = gunMap;
+      gunMap.forEach((plaka, durum) {
+        final kod = durum?.toString() ?? '';
+        if (!kod.contains('C') && !kod.contains('N') && !kod.contains('I')) return;
+        final t = plaka.toString().trim();
+        if (t.isEmpty) return;
+        plakalar.add(t);
+        plakalar.add(t.toUpperCase());
+      });
+    });
+    gunlukAjanda = bugun;
+    _cizelgePlakalari = plakalar;
+    _ajandaGeldi = true;
+  }
+
+  bool _cizelgede(Map<String, dynamic> arac) {
+    final plaka = (arac['plaka'] ?? '').toString().trim();
+    if (plaka.isEmpty) return false;
+    return _cizelgePlakalari.contains(plaka) || _cizelgePlakalari.contains(plaka.toUpperCase());
   }
 
   void _kullanicilariDinle() {
@@ -259,119 +373,75 @@ class _TaksiDurakTakipEkraniState extends State<TaksiDurakTakipEkrani> {
     await _kaydet();
   }
 
-  void _profilGoster() {
-    final kendiAracim = araclar.firstWhere((a) => a['soforTel'] == widget.soforTel, orElse: () => {});
-    if (kendiAracim.isEmpty) return;
+  bool _ayniTel(Object? a, Object? b) {
+    final fs = FirestoreServisi();
+    final x = fs.musteriTelefonAnahtari('${a ?? ''}');
+    final y = fs.musteriTelefonAnahtari('${b ?? ''}');
+    return x.isNotEmpty && x == y;
+  }
 
-    showModalBottomSheet(
+  void _kendiProfiliDinle() {
+    _profilSubscription?.cancel();
+    final tel = _aktifSoforTel;
+    if (tel == null || tel.trim().isEmpty) return;
+    final ids = FirestoreServisi().telefonYazimlari(tel).where((id) => id.isNotEmpty).take(10).toList();
+    if (ids.isEmpty) return;
+    _profilSubscription = FirebaseFirestore.instance
+        .collection('kullanicilar')
+        .where(FieldPath.documentId, whereIn: ids)
+        .snapshots()
+        .listen((snapshot) {
+      if (!mounted) return;
+      final birlesik = <String, dynamic>{};
+      for (final doc in snapshot.docs) {
+        final veri = Map<String, dynamic>.from(doc.data());
+        for (final e in veri.entries) {
+          final eski = birlesik[e.key];
+          final eskiBos = eski == null || (eski is String && eski.trim().isEmpty);
+          final yeniDolu = e.value is! String || e.value.toString().trim().isNotEmpty;
+          if (eskiBos && yeniDolu) birlesik[e.key] = e.value;
+        }
+      }
+      setState(() => _kendiKayit = birlesik);
+      if (!_profilEksik || _profilUyariGosterildi) return;
+      _profilUyariGosterildi = true;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Profil bilgilerinde eksik alan var.')),
+      );
+    });
+  }
+
+  bool get _profilEksik {
+    if (_aktifSoforTel == null || _kendiKayit == null) return false;
+    final ad = (_kendiKayit?['adSoyad'] ?? _kendiKayit?['ad'] ?? '').toString().trim();
+    final adres = (_kendiKayit?['adres'] ?? '').toString().trim();
+    final plaka = (_kendiKayit?['plaka'] ?? '').toString().trim();
+    return ad.isEmpty || adres.isEmpty || plaka.isEmpty;
+  }
+
+  void _profilGoster() {
+    final tel = _aktifSoforTel;
+    if (tel == null || tel.isEmpty) return;
+    ortakProfilAc(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 30),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                color: Colors.indigo.shade50,
-                shape: BoxShape.circle,
-              ),
-              child: Icon(Icons.person, size: 50, color: Colors.indigo.shade700),
-            ),
-            const SizedBox(height: 15),
-            Text(
-              kendiAracim['soforAd'] ?? "İsimsiz Şoför",
-              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-            ),
-            Text(
-              kendiAracim['plaka'] ?? "",
-              style: TextStyle(fontSize: 16, color: Colors.grey.shade600, fontWeight: FontWeight.w500),
-            ),
-            const SizedBox(height: 10),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.green.shade50,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                widget.soforTel ?? "",
-                style: TextStyle(color: Colors.green.shade800, fontWeight: FontWeight.bold),
-              ),
-            ),
-            const SizedBox(height: 30),
-            const Divider(),
-            const SizedBox(height: 10),
-            ListTile(
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(10)),
-                child: const Icon(Icons.account_box_rounded, color: Colors.blue),
-              ),
-              title: const Text("Gelişmiş Sürücü Paneli", style: TextStyle(fontWeight: FontWeight.bold)),
-              subtitle: const Text("Kimlik, Araç ve Finans Bilgileri"),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(context, MaterialPageRoute(builder: (c) => TaksiSurucuProfilDetayEkrani(esnaf: widget.esnaf, arac: kendiAracim)));
-              },
-            ),
-            const SizedBox(height: 10),
-            ListTile(
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(10)),
-                child: const Icon(Icons.edit, color: Colors.blue),
-              ),
-              title: const Text("Temel Bilgileri Güncelle", style: TextStyle(fontWeight: FontWeight.bold)),
-              subtitle: const Text("Ad, Soyad ve Telefon"),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () {
-                Navigator.pop(context);
-                _aracDuzenle(kendiAracim);
-              },
-            ),
-            const SizedBox(height: 10),
-            ListTile(
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(color: Colors.indigo.shade50, borderRadius: BorderRadius.circular(10)),
-                child: const Icon(Icons.verified_user, color: Colors.indigo),
-              ),
-              title: const Text("Güvenlik Doğrulaması", style: TextStyle(fontWeight: FontWeight.bold)),
-              subtitle: const Text("Ehliyet, Ruhsat ve Sigorta Belgeleri"),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(context, MaterialPageRoute(builder: (c) => TaksiSurucuDogrulamaEkrani(esnaf: widget.esnaf)));
-              },
-            ),
-            const SizedBox(height: 10),
-            ListTile(
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(10)),
-                child: const Icon(Icons.logout, color: Colors.red),
-              ),
-              title: const Text("Çıkış Yap", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
-              onTap: () => Navigator.of(context).popUntil((route) => route.isFirst),
-            ),
-            const SizedBox(height: 20),
-          ],
-        ),
-      ),
+      telefon: tel,
+      isletmeDuzenle: (esnaf) => taksiIsletmeFormunuAc(context, esnaf),
+      temelBilgileri: (_) {
+        final kendi = araclar.cast<Map<String, dynamic>?>().firstWhere(
+          (a) => _ayniTel(a?['soforTel'], _aktifSoforTel),
+          orElse: () => null,
+        );
+        if (kendi == null) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Bu telefona bağlı araç bulunamadı.')));
+          return;
+        }
+        _aracDuzenle(kendi);
+      },
     );
   }
 
   void _aracDuzenle(Map<String, dynamic> arac) {
-    final pController = TextEditingController(text: arac['plaka']);
+    final pController = TextEditingController(text: PlakaGirdisi.yaz('${arac['plaka'] ?? ''}').trimRight());
     final sAdController = TextEditingController(text: arac['soforAd']);
     final sTelController = TextEditingController(text: arac['soforTel']);
     
@@ -386,12 +456,13 @@ class _TaksiDurakTakipEkraniState extends State<TaksiDurakTakipEkrani> {
               children: [
                 TextField(
                   controller: pController, 
-                  decoration: const InputDecoration(labelText: "Plaka"), 
+                  decoration: const InputDecoration(labelText: "Plaka", hintText: PlakaGirdisi.ornek), 
                   textCapitalization: TextCapitalization.characters,
+                  inputFormatters: PlakaGirdisi.bicim,
                   enabled: true, 
                 ),
                 TextField(controller: sAdController, decoration: const InputDecoration(labelText: "Ad Soyad")),
-                TextField(controller: sTelController, decoration: const InputDecoration(labelText: "Telefon"), keyboardType: TextInputType.phone),
+                TextField(controller: sTelController, decoration: const InputDecoration(labelText: "Telefon", hintText: "05xx xxx xx xx"), keyboardType: TextInputType.phone, inputFormatters: TelefonGirdisi.bicim),
               ],
             ),
           ),
@@ -402,25 +473,63 @@ class _TaksiDurakTakipEkraniState extends State<TaksiDurakTakipEkrani> {
             ),
             ElevatedButton(
               onPressed: () async {
-                String yeniPlaka = pController.text.trim().toUpperCase();
-                String yeniAd = sAdController.text.trim();
-                String yeniTel = sTelController.text.trim();
+                final yeniPlaka = pController.text.trim().toUpperCase();
+                final yeniAd = sAdController.text.trim();
+                final yeniTel = sTelController.text.trim();
+                final eskiPlaka = (arac['plaka'] ?? '').toString().trim().toUpperCase();
+                final eskiTel = (arac['soforTel'] ?? '').toString().trim();
 
+                if (yeniPlaka.isEmpty || yeniAd.isEmpty || !TelefonGirdisi.gecerli(yeniTel)) {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    SnackBar(content: Text(yeniPlaka.isEmpty || yeniAd.isEmpty
+                        ? "Plaka, ad ve telefon boş bırakılamaz."
+                        : (TelefonGirdisi.hata(yeniTel) ?? "Geçerli bir telefon yazın."))),
+                  );
+                  return;
+                }
+                final temizTel = TelefonGirdisi.rakamlar(yeniTel);
+                final plakaBaskasinda = araclar.any((a) => !identical(a, arac) && (a['plaka'] ?? '').toString().trim().toUpperCase() == yeniPlaka);
+                final telBaskasinda = araclar.any((a) => !identical(a, arac) && _ayniTel(a['soforTel'], temizTel));
+                if (plakaBaskasinda || telBaskasinda) {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    const SnackBar(content: Text("Bu plaka veya telefon durakta başka bir araçta kayıtlı.")),
+                  );
+                  return;
+                }
+
+                try {
+                  await FirestoreServisi().soforKimliginiYay(
+                    esnafId: widget.esnaf.id,
+                    eskiTel: eskiTel,
+                    yeniTel: temizTel,
+                    eskiPlaka: eskiPlaka,
+                    yeniPlaka: yeniPlaka,
+                    yeniAd: yeniAd,
+                  );
+                } catch (e) {
+                  if (!dialogContext.mounted) return;
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    SnackBar(content: Text("Güncellenemedi: $e")),
+                  );
+                  return;
+                }
+
+                if (!mounted) return;
                 setState(() {
                   arac['plaka'] = yeniPlaka;
                   arac['soforAd'] = yeniAd;
-                  arac['soforTel'] = yeniTel;
+                  arac['soforTel'] = temizTel;
+                  if (_ayniTel(_aktifSoforTel, eskiTel)) {
+                    _aktifSoforTel = temizTel;
+                  }
                 });
-
+                if (!_ayniTel(temizTel, eskiTel)) _kendiProfiliDinle();
                 await _kaydet();
+                if (temizTel != TelefonGirdisi.rakamlar(eskiTel)) {
+                  await BildirimServisi.tokenKaydet(temizTel, role: 'esnaf');
+                }
 
-                await FirestoreServisi().kullaniciProfiliniGuncelle(yeniTel, {
-                  'plaka': yeniPlaka,
-                  'adSoyad': yeniAd,
-                });
-
-                if (!mounted) return;
-                // ignore: use_build_context_synchronously
+                if (!dialogContext.mounted) return;
                 Navigator.pop(dialogContext);
               },
               child: const Text("Güncelle"),
@@ -429,6 +538,43 @@ class _TaksiDurakTakipEkraniState extends State<TaksiDurakTakipEkrani> {
         ),
       ),
     );
+  }
+
+  Widget _cizelgesizUst(List<Map<String, dynamic>> eksikler) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.orange.shade50,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.orange.shade300),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Nöbet çizelgesi yok', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 6),
+            for (final a in eksikler)
+              Text(
+                _cizelgesizSatir(a),
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            const SizedBox(height: 6),
+            const Text('Çizelgeye yazınca bu listeye gelir.'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _cizelgesizSatir(Map<String, dynamic> arac) {
+    final ad = (arac['soforAd'] ?? '').toString().trim();
+    final plaka = (arac['plaka'] ?? '').toString().trim();
+    if (ad.isEmpty) return plaka.isEmpty ? 'İsimsiz' : plaka;
+    if (plaka.isEmpty) return ad;
+    return '$ad · $plaka';
   }
 
   Widget _durumRozeti(String text, Color renk) {
@@ -441,40 +587,102 @@ class _TaksiDurakTakipEkraniState extends State<TaksiDurakTakipEkrani> {
 
   @override
   Widget build(BuildContext context) {
+    final gorunen = <int>[
+      for (var i = 0; i < araclar.length; i++)
+        if (_cizelgede(araclar[i])) i,
+    ];
+    final cizelgesiz = araclar.where((a) => !_cizelgede(a)).toList();
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
       appBar: AppBar(
         title: const Text("Canlı Durak Takip", style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: Colors.white, foregroundColor: Colors.black, elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.swap_horiz_rounded, color: Colors.blue),
+          tooltip: "Mod Değiştir",
+          onPressed: () {
+            YuzerMikrofon.hepsiniKapat();
+            final girisTel = widget.soforTel ?? widget.esnaf.telefon;
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (c) => TaksiModSecimEkrani(esnaf: widget.esnaf, girisTel: girisTel),
+              ),
+            );
+          },
+        ),
         actions: [
           if (widget.soforTel != null)
-            IconButton(
-              icon: const Icon(Icons.account_circle, size: 28, color: Colors.indigo),
-              onPressed: () => _profilGoster(),
-              tooltip: "Profilim",
+            SallananProfilIkonu(
+              salla: _profilEksik,
+              tooltip: 'Profilim',
+              onPressed: _profilGoster,
             ),
           const SizedBox(width: 48), // global ? için yer
         ],
       ),
       body: CustomScrollView(
         slivers: [
-          if (araclar.isEmpty)
+          if (!_ajandaGeldi)
             const SliverFillRemaining(
-              child: Center(child: Text("Henüz kayıtlı araç bulunmuyor.", style: TextStyle(color: Colors.grey))),
+              hasScrollBody: false,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 12),
+                  Text('Nöbet çizelgesi yükleniyor'),
+                ],
+              ),
             )
-          else
+          else ...[
+            if (_sahteKonum)
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(16, 16, 16, 0),
+                  child: Text(
+                    'Sahte konum açık. Sıra ve yolcu bu noktaya güvenmesin.',
+                    style: TextStyle(color: Colors.red, fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                child: TaksiYolculukKarti(
+                  esnafId: widget.esnaf.id,
+                  soforTel: _aktifSoforTel,
+                  plaka: (_kendiKayit?['plaka'] ?? '').toString(),
+                  konumGonder: _aktifSoforTel != null,
+                ),
+              ),
+            ),
+            if (cizelgesiz.isNotEmpty)
+              SliverToBoxAdapter(child: _cizelgesizUst(cizelgesiz)),
+            if (gorunen.isEmpty && cizelgesiz.isEmpty)
+              const SliverFillRemaining(
+                child: Center(
+                  child: Text(
+                    "Henüz kayıtlı araç bulunmuyor.",
+                    style: TextStyle(color: Colors.grey),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              )
+            else if (gorunen.isNotEmpty)
             SliverPadding(
               padding: const EdgeInsets.all(16),
               sliver: SliverList(
                 delegate: SliverChildBuilderDelegate(
-                  (context, idx) {
+                  (context, gosterim) {
+                    final idx = gorunen[gosterim];
                     var arac = araclar[idx];
                     String plaka = arac['plaka'] ?? "";
                     bool durakta = arac['durakta'] ?? false;
                     String durum = arac['durum'] ?? 'Müsait';
                     String durumEtiketi = _getDurumEtiketi(arac);
                     bool isNobetci = durumEtiketi == "NÖBETÇİ";
-                    bool kendiAraci = widget.soforTel != null && arac['soforTel'] == widget.soforTel;
+                    bool kendiAraci = _ayniTel(arac['soforTel'], _aktifSoforTel);
 
                     if (durumEtiketi == "İSTİRAHAT") durum = 'İstirahatte';
 
@@ -493,7 +701,7 @@ class _TaksiDurakTakipEkraniState extends State<TaksiDurakTakipEkrani> {
 
                     int siraNo = 0;
                     if (durakta) {
-                      var duraktakiler = araclar.where((a) => a['durakta'] == true).toList();
+                      var duraktakiler = araclar.where((a) => a['durakta'] == true && _cizelgede(a)).toList();
                       siraNo = duraktakiler.indexOf(arac) + 1;
                     }
 
@@ -579,6 +787,8 @@ class _TaksiDurakTakipEkraniState extends State<TaksiDurakTakipEkrani> {
                                     children: [
                                       _durumRozeti(durum, durumRengi),
                                       if (durakta) _durumRozeti(siraNo == 1 ? "SIRADAKİ" : "$siraNo. SIRA", Colors.blue),
+                                      if ((_sahteKonum && kendiAraci) || _sahtePlakalar.contains(plaka))
+                                        _durumRozeti('SAHTE KONUM', Colors.red),
                                       if (durumEtiketi.isNotEmpty && !(durum == 'İstirahatte' && durumEtiketi == 'İSTİRAHAT'))
                                          _durumRozeti(durumEtiketi, durumEtiketi == "NÖBETÇİ" ? Colors.orange.shade800 : Colors.red),
                                     ],
@@ -597,7 +807,7 @@ class _TaksiDurakTakipEkraniState extends State<TaksiDurakTakipEkrani> {
                                   icon: const Icon(Icons.more_vert),
                                   onSelected: (val) async {
                                     if (val == 'DOGRULAMA') {
-                                      Navigator.push(context, MaterialPageRoute(builder: (c) => TaksiSurucuDogrulamaEkrani(esnaf: widget.esnaf)));
+                                      Navigator.push(context, MaterialPageRoute(builder: (c) => TaksiSurucuDogrulamaEkrani(esnaf: widget.esnaf, soforTel: _aktifSoforTel)));
                                       return;
                                     }
                                     setState(() {
@@ -634,10 +844,11 @@ class _TaksiDurakTakipEkraniState extends State<TaksiDurakTakipEkrani> {
                       ),
                     );
                   },
-                  childCount: araclar.length,
+                  childCount: gorunen.length,
                 ),
               ),
             ),
+          ],
         ],
       ),
     );

@@ -23,3 +23,17 @@ Copy-Item `
   "lib\ekranlar\arac_kiralama\yedek\randevu_ekrani_arac_kiralama_kodlu_yedek_20260924.dart.bak" `
   "lib\ekranlar\randevu_ekrani.dart" -Force
 ```
+
+## Hızlı Kurulum öncesi
+
+**Tarih:** 2026-10-06
+
+Araç kiralama paneline ayrı Hızlı Kurulum eklenmeden önceki `arac_kiralama_esnaf_paneli.dart` kopyası.
+
+`arac_kiralama_esnaf_paneli_hizli_kurulum_oncesi_20261006.dart.bak`
+
+```powershell
+Copy-Item `
+  "lib\ekranlar\arac_kiralama\yedek\arac_kiralama_esnaf_paneli_hizli_kurulum_oncesi_20261006.dart.bak" `
+  "lib\ekranlar\arac_kiralama\arac_kiralama_esnaf_paneli.dart" -Force
+```

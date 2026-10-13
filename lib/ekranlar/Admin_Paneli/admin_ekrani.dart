@@ -6,6 +6,10 @@ import 'dart:io';
 import '../../modeller/esnaf_modeli.dart';
 import '../../servisler/firestore_servisi.dart';
 import '../../servisler/konum_servisi.dart';
+import '../../servisler/taksi/taksi_guven.dart';
+import '../../yardimcilar/kategori_gorseli.dart';
+import '../../yardimcilar/telefon_girdisi.dart';
+import '../../widgets/isletme_basvuru_alanlari.dart';
 
 class AdminEkrani extends StatefulWidget {
   const AdminEkrani({super.key});
@@ -35,6 +39,34 @@ class _AdminEkraniState extends State<AdminEkrani> {
 
   String? _duzenlenenKategoriId;
   String? _duzenlenenKategoriAd;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _isletmeBildirimi());
+  }
+
+  Future<void> _isletmeBildirimi() async {
+    final bekleyen = await _firestoreServisi.esnafBasvurulariDinle().first;
+    final vergiler = await _firestoreServisi.vergiGuncellemeleriDinle().first;
+    if (!mounted || (bekleyen.isEmpty && vergiler.isEmpty)) return;
+    final parcilar = <String>[
+      if (bekleyen.isNotEmpty) '${bekleyen.length} işletme başvurusu',
+      if (vergiler.isNotEmpty) '${vergiler.length} vergi güncellemesi',
+    ];
+    final incele = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('İşletme bildirimi var'),
+        content: Text('${parcilar.join(' ve ')} onay bekliyor. Vergi numarasını ve levhayı inceleyin.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Sonra')),
+          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('İncele')),
+        ],
+      ),
+    );
+    if (incele == true && mounted) _isletmeBasvurulariPanel();
+  }
 
   @override
   void dispose() {
@@ -420,8 +452,27 @@ class _AdminEkraniState extends State<AdminEkrani> {
                       const SizedBox(height: 20),
                       TextField(
                         controller: _kategoriAdController,
+                        onChanged: (_) => setModalState(() {}),
                         decoration: const InputDecoration(labelText: "Kategori Adı (Örn: Berber)", border: OutlineInputBorder()),
                       ),
+                      if (_kategoriAdController.text.trim().isNotEmpty) ...[
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Icon(
+                              KategoriGorseli.ikon(_kategoriAdController.text),
+                              color: KategoriGorseli.renk(_kategoriAdController.text),
+                            ),
+                            const SizedBox(width: 8),
+                            const Expanded(
+                              child: Text(
+                                'İkon ada göre seçildi. Ekle deyince kaydolur.',
+                                style: TextStyle(fontSize: 13, color: Colors.black54),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                       const SizedBox(height: 15),
                       Row(
                         children: [
@@ -442,17 +493,17 @@ class _AdminEkraniState extends State<AdminEkrani> {
                             child: ElevatedButton(
                               onPressed: () async {
                                 if (_kategoriAdController.text.isNotEmpty) {
+                                  final ikonKod = KategoriGorseli.ikon(_kategoriAdController.text).codePoint;
+                                  final renkKod = KategoriGorseli.renk(_kategoriAdController.text).toARGB32();
                                   if (_duzenlenenKategoriId == null) {
-                                    // Yeni eklenirken isme göre varsayılan ikonu ve rengi ata ve kalıcı olarak kaydet
-                                    int ikonKod = _kategoriIkonuGetir(_kategoriAdController.text).codePoint;
-                                    int renkKod = _kategoriRengiGetir(_kategoriAdController.text).toARGB32();
                                     await _firestoreServisi.kategoriEkle(_kategoriAdController.text, ikon: ikonKod, renk: renkKod);
                                   } else {
-                                    // Güncellenirken isim değiştiyse alt belgeleri de güncelleyecek
                                     await _firestoreServisi.kategoriGuncelle(
                                         _duzenlenenKategoriId!,
                                         _kategoriAdController.text,
-                                        eskiAd: _duzenlenenKategoriAd
+                                        eskiAd: _duzenlenenKategoriAd,
+                                        ikon: ikonKod,
+                                        renk: renkKod,
                                     );
                                   }
                                   if (!context.mounted) return;
@@ -651,7 +702,7 @@ class _AdminEkraniState extends State<AdminEkrani> {
                       const SizedBox(height: 10),
                       TextField(controller: _adController, decoration: const InputDecoration(labelText: "İşletme Adı", isDense: true, border: OutlineInputBorder())),
                       const SizedBox(height: 10),
-                      TextField(controller: _telController, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: "Telefon", isDense: true, border: OutlineInputBorder())),
+                      TextField(controller: _telController, keyboardType: TextInputType.phone, inputFormatters: TelefonGirdisi.bicim, decoration: const InputDecoration(labelText: "Telefon", hintText: "05xx xxx xx xx", isDense: true, border: OutlineInputBorder())),
                       const SizedBox(height: 10),
                       Row(children: [
                         Expanded(child: TextField(controller: _ilController, decoration: const InputDecoration(labelText: "İl", isDense: true, border: OutlineInputBorder()))),
@@ -683,11 +734,16 @@ class _AdminEkraniState extends State<AdminEkrani> {
 
                       ElevatedButton(
                         onPressed: () async {
+                          final telefonMesaji = TelefonGirdisi.hata(_telController.text);
+                          if (telefonMesaji != null) {
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(telefonMesaji)));
+                            return;
+                          }
                           EsnafModeli guncelEsnaf = EsnafModeli(
                             id: esnaf?.id ?? '',
                             isletmeAdi: _adController.text,
                             kategori: _secilenKategori,
-                            telefon: _telController.text,
+                            telefon: TelefonGirdisi.rakamlar(_telController.text),
                             email: 'esnaf_test@mail.com',
                             il: _ilController.text,
                             ilce: _ilceController.text,
@@ -696,6 +752,7 @@ class _AdminEkraniState extends State<AdminEkrani> {
                               double.tryParse(_latController.text) ?? 0.0,
                               double.tryParse(_lonController.text) ?? 0.0,
                             ),
+                            yapayZekaAktif: esnaf?.yapayZekaAktif ?? false,
                           );
 
                           try {
@@ -763,13 +820,12 @@ class _AdminEkraniState extends State<AdminEkrani> {
                   final bekleyenler = <Map<String, dynamic>>[];
                   for (var user in snapshot.data!) {
                     final belgeler = user['belgeler'] as Map<String, dynamic>?;
-                    if (belgeler != null) {
-                      bool pending = false;
-                      belgeler.forEach((key, value) {
-                        if (value['status'] == 'Bekliyor') pending = true;
-                      });
-                      if (pending) bekleyenler.add(user);
-                    }
+                    if (belgeler == null) continue;
+                    final durakta = belgeler.entries.any((e) =>
+                        !taksiZorunluBelgeler.contains(e.key) &&
+                        e.value is Map &&
+                        e.value['status'] == 'Bekliyor');
+                    if (durakta) bekleyenler.add(user);
                   }
 
                   if (bekleyenler.isEmpty) return const Center(child: Text("Onay bekleyen belge bulunamadı."));
@@ -779,7 +835,10 @@ class _AdminEkraniState extends State<AdminEkrani> {
                     itemBuilder: (context, index) {
                       final user = bekleyenler[index];
                       final belgeler = user['belgeler'] as Map<String, dynamic>;
-                      final pendingList = belgeler.entries.where((e) => e.value['status'] == 'Bekliyor').toList();
+                      final pendingList = belgeler.entries.where((e) =>
+                          !taksiZorunluBelgeler.contains(e.key) &&
+                          e.value is Map &&
+                          e.value['status'] == 'Bekliyor').toList();
 
                       return ExpansionTile(
                         title: Text("${user['adSoyad'] ?? user['ad'] ?? 'İsimsiz'} (${user['tel']})"),
@@ -850,34 +909,387 @@ class _AdminEkraniState extends State<AdminEkrani> {
   void _belgeGoruntule(String url, String baslik) {
     showDialog(
       context: context,
+      builder: (ctx) {
+        final Widget gorsel;
+        if (url.startsWith('http')) {
+          gorsel = Image.network(
+            url,
+            fit: BoxFit.contain,
+            errorBuilder: (c, e, s) => const Icon(Icons.broken_image, size: 100),
+          );
+        } else if (kIsWeb) {
+          gorsel = const Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.computer, color: Colors.blue, size: 50),
+              SizedBox(height: 10),
+              Text("Web tarayıcıda yerel dosya önizleme kısıtlıdır. Lütfen mobil cihazdan kontrol edin.", textAlign: TextAlign.center),
+            ],
+          );
+        } else if (File(url).existsSync()) {
+          gorsel = Image.file(File(url), fit: BoxFit.contain);
+        } else {
+          gorsel = const Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 50),
+              SizedBox(height: 10),
+              Text("Görsel yerel cihazda bulunamadı.", textAlign: TextAlign.center),
+            ],
+          );
+        }
+        final bosluk = MediaQuery.sizeOf(ctx).height - 240;
+        final yukseklik = bosluk.clamp(220.0, 560.0);
+        return AlertDialog(
+          title: Text(baslik),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: yukseklik,
+            child: InteractiveViewer(
+              minScale: 1,
+              maxScale: 4,
+              child: gorsel,
+            ),
+          ),
+          actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Kapat"))],
+        );
+      },
+    );
+  }
+
+  void _isletmeBasvurulariPanel() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => DefaultTabController(
+        length: 3,
+        child: Container(
+          height: MediaQuery.of(sheetContext).size.height * 0.85,
+          decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
+          child: Column(
+            children: [
+              Container(margin: const EdgeInsets.only(top: 10), width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10))),
+              const Padding(
+                padding: EdgeInsets.fromLTRB(20, 16, 20, 8),
+                child: Text('İşletme başvuruları', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.indigo)),
+              ),
+              const TabBar(
+                labelColor: Colors.indigo,
+                unselectedLabelColor: Colors.grey,
+                indicatorColor: Colors.indigo,
+                tabs: [
+                  Tab(text: 'Bekleyen'),
+                  Tab(text: 'Onaylanan'),
+                  Tab(text: 'İptal/Red'),
+                ],
+              ),
+              Expanded(
+                child: StreamBuilder<List<Map<String, dynamic>>>(
+                  stream: _firestoreServisi.esnafBasvurulariTumunuDinle(),
+                  builder: (context, snapshot) {
+                    if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+                    final liste = snapshot.data!;
+                    List<Map<String, dynamic>> sec(String durum) =>
+                        liste.where((b) => b['durum']?.toString() == durum).toList();
+                    return TabBarView(
+                      children: [
+                        Column(
+                          children: [
+                            StreamBuilder<List<Map<String, dynamic>>>(
+                              stream: _firestoreServisi.vergiGuncellemeleriDinle(),
+                              builder: (context, vergiSnap) {
+                                final vergiler = vergiSnap.data ?? const <Map<String, dynamic>>[];
+                                if (vergiler.isEmpty) return const SizedBox.shrink();
+                                return Column(
+                                  children: [
+                                    const Padding(
+                                      padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
+                                      child: Align(
+                                        alignment: Alignment.centerLeft,
+                                        child: Text('Vergi güncellemesi', style: TextStyle(fontWeight: FontWeight.bold)),
+                                      ),
+                                    ),
+                                    ...vergiler.map(_vergiGuncellemeSatiri),
+                                    const Divider(),
+                                  ],
+                                );
+                              },
+                            ),
+                            Expanded(child: _basvuruListesi(sheetContext, sec('Bekliyor'), 'Onay bekleyen başvuru yok.', aksiyon: true)),
+                          ],
+                        ),
+                        _basvuruListesi(sheetContext, sec('Onaylandı'), 'Onaylanan başvuru yok.'),
+                        _basvuruListesi(
+                          sheetContext,
+                          liste.where((b) => b['durum']?.toString() == 'Reddedildi' || b['durum']?.toString() == 'İptal').toList(),
+                          'İptal veya red yok.',
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _basvuruListesi(BuildContext sheetContext, List<Map<String, dynamic>> liste, String bos, {bool aksiyon = false}) {
+    if (liste.isEmpty) return Center(child: Text(bos));
+    return ListView.builder(
+      itemCount: liste.length,
+      itemBuilder: (context, index) {
+        final b = liste[index];
+        final adresSatir = [
+          b['ilce'],
+          b['il'],
+          b['adres'],
+        ].where((e) => (e ?? '').toString().trim().isNotEmpty).join(' · ');
+        final vergiNo = (b['vergiNo'] ?? '').toString().trim();
+        final tur = (b['isletmeTuru'] ?? '').toString().trim();
+        final not = (b['redNotu'] ?? '').toString().trim();
+        return ListTile(
+          onTap: () => _basvuruEvrak(b),
+          title: Text((b['isletmeAdi'] ?? '').toString(), style: const TextStyle(fontWeight: FontWeight.bold)),
+          subtitle: Text(
+            '${b['adSoyad'] ?? ''} · ${b['telefon'] ?? ''}\n${b['kategori'] ?? ''}${tur.isEmpty ? '' : ' · ${isletmeTuruYazisi(tur)}'} · VKN: ${vergiNo.isEmpty ? 'yok' : vergiNo}${adresSatir.isEmpty ? '' : '\n$adresSatir'}${not.isEmpty ? '' : '\nNot: $not'}\nAyrıntı ve levha için dokunun',
+          ),
+          isThreeLine: true,
+          trailing: aksiyon
+              ? Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      tooltip: 'Onayla',
+                      icon: const Icon(Icons.check_circle, color: Colors.green),
+                      onPressed: () async {
+                        final mesaj = await _firestoreServisi.esnafBasvurusuOnayla((b['id'] ?? '').toString());
+                        if (!sheetContext.mounted) return;
+                        ScaffoldMessenger.of(sheetContext).showSnackBar(SnackBar(
+                          content: Text(mesaj ?? 'İşletme kaydı açıldı. Aynı telefonla girişte yönetici kapısı çıkar.'),
+                          backgroundColor: mesaj == null ? Colors.green : Colors.orange,
+                        ));
+                      },
+                    ),
+                    IconButton(
+                      tooltip: 'Reddet',
+                      icon: const Icon(Icons.cancel, color: Colors.red),
+                      onPressed: () => _basvuruReddet(sheetContext, (b['id'] ?? '').toString(), (b['isletmeAdi'] ?? '').toString()),
+                    ),
+                  ],
+                )
+              : null,
+        );
+      },
+    );
+  }
+
+  Widget _vergiGuncellemeSatiri(Map<String, dynamic> esnaf) {
+    final g = esnaf['vergiGuncelleme'];
+    final yeniTur = g is Map ? (g['isletmeTuru'] ?? '').toString() : '';
+    final yeniNo = g is Map ? (g['vergiNo'] ?? '').toString() : '';
+    final yeniUrl = g is Map ? (g['vergiLevhaUrl'] ?? '').toString() : '';
+    final eskiTur = (esnaf['isletmeTuru'] ?? '').toString();
+    final eskiNo = (esnaf['vergiNo'] ?? '').toString();
+    final eskiUrl = (esnaf['vergiLevhaUrl'] ?? '').toString();
+    final ad = (esnaf['isletmeAdi'] ?? 'İşletme').toString();
+    String etiket(String tur) => tur == 'Şirket' ? 'VKN' : 'T.C.';
+    return ListTile(
+      onTap: () => _vergiKarsilastir(ad, eskiTur, eskiNo, eskiUrl, yeniTur, yeniNo, yeniUrl),
+      title: Text(ad, style: const TextStyle(fontWeight: FontWeight.bold)),
+      subtitle: Text('Kayıtlı ${etiket(eskiTur)}: ${eskiNo.isEmpty ? 'yok' : eskiNo}\nYeni ${etiket(yeniTur)}: ${yeniNo.isEmpty ? 'yok' : yeniNo}'),
+      isThreeLine: true,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            tooltip: 'Onayla',
+            icon: const Icon(Icons.check_circle, color: Colors.green),
+            onPressed: () async {
+              final mesaj = await _firestoreServisi.vergiGuncellemesiniOnayla((esnaf['id'] ?? '').toString());
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text(mesaj ?? 'Vergi bilgisi güncellendi.'),
+                backgroundColor: mesaj == null ? Colors.green : Colors.orange,
+              ));
+            },
+          ),
+          IconButton(
+            tooltip: 'Reddet',
+            icon: const Icon(Icons.cancel, color: Colors.red),
+            onPressed: () => _vergiReddet((esnaf['id'] ?? '').toString(), ad),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _vergiKarsilastir(String ad, String eskiTur, String eskiNo, String eskiUrl, String yeniTur, String yeniNo, String yeniUrl) {
+    String satir(String baslik, String tur, String no) {
+      final alan = tur == 'Şirket' ? 'Vergi Kimlik No (VKN)' : 'T.C. Kimlik No';
+      return '$baslik: ${tur.isEmpty ? 'tür yok' : isletmeTuruYazisi(tur)} · $alan: ${no.isEmpty ? 'yok' : no}';
+    }
+    showDialog(
+      context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(baslik),
+        title: Text(ad),
         content: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (url.startsWith('http'))
-              Image.network(url, errorBuilder: (c, e, s) => const Icon(Icons.broken_image, size: 100))
-            else if (kIsWeb)
-              const Column(
-                children: [
-                  Icon(Icons.computer, color: Colors.blue, size: 50),
-                  SizedBox(height: 10),
-                  Text("Web tarayıcıda yerel dosya önizleme kısıtlıdır. Lütfen mobil cihazdan kontrol edin.", textAlign: TextAlign.center),
-                ],
-              )
-            else if (File(url).existsSync())
-              Image.file(File(url), height: 300, fit: BoxFit.contain)
-            else
-              const Column(
-                children: [
-                  Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 50),
-                  SizedBox(height: 10),
-                  Text("Görsel yerel cihazda bulunamadı.", textAlign: TextAlign.center),
-                ],
+            Text(satir('Kayıtlı', eskiTur, eskiNo)),
+            const SizedBox(height: 8),
+            Text(satir('Yeni', yeniTur, yeniNo)),
+            if (eskiUrl.isNotEmpty)
+              TextButton.icon(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  _belgeGoruntule(eskiUrl, 'Kayıtlı vergi levhası');
+                },
+                icon: const Icon(Icons.image_outlined),
+                label: const Text('Kayıtlı levhayı aç'),
+              ),
+            if (yeniUrl.isNotEmpty)
+              TextButton.icon(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  _belgeGoruntule(yeniUrl, 'Yeni vergi levhası');
+                },
+                icon: const Icon(Icons.image_outlined),
+                label: const Text('Yeni levhayı aç'),
               ),
           ],
         ),
-        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Kapat"))],
+        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Kapat'))],
+      ),
+    );
+  }
+
+  void _vergiReddet(String esnafId, String ad) {
+    final notController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('$ad vergi güncellemesi reddedilsin mi?'),
+        content: TextField(
+          controller: notController,
+          maxLines: 2,
+          decoration: const InputDecoration(
+            labelText: 'Not (opsiyonel)',
+            hintText: 'Kayıtlı levha değişmez',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Vazgeç')),
+          TextButton(
+            onPressed: () async {
+              await _firestoreServisi.vergiGuncellemesiniReddet(esnafId, notController.text);
+              if (!dialogContext.mounted) return;
+              Navigator.pop(dialogContext);
+            },
+            child: const Text('Reddet', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _basvuruEvrak(Map<String, dynamic> b) {
+    String al(String anahtar) => (b[anahtar] ?? '').toString().trim();
+    final adres = [al('adres'), al('ilce'), al('il')].where((e) => e.isNotEmpty).join(', ');
+    final olanak = b['olanaklar'] is List ? (b['olanaklar'] as List).map((e) => e.toString()).where((e) => e.isNotEmpty).join(', ') : '';
+    final satirlar = <String>[
+      if (al('isletmeTuru').isNotEmpty) 'Tür: ${isletmeTuruYazisi(al('isletmeTuru'))}',
+      'Yetkili: ${al('adSoyad').isEmpty ? 'yok' : al('adSoyad')}',
+      'Telefon: ${al('telefon')}',
+      'E-posta: ${al('email').isEmpty ? 'yok' : al('email')}',
+      'Vergi Kimlik No (VKN): ${al('vergiNo').isEmpty ? 'yok' : al('vergiNo')}',
+      if (adres.isNotEmpty) adres,
+      'Mesai: ${al('acilis').isEmpty ? '—' : al('acilis')} – ${al('kapanis').isEmpty ? '—' : al('kapanis')}',
+      'Kapalı gün: ${al('kapaliGun').isEmpty ? 'yok' : al('kapaliGun')}',
+      if (al('sabitTel').isNotEmpty) 'Sabit: ${al('sabitTel')}',
+      if (al('web').isNotEmpty) 'Web: ${al('web')}',
+      if (al('instagram').isNotEmpty) 'Instagram: ${al('instagram')}',
+      if (al('mersisNo').isNotEmpty) 'MERSİS: ${al('mersisNo')}',
+      if (al('ticaretSicilNo').isNotEmpty) 'Ticaret sicil: ${al('ticaretSicilNo')}',
+      if (olanak.isNotEmpty) 'Olanak: $olanak',
+      if (al('tanitim').isNotEmpty) al('tanitim'),
+    ];
+    final url = al('vergiLevhaUrl');
+    final logo = al('logoUrl');
+    final no = al('vergiNo');
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text((b['isletmeAdi'] ?? 'Başvuru').toString()),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ...satirlar.map((s) => Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Text(s),
+                  )),
+              const SizedBox(height: 8),
+              if (url.isEmpty)
+                const Text('Vergi levhası yok. Reddedip yeniden isteyebilirsiniz.')
+              else
+                TextButton.icon(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    _belgeGoruntule(url, 'Vergi levhası · ${no.isEmpty ? 'numara yok' : no}');
+                  },
+                  icon: const Icon(Icons.image_outlined),
+                  label: const Text('Vergi levhasını aç'),
+                ),
+              if (logo.isNotEmpty)
+                TextButton.icon(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    _belgeGoruntule(logo, 'Logo');
+                  },
+                  icon: const Icon(Icons.storefront_outlined),
+                  label: const Text('Logoyu aç'),
+                ),
+            ],
+          ),
+        ),
+        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Kapat'))],
+      ),
+    );
+  }
+
+  void _basvuruReddet(BuildContext sheetContext, String id, String ad) {
+    final notController = TextEditingController();
+    showDialog(
+      context: sheetContext,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('$ad reddedilsin mi?'),
+        content: TextField(
+          controller: notController,
+          maxLines: 2,
+          decoration: const InputDecoration(
+            labelText: 'Not (opsiyonel)',
+            hintText: 'Kişi başvuruyu yenileyebilir',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Vazgeç')),
+          TextButton(
+            onPressed: () async {
+              await _firestoreServisi.esnafBasvurusuReddet(id, notController.text);
+              if (!dialogContext.mounted) return;
+              Navigator.pop(dialogContext);
+            },
+            child: const Text('Reddet', style: TextStyle(color: Colors.red)),
+          ),
+        ],
       ),
     );
   }
@@ -922,6 +1334,24 @@ class _AdminEkraniState extends State<AdminEkrani> {
                   _adminButonUst(Icons.category, 'Kategoriler', Colors.green, () => _kategoriYonetimiFormu()),
                   const SizedBox(width: 8),
                   _adminButonUst(Icons.add_business, 'Esnaf Ekle', Colors.blue, () => _esnafFormu()),
+                  const SizedBox(width: 8),
+                  StreamBuilder<List<Map<String, dynamic>>>(
+                    stream: _firestoreServisi.esnafBasvurulariDinle(),
+                    builder: (context, snap) {
+                      return StreamBuilder<List<Map<String, dynamic>>>(
+                        stream: _firestoreServisi.vergiGuncellemeleriDinle(),
+                        builder: (context, vergiSnap) {
+                          final n = (snap.data?.length ?? 0) + (vergiSnap.data?.length ?? 0);
+                          return _adminButonUst(
+                            Icons.store_mall_directory_outlined,
+                            n > 0 ? 'İşletme\nBaşvurusu ($n)' : 'İşletme\nBaşvurusu',
+                            Colors.indigo,
+                            () => _isletmeBasvurulariPanel(),
+                          );
+                        },
+                      );
+                    },
+                  ),
                   const SizedBox(width: 8),
                   _adminButonUst(Icons.block, 'Randevu İptal\nNedenleri', Colors.orange, () => _iptalNedenleriYonetimi()),
                   const SizedBox(width: 8),
@@ -982,13 +1412,23 @@ class _AdminEkraniState extends State<AdminEkrani> {
                                     margin: const EdgeInsets.symmetric(horizontal: 15, vertical: 5),
                                     elevation: 0.5,
                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: BorderSide(color: Colors.grey.shade200)),
-                                    child: ListTile(
-                                      title: Text(esnaf.isletmeAdi, style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
-                                      subtitle: Text("Tel: ${esnaf.telefon}\nAdres: ${esnaf.adres}"),
-                                      trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                                        IconButton(icon: const Icon(Icons.edit, color: Colors.orange, size: 20), onPressed: () => _esnafFormu(esnaf: esnaf)),
-                                        IconButton(icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20), onPressed: () => _confirmDelete(esnaf)),
-                                      ]),
+                                    child: Column(
+                                      children: [
+                                        ListTile(
+                                          title: Text(esnaf.isletmeAdi, style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
+                                          subtitle: Text("Tel: ${esnaf.telefon}\nAdres: ${esnaf.adres}"),
+                                          trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                                            IconButton(icon: const Icon(Icons.edit, color: Colors.orange, size: 20), onPressed: () => _esnafFormu(esnaf: esnaf)),
+                                            IconButton(icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20), onPressed: () => _confirmDelete(esnaf)),
+                                          ]),
+                                        ),
+                                        SwitchListTile(
+                                          title: const Text('Yapay zeka'),
+                                          subtitle: const Text('Bu işletme kullansın'),
+                                          value: esnaf.yapayZekaAktif,
+                                          onChanged: (v) => _firestoreServisi.esnafGuncelle(esnaf.id, {'yapayZekaAktif': v}),
+                                        ),
+                                      ],
                                     ),
                                   )).toList(),
                                 );
@@ -1032,42 +1472,10 @@ class _AdminEkraniState extends State<AdminEkrani> {
 
   Color _kategoriRengiGetir(String ad, {int? renkKod}) {
     if (renkKod != null) return Color(renkKod);
-    switch (ad.trim()) {
-      case 'Kuaför': return Colors.orange;
-      case 'Taksi': return Colors.amber;
-      case 'Halı Saha': return Colors.green;
-      case 'Oto Yıkama': return Colors.blue;
-      case 'Restoran': return Colors.redAccent;
-      case 'Düğün Salonu': return Colors.purple;
-      case 'Araç Kiralama': return Colors.blueGrey;
-      case 'Diyetisyen': return Colors.lightGreen;
-      case 'Fizyoterapi ve Rehabilitasyon': return Colors.teal;
-      case 'Pet Kuaför': return Colors.brown;
-      case 'Veteriner': return Colors.redAccent;
-      case 'Psikolog': return Colors.indigo;
-      case 'Özel Ders': return Colors.deepOrange;
-      default: return Colors.blueAccent;
-    }
+    return KategoriGorseli.renk(ad);
   }
 
-  IconData _kategoriIkonuGetir(String kat) {
-    switch (kat.trim()) {
-      case 'Kuaför': return Icons.content_cut;
-      case 'Taksi': return Icons.local_taxi;
-      case 'Halı Saha': return Icons.sports_soccer;
-      case 'Oto Yıkama': return Icons.local_car_wash;
-      case 'Restoran': return Icons.restaurant;
-      case 'Düğün Salonu': return Icons.celebration;
-      case 'Araç Kiralama': return Icons.car_rental;
-      case 'Diyetisyen': return Icons.apple;
-      case 'Fizyoterapi ve Rehabilitasyon': return Icons.healing;
-      case 'Pet Kuaför': return Icons.pets;
-      case 'Veteriner': return Icons.pets;
-      case 'Psikolog': return Icons.psychology;
-      case 'Özel Ders': return Icons.school;
-      default: return Icons.business;
-    }
-  }
+  IconData _kategoriIkonuGetir(String kat) => KategoriGorseli.ikon(kat);
 
   Widget _buildKategoriIkonWidget(String ad, {int? ikonKod, double size = 24, Color? color}) {
     if (ikonKod != null) {

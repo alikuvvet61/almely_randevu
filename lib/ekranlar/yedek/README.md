@@ -77,3 +77,22 @@ Copy-Item `
   "lib\ekranlar\yedek\esnaf_randevu_onay_ekrani_taksi_kodlu_yedek_20260923.dart.bak" `
   "lib\ekranlar\esnaf_randevu_onay_ekrani.dart" -Force
 ```
+
+---
+
+## Esnaf paneli yedeği
+
+**Tarih:** 2026-10-02
+
+### Ne yedeklendi?
+`esnaf_paneli.dart` — ortak esnafa Hızlı Kurulum eklenmeden önceki kopya.
+
+### Dosya
+`esnaf_paneli_hizli_kurulum_oncesi_20261002.dart.bak`
+
+### Geri dönüş
+```powershell
+Copy-Item `
+  "lib\ekranlar\yedek\esnaf_paneli_hizli_kurulum_oncesi_20261002.dart.bak" `
+  "lib\ekranlar\esnaf_paneli.dart" -Force
+```

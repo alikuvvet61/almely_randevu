@@ -8,10 +8,12 @@ import 'package:geolocator/geolocator.dart';
 import 'package:almely_randevu/modeller/esnaf_modeli.dart';
 import 'package:almely_randevu/modeller/randevu_modeli.dart';
 import 'package:almely_randevu/servisler/firestore_servisi.dart';
+import 'package:almely_randevu/servisler/bildirim_servisi.dart';
 import 'package:almely_randevu/servisler/konum_servisi.dart';
-import 'package:almely_randevu/servisler/taksi/places_autocomplete.dart';
+import 'package:almely_randevu/servisler/taksi/nereye_arama.dart';
 import 'package:almely_randevu/servisler/taksi/yol_mesafesi.dart';
 import 'package:almely_randevu/widgets/ana_buton.dart';
+import 'package:almely_randevu/yardimcilar/telefon_girdisi.dart';
 import 'package:almely_randevu/widgets/sos_butonu.dart';
 
 class TaksiRandevuEkrani extends StatefulWidget {
@@ -51,7 +53,6 @@ class _TaksiRandevuEkraniState extends State<TaksiRandevuEkrani> {
   List<_NereyeOneri> _nereyeOnerileri = [];
   bool _nereyeAraniyor = false;
   bool _nereyeAramaBittiBos = false;
-  final Map<String, List<_NereyeOneri>> _aramaOnbellegi = {};
 
   double? _guzergahKm;
   int? _guzergahSureDk;
@@ -126,9 +127,9 @@ class _TaksiRandevuEkraniState extends State<TaksiRandevuEkrani> {
       return;
     }
 
-    final cached = _aramaOnbellegi[q.toLowerCase()];
+    final cached = NereyeAramaci.onbellek[q.toLowerCase()];
     if (cached != null && cached.isNotEmpty) {
-      setState(() => _nereyeOnerileri = List.from(cached));
+      setState(() => _nereyeOnerileri = cached.map(_oneriCevir).toList());
     }
 
     _nereyeDebounce = Timer(const Duration(milliseconds: 120), () {
@@ -136,15 +137,8 @@ class _TaksiRandevuEkraniState extends State<TaksiRandevuEkrani> {
     });
   }
 
-  Future<T?> _zamanAsimli<T>(Future<T> future, {int ms = 1400}) async {
-    try {
-      return await future.timeout(Duration(milliseconds: ms));
-    } catch (_) {
-      return null;
-    }
-  }
 
-  /// Otomatik Mevcut Konumu Alır — Taksi Çağır ile aynı adres formatı
+  /// Otomatik Mevcut Konumu Alır — Taksi İstiyorum ile aynı adres formatı
   Future<void> _otomatikMevcutKonumAl() async {
     _konumYukleniyorNotifier.value = true;
     try {
@@ -180,32 +174,6 @@ class _TaksiRandevuEkraniState extends State<TaksiRandevuEkrani> {
     }
   }
 
-  String _normalizeTr(String s) {
-    // Türkçe İ/I önce düzeltilmeli; aksi halde toLowerCase web'de bozuk üretir
-    var t = s
-        .replaceAll('İ', 'i')
-        .replaceAll('I', 'ı')
-        .toLowerCase()
-        .replaceAll('ş', 's')
-        .replaceAll('ğ', 'g')
-        .replaceAll('ü', 'u')
-        .replaceAll('ö', 'o')
-        .replaceAll('ç', 'c');
-    // Birleşik nokta kalıntısı (i̇)
-    t = t.replaceAll('\u0307', '');
-    return t;
-  }
-
-  /// Web'de JSON alanları undefined gelebilir; her zaman güvenli String üret.
-  String _metin(dynamic v) {
-    if (v == null) return '';
-    final s = v.toString().trim();
-    if (s.isEmpty || s == 'null' || s == 'undefined') return '';
-    return s;
-  }
-
-  String _plusCodeTemizle(String name) =>
-      name.replaceAll(RegExp(r'[A-Z0-9]{4,}\+[A-Z0-9]{2,},?\s?'), '').trim();
 
   double get _aramaLat =>
       _mevcutKullaniciKonumu?.latitude ?? widget.esnaf.konum.latitude;
@@ -213,174 +181,6 @@ class _TaksiRandevuEkraniState extends State<TaksiRandevuEkrani> {
   double get _aramaLon =>
       _mevcutKullaniciKonumu?.longitude ?? widget.esnaf.konum.longitude;
 
-  /// İşletme il/ilçesi — sorguya eklenince yerel sonuçlar daha iyi gelir (sabit şehir yok).
-  String get _yerelBag {
-    final parcalar = <String>[
-      widget.esnaf.ilce.trim(),
-      widget.esnaf.il.trim(),
-    ].where((e) => e.isNotEmpty).toList();
-    final tekil = <String>[];
-    for (final p in parcalar) {
-      if (!tekil.any((t) => _normalizeTr(t) == _normalizeTr(p))) tekil.add(p);
-    }
-    return tekil.join(' ');
-  }
-
-  void _oneriEkle(
-    List<_NereyeOneri> hedef,
-    String baslik,
-    String alt, {
-    double? lat,
-    double? lon,
-    String? placeId,
-  }) {
-    baslik = _plusCodeTemizle(baslik);
-    alt = _plusCodeTemizle(alt);
-    if (baslik.isEmpty) return;
-    final etiket = alt.isEmpty ? baslik : '$baslik, $alt';
-    final mevcutIx = hedef.indexWhere(
-      (o) => _normalizeTr(o.etiket) == _normalizeTr(etiket),
-    );
-    final mesafe = (lat != null && lon != null)
-        ? Geolocator.distanceBetween(_aramaLat, _aramaLon, lat, lon) / 1000.0
-        : null;
-
-    if (mevcutIx >= 0) {
-      final eski = hedef[mevcutIx];
-      final yeniDahaIyi = (eski.mesafeKm == null && mesafe != null) ||
-          (eski.mesafeKm != null && mesafe != null && mesafe < eski.mesafeKm!) ||
-          ((eski.placeId == null || eski.placeId!.isEmpty) &&
-              placeId != null &&
-              placeId.isNotEmpty);
-      if (yeniDahaIyi) {
-        hedef[mevcutIx] = _NereyeOneri(
-          baslik: baslik,
-          alt: alt,
-          etiket: etiket,
-          lat: lat ?? eski.lat,
-          lon: lon ?? eski.lon,
-          mesafeKm: mesafe ?? eski.mesafeKm,
-          placeId: (placeId != null && placeId.isNotEmpty) ? placeId : eski.placeId,
-        );
-      }
-      return;
-    }
-    hedef.add(_NereyeOneri(
-      baslik: baslik,
-      alt: alt,
-      etiket: etiket,
-      lat: lat,
-      lon: lon,
-      mesafeKm: mesafe,
-      placeId: placeId,
-    ));
-  }
-
-  /// place_id'li Google sonuçlarına gerçek koordinat + mesafe doldur (sıralama için).
-  Future<void> _placeIdlereKoordinatDoldur(
-    List<_NereyeOneri> sonuclar,
-    int istekNo,
-    void Function() uiGuncelle,
-  ) async {
-    final adaylar = sonuclar
-        .where((o) =>
-            (o.lat == null || o.lon == null) &&
-            o.placeId != null &&
-            o.placeId!.isNotEmpty)
-        .take(8)
-        .toList();
-    if (adaylar.isEmpty) return;
-
-    await Future.wait(adaylar.map((o) async {
-      if (istekNo != _aramaIstekNo) return;
-      final detay = await placeIdKoordinatGetir(
-        o.placeId!,
-        googleApiKey: _googleApiKey,
-      );
-      if (detay == null || istekNo != _aramaIstekNo) return;
-      final dLat = detay['lat'];
-      final dLon = detay['lon'];
-      if (dLat == null || dLon == null) return;
-      final mesafe =
-          Geolocator.distanceBetween(_aramaLat, _aramaLon, dLat, dLon) / 1000.0;
-      final ix = sonuclar.indexWhere((x) => identical(x, o) ||
-          (x.placeId == o.placeId && x.etiket == o.etiket));
-      if (ix < 0) return;
-      sonuclar[ix] = _NereyeOneri(
-        baslik: o.baslik,
-        alt: o.alt,
-        etiket: o.etiket,
-        lat: dLat,
-        lon: dLon,
-        mesafeKm: mesafe,
-        placeId: o.placeId,
-      );
-    }));
-
-    if (istekNo == _aramaIstekNo) uiGuncelle();
-  }
-
-  /// Sorgu kelimelerinin başlıkta/adreste geçme skoru (yüksek = daha ilgili).
-  int _ilgililikSkoru(String sorgu, _NereyeOneri o) {
-    final sk = _normalizeTr(sorgu)
-        .split(RegExp(r'\s+'))
-        .where((k) => k.length >= 2)
-        .toList();
-    if (sk.isEmpty) return 0;
-
-    final baslik = _normalizeTr(o.baslik);
-    final full = _normalizeTr('${o.baslik} ${o.alt}');
-    var score = 0;
-    var baslikHit = 0;
-
-    for (final k in sk) {
-      if (baslik.contains(k)) {
-        baslikHit++;
-        score += 12;
-      } else if (full.contains(k)) {
-        score += 3;
-      }
-    }
-
-    // Tüm kelimeler başlıkta → "Kent Düğün Salonu" vs "Mutlu Kent Sokak"
-    if (baslikHit == sk.length) score += 80;
-
-    // Tam ifade (boşluksuz/yan yana) başlıkta
-    final ifade = sk.join(' ');
-    if (baslik.contains(ifade)) score += 40;
-
-    return score;
-  }
-
-  /// 1) Mesafe  2) İsim eşleşmesi  3) Yerel il/ilçe
-  List<_NereyeOneri> _mesafeyeGoreSirala(List<_NereyeOneri> liste, String sorgu) {
-    final yerelIl = _normalizeTr(widget.esnaf.il);
-    final kopya = List<_NereyeOneri>.from(liste);
-    kopya.sort((a, b) {
-      final ma = a.mesafeKm;
-      final mb = b.mesafeKm;
-      if (ma != null && mb != null) {
-        final diff = ma.compareTo(mb);
-        if (diff != 0) return diff;
-      } else if (ma != null) {
-        return -1;
-      } else if (mb != null) {
-        return 1;
-      }
-
-      final sa = _ilgililikSkoru(sorgu, a);
-      final sb = _ilgililikSkoru(sorgu, b);
-      if (sa != sb) return sb.compareTo(sa);
-
-      if (yerelIl.isNotEmpty) {
-        final aY = _normalizeTr('${a.baslik} ${a.alt}').contains(yerelIl);
-        final bY = _normalizeTr('${b.baslik} ${b.alt}').contains(yerelIl);
-        if (aY != bY) return aY ? -1 : 1;
-      }
-      return 0;
-    });
-    return kopya;
-  }
 
   void _guzergahMesafesiniSifirla() {
     _guzergahKm = null;
@@ -471,215 +271,18 @@ class _TaksiRandevuEkraniState extends State<TaksiRandevuEkrani> {
     });
   }
 
-  Future<void> _photonAra(
-    String q,
-    double lat,
-    double lon,
-    List<_NereyeOneri> sonuclar,
-    int istekNo,
-    void Function() uiGuncelle,
-  ) async {
-    try {
-      final photonUrl = Uri.parse(
-        'https://photon.komoot.io/api/?'
-        'q=${Uri.encodeComponent(q)}'
-        '&limit=10'
-        '&lang=default'
-        '&lat=$lat&lon=$lon',
+
+  _NereyeOneri _oneriCevir(NereyeOneri o) => _NereyeOneri(
+        baslik: o.baslik,
+        alt: o.alt,
+        etiket: o.etiket,
+        lat: o.lat,
+        lon: o.lon,
+        mesafeKm: o.mesafeKm,
+        placeId: o.placeId,
       );
-      final res = await _zamanAsimli(http.get(photonUrl), ms: 3000);
-      if (res == null || res.statusCode != 200 || istekNo != _aramaIstekNo) {
-        debugPrint('Photon başarısız: ${res?.statusCode}');
-        return;
-      }
-      final data = json.decode(res.body);
-      final features = data['features'];
-      if (features is! List) return;
-      for (final f in features) {
-        if (f is! Map) continue;
-        final p = f['properties'];
-        if (p is! Map) continue;
-        final name = _metin(p['name']);
-        if (name.isEmpty) continue;
-        final altParcalar = <String>[
-          _metin(p['street']),
-          _metin(p['district']),
-          _metin(p['city']),
-          _metin(p['state']),
-          _metin(p['country']),
-        ].where((e) => e.isNotEmpty).toList();
-        double? rLat;
-        double? rLon;
-        final geom = f['geometry'];
-        if (geom is Map) {
-          final coords = geom['coordinates'];
-          if (coords is List && coords.length >= 2) {
-            rLon = double.tryParse(coords[0].toString());
-            rLat = double.tryParse(coords[1].toString());
-          }
-        }
-        _oneriEkle(
-          sonuclar,
-          name,
-          altParcalar.toSet().join(', '),
-          lat: rLat,
-          lon: rLon,
-        );
-      }
-      uiGuncelle();
-    } catch (e) {
-      debugPrint('Photon hatası: $e');
-    }
-  }
 
-  Future<void> _nominatimAra(
-    String q,
-    List<_NereyeOneri> sonuclar,
-    int istekNo,
-    void Function() uiGuncelle, {
-    double? biasLat,
-    double? biasLon,
-  }) async {
-    try {
-      var urlStr =
-          'https://nominatim.openstreetmap.org/search'
-          '?q=${Uri.encodeComponent(q)}'
-          '&format=json&addressdetails=1&limit=10&countrycodes=tr';
-      if (biasLat != null && biasLon != null) {
-        // Yakın sonuçları önceliklendir (silmez)
-        urlStr +=
-            '&viewbox=${biasLon - 0.8},${biasLat + 0.5},${biasLon + 0.8},${biasLat - 0.5}'
-            '&bounded=0';
-      }
-      final res = await _zamanAsimli(http.get(Uri.parse(urlStr)), ms: 3500);
-      if (res == null || res.statusCode != 200 || istekNo != _aramaIstekNo) {
-        debugPrint('Nominatim başarısız: ${res?.statusCode}');
-        return;
-      }
-      final data = json.decode(res.body);
-      if (data is! List) return;
-      for (final item in data) {
-        if (item is! Map) continue;
-        final display = _metin(item['display_name']);
-        if (display.isEmpty) continue;
-        final parcalar = display.split(',').map((e) => e.trim()).toList();
-        final rLat = double.tryParse(_metin(item['lat']));
-        final rLon = double.tryParse(_metin(item['lon']));
-        _oneriEkle(
-          sonuclar,
-          parcalar.isNotEmpty ? parcalar.first : display,
-          parcalar.length > 1 ? parcalar.sublist(1).take(4).join(', ') : '',
-          lat: rLat,
-          lon: rLon,
-        );
-      }
-      uiGuncelle();
-    } catch (e) {
-      debugPrint('Nominatim hatası: $e');
-    }
-  }
-
-  Future<void> _openMeteoAra(
-    String q,
-    List<_NereyeOneri> sonuclar,
-    int istekNo,
-    void Function() uiGuncelle,
-  ) async {
-    try {
-      final url = Uri.parse(
-        'https://geocoding-api.open-meteo.com/v1/search'
-        '?name=${Uri.encodeComponent(q)}'
-        '&count=10&language=tr&countryCode=TR',
-      );
-      final res = await _zamanAsimli(http.get(url), ms: 3000);
-      if (res == null || res.statusCode != 200 || istekNo != _aramaIstekNo) return;
-      final data = json.decode(res.body);
-      final results = data['results'];
-      if (results is! List) return;
-      for (final item in results) {
-        if (item is! Map) continue;
-        final name = _metin(item['name']);
-        if (name.isEmpty) continue;
-        final alt = [
-          _metin(item['admin2']),
-          _metin(item['admin1']),
-          _metin(item['country']),
-        ].where((e) => e.isNotEmpty).join(', ');
-        final rLat = double.tryParse(item['latitude']?.toString() ?? '');
-        final rLon = double.tryParse(item['longitude']?.toString() ?? '');
-        _oneriEkle(sonuclar, name, alt, lat: rLat, lon: rLon);
-      }
-      uiGuncelle();
-    } catch (e) {
-      debugPrint('OpenMeteo hatası: $e');
-    }
-  }
-
-  Future<int> _googleAutocompleteAra(
-    String q,
-    double lat,
-    double lon,
-    List<_NereyeOneri> sonuclar,
-    int istekNo,
-    void Function() uiGuncelle,
-  ) async {
-    if (kIsWeb) return 0;
-    try {
-      final autoUrl = Uri.parse(
-      'https://maps.googleapis.com/maps/api/place/autocomplete/json?'
-          'input=${Uri.encodeComponent(q)}'
-          '&components=country:tr'
-          '&language=tr'
-        '&location=$lat,$lon'
-        '&radius=50000'
-          '&key=$_googleApiKey',
-    );
-      final res = await _zamanAsimli(http.get(autoUrl), ms: 1800);
-      if (res == null || res.statusCode != 200 || istekNo != _aramaIstekNo) {
-        debugPrint('Autocomplete HTTP başarısız: ${res?.statusCode}');
-        return 0;
-      }
-      final data = json.decode(res.body);
-      final status = _metin(data['status']);
-      final predictions = data['predictions'];
-      if (status != 'OK' || predictions is! List) {
-        debugPrint('Autocomplete status: $status ${data['error_message']}');
-        return 0;
-      }
-      var eklenen = 0;
-      for (final item in predictions) {
-        if (item is! Map) continue;
-        final placeId = _metin(item['place_id']);
-        final str = item['structured_formatting'];
-        if (str is Map) {
-          _oneriEkle(
-            sonuclar,
-            _metin(str['main_text']),
-            _metin(str['secondary_text']),
-            placeId: placeId.isEmpty ? null : placeId,
-          );
-        } else {
-          final desc = _metin(item['description']);
-          final parcalar = desc.split(',').map((e) => e.trim()).toList();
-          _oneriEkle(
-            sonuclar,
-            parcalar.isNotEmpty ? parcalar.first : desc,
-            parcalar.length > 1 ? parcalar.sublist(1).join(', ') : '',
-            placeId: placeId.isEmpty ? null : placeId,
-          );
-        }
-        eklenen++;
-      }
-      await _placeIdlereKoordinatDoldur(sonuclar, istekNo, uiGuncelle);
-      uiGuncelle();
-      return eklenen;
-    } catch (e) {
-      debugPrint('Google autocomplete hatası: $e');
-      return 0;
-    }
-  }
-
-  /// Yazarken öneri — yakınlar önde, uzaklar listede kalır.
+  /// Yazarken öneri — randevu ve çağrı aynı aramayı kullanır.
   Future<void> _nereyeAramayiCalistir(String sorgu) async {
     final q = sorgu.trim();
     if (q.isEmpty) return;
@@ -692,164 +295,27 @@ class _TaksiRandevuEkraniState extends State<TaksiRandevuEkrani> {
       });
     }
 
-    final sonuclar = <_NereyeOneri>[];
-    final lat = _aramaLat;
-    final lon = _aramaLon;
-    final yerelBag = _yerelBag;
-    // Yerel bağlamlı sorgu (ör. "derecik merkez camii Akçaabat Trabzon")
-    final yerelSorgu = yerelBag.isEmpty ||
-            _normalizeTr(q).contains(_normalizeTr(widget.esnaf.il))
-        ? q
-        : '$q $yerelBag';
-
-    void uiGuncelle() {
-      if (!mounted || istekNo != _aramaIstekNo) return;
-      setState(() => _nereyeOnerileri = _mesafeyeGoreSirala(sonuclar, q).take(10).toList());
-    }
-
-    if (kIsWeb) {
-      // Web: önce Google JS Places (Maps ile aynı — Akçaabat Derecik Camii vb.)
-      try {
-        final googleWeb = await googlePlacesWebAutocomplete(
-          input: q,
-          lat: lat,
-          lon: lon,
-        );
-        if (istekNo == _aramaIstekNo) {
-          for (var i = 0; i < googleWeb.length; i++) {
-            final item = googleWeb[i];
-            final main = item['main'] ?? '';
-            final secondary = item['secondary'] ?? '';
-            final placeId = item['placeId'] ?? '';
-            _oneriEkle(
-              sonuclar,
-              main,
-              secondary,
-              placeId: placeId.isEmpty ? null : placeId,
-            );
-          }
-          await _placeIdlereKoordinatDoldur(sonuclar, istekNo, uiGuncelle);
-          uiGuncelle();
-        }
-      } catch (e) {
-        debugPrint('Google Places web hatası: $e');
-      }
-
-      // Yedek / ek sonuçlar
-      await Future.wait([
-        _photonAra(q, lat, lon, sonuclar, istekNo, uiGuncelle),
-        if (yerelSorgu != q)
-          _photonAra(yerelSorgu, lat, lon, sonuclar, istekNo, uiGuncelle),
-        _nominatimAra(q, sonuclar, istekNo, uiGuncelle, biasLat: lat, biasLon: lon),
-        if (yerelSorgu != q)
-          _nominatimAra(yerelSorgu, sonuclar, istekNo, uiGuncelle, biasLat: lat, biasLon: lon),
-        _openMeteoAra(q, sonuclar, istekNo, uiGuncelle),
-      ]);
-      // Tüm kaynaklardan sonra Google place_id kalanları doldur + yeniden sırala
-      await _placeIdlereKoordinatDoldur(sonuclar, istekNo, uiGuncelle);
-    } else {
-      final googleSayisi =
-          await _googleAutocompleteAra(q, lat, lon, sonuclar, istekNo, uiGuncelle);
-      if (googleSayisi < 2 && istekNo == _aramaIstekNo) {
-        await Future.wait([
-          _photonAra(q, lat, lon, sonuclar, istekNo, uiGuncelle),
-          if (yerelSorgu != q)
-            _photonAra(yerelSorgu, lat, lon, sonuclar, istekNo, uiGuncelle),
-          _nominatimAra(q, sonuclar, istekNo, uiGuncelle, biasLat: lat, biasLon: lon),
-        ]);
-      }
-      await _placeIdlereKoordinatDoldur(sonuclar, istekNo, uiGuncelle);
-    }
-
-    if (istekNo != _aramaIstekNo) {
-      if (mounted) setState(() => _nereyeAraniyor = false);
-      return;
-    }
-
-    try {
-      final yerel =
-          await _zamanAsimli(_firestoreServisi.mekanArama(q), ms: 900) ?? [];
-      if (istekNo == _aramaIstekNo) {
-        for (final s in yerel) {
-          final parcalar = s.split(',').map((e) => e.trim()).toList();
-          // Yerel işletme → esnaf konumuna yakın say
-          _oneriEkle(
-            sonuclar,
-            parcalar.isNotEmpty ? parcalar.first : s,
-            parcalar.length > 1 ? parcalar.sublist(1).join(', ') : '',
-            lat: widget.esnaf.konum.latitude,
-            lon: widget.esnaf.konum.longitude,
-          );
-        }
-        uiGuncelle();
-      }
-    } catch (_) {}
-
-    if (istekNo == _aramaIstekNo && sonuclar.isEmpty) {
-      await _photonAra(q, lat, lon, sonuclar, istekNo, uiGuncelle);
-    }
-
-    if (!kIsWeb && istekNo == _aramaIstekNo && sonuclar.length < 3) {
-      try {
-        final textUrl = Uri.parse(
-          'https://maps.googleapis.com/maps/api/place/textsearch/json?'
-          'query=${Uri.encodeComponent(q)}'
-          '&language=tr&region=tr'
-          '&location=$lat,$lon&radius=50000'
-          '&key=$_googleApiKey',
-        );
-        final res = await _zamanAsimli(http.get(textUrl), ms: 1800);
-        if (res != null && res.statusCode == 200 && istekNo == _aramaIstekNo) {
-          final data = json.decode(res.body);
-          final results = data['results'];
-          if (data['status'] == 'OK' && results is List) {
-            for (final item in results) {
-              if (item is! Map) continue;
-              final geo = item['geometry'];
-              double? rLat;
-              double? rLon;
-              if (geo is Map) {
-                final loc = geo['location'];
-                if (loc is Map) {
-                  rLat = double.tryParse(loc['lat']?.toString() ?? '');
-                  rLon = double.tryParse(loc['lng']?.toString() ?? '');
-                }
-              }
-              _oneriEkle(
-                sonuclar,
-                _metin(item['name']),
-                _metin(item['formatted_address']),
-                lat: rLat,
-                lon: rLon,
-              );
-            }
-            uiGuncelle();
-          }
-        }
-      } catch (e) {
-        debugPrint('Google text search hatası: $e');
-      }
-    }
-
-    if (!mounted || istekNo != _aramaIstekNo) {
-      if (mounted && istekNo == _aramaIstekNo) {
-        setState(() => _nereyeAraniyor = false);
-      }
-      return;
-    }
-
-    final finalListe = _mesafeyeGoreSirala(sonuclar, q).take(10).toList();
-    if (finalListe.isNotEmpty) {
-      _aramaOnbellegi[q.toLowerCase()] = finalListe;
-      if (_aramaOnbellegi.length > 40) {
-        _aramaOnbellegi.remove(_aramaOnbellegi.keys.first);
-      }
-    }
-    debugPrint('Nereye "$q" → ${finalListe.length} sonuç (mesafe sıralı)');
+    final arama = NereyeAramaci(
+      enlem: _aramaLat,
+      boylam: _aramaLon,
+      il: widget.esnaf.il,
+      ilce: widget.esnaf.ilce,
+      esnafEnlem: widget.esnaf.konum.latitude,
+      esnafBoylam: widget.esnaf.konum.longitude,
+    );
+    final liste = await arama.ara(
+      q,
+      iptal: () => !mounted || istekNo != _aramaIstekNo,
+      kismi: (kismi) {
+        if (!mounted || istekNo != _aramaIstekNo) return;
+        setState(() => _nereyeOnerileri = kismi.map(_oneriCevir).toList());
+      },
+    );
+    if (!mounted || istekNo != _aramaIstekNo) return;
     setState(() {
-      _nereyeOnerileri = finalListe;
+      _nereyeOnerileri = liste.map(_oneriCevir).toList();
       _nereyeAraniyor = false;
-      _nereyeAramaBittiBos = finalListe.isEmpty;
+      _nereyeAramaBittiBos = liste.isEmpty;
     });
   }
 
@@ -1172,6 +638,20 @@ class _TaksiRandevuEkraniState extends State<TaksiRandevuEkrani> {
   }
 
   Widget _aracSeciciModulu() {
+    if (!widget.esnaf.aracOdakliSistem) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.indigo.shade50,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Text(
+          "Bu durakta plaka seçilmez. Rezervasyon “${widget.esnaf.isletmeAdi}” adına alınır; aracı durak ayırır.",
+          style: TextStyle(fontSize: 13, height: 1.35, color: Colors.indigo.shade900),
+        ),
+      );
+    }
     return ValueListenableBuilder<String?>(
       valueListenable: _seciliSaatNotifier,
       builder: (context, saat, _) => ValueListenableBuilder<String?>(
@@ -1200,7 +680,7 @@ class _TaksiRandevuEkraniState extends State<TaksiRandevuEkrani> {
         children: [
           TextField(controller: _adController, decoration: const InputDecoration(labelText: "Ad Soyad", prefixIcon: Icon(Icons.person_outline), border: OutlineInputBorder())),
           const SizedBox(height: 15),
-          TextField(controller: _telController, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: "Telefon Numarası", prefixIcon: Icon(Icons.phone_outlined), border: OutlineInputBorder())),
+          TextField(controller: _telController, keyboardType: TextInputType.phone, inputFormatters: TelefonGirdisi.bicim, decoration: const InputDecoration(labelText: "Telefon Numarası", hintText: "05xx xxx xx xx", prefixIcon: Icon(Icons.phone_outlined), border: OutlineInputBorder())),
         ],
       ),
     );
@@ -1212,9 +692,12 @@ class _TaksiRandevuEkraniState extends State<TaksiRandevuEkrani> {
       builder: (context, saat, _) => ValueListenableBuilder<String?>(
         valueListenable: _seciliKanalNotifier,
         builder: (context, kanal, _) {
+          final plakaZorunlu = widget.esnaf.aracOdakliSistem;
           bool guzergahEksik = _neredenController.text.isEmpty || _nereyeController.text.isEmpty;
-          bool aktif = saat != null && kanal != null && !guzergahEksik;
-          String butonMetni = saat == null ? "ZAMAN SEÇİNİZ" : (guzergahEksik ? "GÜZERGAH GİRİNİZ" : (kanal == null ? "ARAÇ SEÇİNİZ" : "REZERVASYONU TAMAMLA"));
+          bool aktif = saat != null && (!plakaZorunlu || kanal != null) && !guzergahEksik;
+          String butonMetni = saat == null
+              ? "ZAMAN SEÇİNİZ"
+              : (guzergahEksik ? "GÜZERGAH GİRİNİZ" : (plakaZorunlu && kanal == null ? "ARAÇ SEÇİNİZ" : "REZERVASYONU TAMAMLA"));
           return Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(color: Colors.white, boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, -5))]),
@@ -1232,17 +715,37 @@ class _TaksiRandevuEkraniState extends State<TaksiRandevuEkrani> {
   }
 
   Future<void> _kaydet() async {
+    final telefonMesaji = TelefonGirdisi.hata(_telController.text);
+    if (telefonMesaji != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(telefonMesaji)));
+      return;
+    }
     _islemYapiliyorNotifier.value = true;
     try {
       final r = RandevuModeli(
         id: '', esnafId: widget.esnaf.id, esnafAdi: widget.esnaf.isletmeAdi, esnafTel: widget.esnaf.telefon,
-        kullaniciAd: _adController.text, kullaniciTel: _telController.text,
+        kullaniciAd: _adController.text, kullaniciTel: TelefonGirdisi.rakamlar(_telController.text),
         tarih: _seciliTarihNotifier.value!, saat: _seciliSaatNotifier.value!, sure: 30,
-        hizmetAdi: "Taksi Rezervasyonu", randevuKanali: _seciliKanalNotifier.value,
+        hizmetAdi: "Taksi Rezervasyonu",
+        randevuKanali: widget.esnaf.aracOdakliSistem ? _seciliKanalNotifier.value : widget.esnaf.isletmeAdi,
         durum: widget.esnaf.randevuOnayModu == 'Otomatik' ? 'Onaylandı' : 'Onay bekliyor',
         nereden: _neredenController.text, nereye: _nereyeController.text,
       );
       await _firestoreServisi.randevuEkle(r);
+      final tarihSaat = '${DateFormat('dd.MM.yyyy').format(r.tarih)} ${r.saat}';
+      await BildirimServisi.taksiRezervasyonEsnafa(
+        esnaf: widget.esnaf,
+        saat: r.saat,
+        tarih: DateFormat('dd.MM.yyyy').format(r.tarih),
+      );
+      if (r.durum == 'Onaylandı') {
+        await BildirimServisi.taksiRezervasyonYolcuya(
+          esnaf: widget.esnaf,
+          musteriTel: r.kullaniciTel,
+          onaylandi: true,
+          tarihSaat: tarihSaat,
+        );
+      }
       if (mounted) showDialog(context: context, builder: (c) => AlertDialog(title: const Text("Başarılı"), content: const Text("Rezervasyon talebiniz alınmıştır."), actions: [TextButton(onPressed: () { Navigator.pop(c); Navigator.pop(context); }, child: const Text("TAMAM"))]));
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Hata: $e")));

@@ -196,6 +196,36 @@ class _AracParametreEkraniState extends State<AracParametreEkrani> {
             ),
           ),
           _parametreKart(
+            baslik: "Talep bildirimleri",
+            altBaslik: "Akıllı takip (süre dolumu ve gecikme) aynen durur. Bunlar yalnızca yeni talep ve onay/red içindir.",
+            icon: Icons.notifications_outlined,
+            icerik: Column(
+              children: [
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text("Yeni talep bana gelsin", style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                  subtitle: const Text("Müşteri rezervasyon yapınca işletme telefonuna bildirim gider."),
+                  value: _esnaf!.kiralamaYeniTalepBildirim,
+                  onChanged: (v) async {
+                    setState(() { _esnaf = _esnaf!.copyWith(kiralamaYeniTalepBildirim: v); });
+                    await _guncelle({'kiralamaYeniTalepBildirim': v});
+                  },
+                ),
+                const Divider(),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text("Onay ve red müşteriye gitsin", style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                  subtitle: const Text("Onaylayınca veya reddedince müşteriye bildirim gider. Otomatik onayda talep düşünce de gider."),
+                  value: _esnaf!.kiralamaOnayRedBildirim,
+                  onChanged: (v) async {
+                    setState(() { _esnaf = _esnaf!.copyWith(kiralamaOnayRedBildirim: v); });
+                    await _guncelle({'kiralamaOnayRedBildirim': v});
+                  },
+                ),
+              ],
+            ),
+          ),
+          _parametreKart(
             baslik: "Randevu Ayarları",
             altBaslik: "İşletmenizin randevu alma kurallarını ve onay akışını buradan yönetin.",
             icon: Icons.event_note_rounded,

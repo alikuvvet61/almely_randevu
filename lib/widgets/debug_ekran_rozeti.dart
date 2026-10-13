@@ -1,9 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 /// Debug/profile build'lerde köşede aktif ekran dosya + sınıf adını gösterir.
 /// Release'de hiç çizilmez (`kReleaseMode`).
-class DebugEkranRozeti extends StatelessWidget {
+class DebugEkranRozeti extends StatefulWidget {
   const DebugEkranRozeti({super.key, required this.child});
 
   final Widget? child;
@@ -36,6 +38,7 @@ class DebugEkranRozeti extends StatelessWidget {
     'AracKiralamaRandevuEkrani': 'ekranlar/arac_kiralama/arac_kiralama_randevu_ekrani.dart',
     'AracKiralamaEsnafPaneli': 'ekranlar/arac_kiralama/arac_kiralama_esnaf_paneli.dart',
     'TaksiModSecimEkrani': 'ekranlar/taksi/taksi_mod_secim_ekrani.dart',
+    'EsnafModSecimEkrani': 'ekranlar/esnaf_mod_secim_ekrani.dart',
     'TaksiMusteriEkrani': 'ekranlar/taksi/taksi_musteri_ekrani.dart',
     'TaksiRandevuEkrani': 'ekranlar/taksi/taksi_randevu_ekrani.dart',
     'TaksiEsnafPaneli': 'ekranlar/taksi/taksi_esnaf_paneli.dart',
@@ -46,6 +49,8 @@ class DebugEkranRozeti extends StatelessWidget {
     'TaksiRehberEkrani': 'ekranlar/taksi/taksi_rehber_ekrani.dart',
     'TaksiSurucuDogrulamaEkrani': 'ekranlar/taksi/taksi_surucu_dogrulama_ekrani.dart',
     'TaksiSurucuProfilDetayEkrani': 'ekranlar/taksi/taksi_surucu_profil_detay_ekrani.dart',
+    'CalisanBasvurusuEkrani': 'ekranlar/calisan_basvurusu_ekrani.dart',
+    'CalisanBasvuruListesiEkrani': 'ekranlar/calisan_basvuru_listesi_ekrani.dart',
   };
 
   static String etiketOlustur(String sinifAdi) {
@@ -56,36 +61,62 @@ class DebugEkranRozeti extends StatelessWidget {
   }
 
   @override
+  State<DebugEkranRozeti> createState() => _DebugEkranRozetiState();
+}
+
+class _DebugEkranRozetiState extends State<DebugEkranRozeti> {
+  bool _gizli = false;
+  Timer? _zamanlayici;
+
+  @override
+  void dispose() {
+    _zamanlayici?.cancel();
+    super.dispose();
+  }
+
+  void _ikiSaniyeGizle() {
+    _zamanlayici?.cancel();
+    setState(() => _gizli = true);
+    _zamanlayici = Timer(const Duration(seconds: 2), () {
+      if (!mounted) return;
+      setState(() => _gizli = false);
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     if (kReleaseMode) {
-      return child ?? const SizedBox.shrink();
+      return widget.child ?? const SizedBox.shrink();
     }
 
     return Stack(
       fit: StackFit.expand,
       children: [
-        if (child != null) child!,
-        Positioned(
-          left: 8,
-          bottom: 8,
-          child: IgnorePointer(
+        if (widget.child != null) widget.child!,
+        if (!_gizli)
+          Positioned(
+            left: 8,
+            bottom: 8,
             child: SafeArea(
-              child: ValueListenableBuilder<String>(
-                valueListenable: aktifEkran,
-                builder: (_, ad, __) => Material(
-                  elevation: 3,
-                  color: Colors.black.withValues(alpha: 0.72),
-                  borderRadius: BorderRadius.circular(6),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    child: Text(
-                      ad,
-                      style: const TextStyle(
-                        color: Color(0xFFB8FF4A),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        fontFamily: 'monospace',
-                        height: 1.25,
+              child: GestureDetector(
+                onTap: _ikiSaniyeGizle,
+                child: ValueListenableBuilder<String>(
+                  valueListenable: DebugEkranRozeti.aktifEkran,
+                  builder: (_, ad, __) => Material(
+                    elevation: 0,
+                    color: Colors.black.withValues(alpha: 0.38),
+                    borderRadius: BorderRadius.circular(6),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      child: Text(
+                        ad,
+                        style: TextStyle(
+                          color: const Color(0xFFB8FF4A).withValues(alpha: 0.82),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          fontFamily: 'monospace',
+                          height: 1.25,
+                        ),
                       ),
                     ),
                   ),
@@ -93,7 +124,6 @@ class DebugEkranRozeti extends StatelessWidget {
               ),
             ),
           ),
-        ),
       ],
     );
   }

@@ -125,12 +125,14 @@ flutter test test/widget_test.dart
 1. Update `EsnafModeli` (model, fromMap, toMap, copyWith).
 2. Add the UI control in `EsnafParametreEkrani.dart`.
 3. If it affects scheduling, update the logic in `RandevuEkrani.dart` or `EsnafAjandaEkrani.dart`.
+4. **Update Kullanım Rehberi** in `lib/yardimcilar/ekran_rehber_katalogu.dart` — only for screens that actually changed (each affected screen’s catalog entry; do not update unrelated screens).
 
 ### Creating a New Service
 1. Create file in `lib/servisler/` following naming pattern: `{konu}_servisi.dart`.
 2. Use dependency injection: pass required services (e.g., FirestoreServisi, OneSignalServisi) to constructor.
 3. Wrap all external API calls in try-catch with descriptive `debugPrint` logging.
 4. Expose public async methods that services depend on (e.g., `Future<void> initialize()`).
+5. If the feature changes any screen UX, update that screen’s entry in `ekran_rehber_katalogu.dart`.
 
 ### Location Integration
 **Service:** `lib/servisler/konum_servisi.dart`

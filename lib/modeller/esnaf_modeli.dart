@@ -40,6 +40,47 @@ class EsnafModeli {
   final bool ajandayiKendimAyarlayacagim; // Randevu ajandasını manuel mi yönetecek? (Manuel vs Canlı Yapı)
   final int maksimumRandevuGunu; // Müşterinin kaç gün ileriye randevu alabileceği
   final int minimumRandevuSuresi; // Randevu alırken seçilebilecek minimum süre (dakika)
+  final int iptalSinirSaati; // 0 = kural yok. Bu saatten az kala iptal geç iptal notu sayılır
+  final int karaListeEsik; // 0 = kapalı. Geç iptal + gelmedi bu sayıya ulaşınca yeni randevu kapalı
+  final bool onGorusmeZorunlu; // Ön görüşme saati geçmeden diğer hizmetler açılmaz
+  final bool sadeceOnGorusme; // Müşteri yalnızca ön görüşme hizmetini alabilir
+  final bool randevuSadeceYonetici; // Müşteri kendi randevusunu alamaz; yönetici verir
+  final bool yoneticiGecmiseRandevu; // Yönetici geçmiş saate randevu yazabilir
+  final bool sureDolanOnaylanmasin; // 10 dk onay süresi dolan bekleyen kayıt onaylanamaz
+  final bool taksiCagriBildirim; // Anlık çağrıda durağa / şoföre push
+  final bool taksiNavigasyonOtomatik; // Kabulde Google Haritalar kendiliğinden açılsın
+  final double taksiIptalTabanUcret; // İptal bedelinin tabanı (TL)
+  final double taksiIptalKmUcret; // Kabulden sonra gidilen km (TL)
+  final double taksiIptalDakikaUcret; // Kabulden sonraki dakika (TL)
+  final bool taksiRezervasyonEsnafBildirim; // Yeni rezervasyonda durağa push
+  final bool taksiRezervasyonMusteriBildirim; // Onay / red yolcuya push
+  final int taksiRezervasyonHatirlatmaDk; // 0 = kapalı. Rezervasyondan kaç dk önce
+  final bool kiralamaYeniTalepBildirim; // Yeni kiralama talebi esnafa
+  final bool kiralamaOnayRedBildirim; // Onay / red müşteriye
+
+  /// Genel randevu hatırlatmaları (taksi/kiralama akıllı takipten bağımsız)
+  final bool hatirlatmaAktif;
+  final bool hatirlatmaOnceAktif;
+  final bool hatirlatmaSonraAktif;
+  final int hatirlatmaOnceDk; // Randevu başlangıcından kaç dk önce
+  final int hatirlatmaSonraDk; // Randevu bitişinden kaç dk sonra
+  final String? hatirlatmaOnceBaslik;
+  final String? hatirlatmaOnceSablon;
+  final String? hatirlatmaSonraBaslik;
+  final String? hatirlatmaSonraSablon;
+  final bool onayBildirimAktif;
+  final bool redBildirimAktif;
+  final String? onayBaslik;
+  final String? onaySablon;
+  final String? redBaslik;
+  final String? redSablon;
+  final bool sadakatAktif;
+  final int sadakatAdet;
+  final int sadakatYuzde;
+  final bool yapayZekaAktif;
+  final String tanitim;
+  final String logoUrl;
+  final List<String> galeri;
 
   final double puan; // Ortalama Puan
   final int yorumSayisi; // Toplam Yorum Sayısı
@@ -83,6 +124,45 @@ class EsnafModeli {
     this.minimumRandevuSuresi = 60, // Varsayılan 1 saat (60 dk)
     this.ajandayiKendimAyarlayacagim = true, // Varsayılan olarak mevcut esnaflar için manuel kalsın
     this.maksimumRandevuGunu = 30, // Varsayılan 30 gün
+    this.iptalSinirSaati = 0,
+    this.karaListeEsik = 0,
+    this.onGorusmeZorunlu = false,
+    this.sadeceOnGorusme = false,
+    this.randevuSadeceYonetici = false,
+    this.yoneticiGecmiseRandevu = false,
+    this.sureDolanOnaylanmasin = true,
+    this.taksiCagriBildirim = true,
+    this.taksiNavigasyonOtomatik = false,
+    this.taksiIptalTabanUcret = 0,
+    this.taksiIptalKmUcret = 0,
+    this.taksiIptalDakikaUcret = 0,
+    this.taksiRezervasyonEsnafBildirim = true,
+    this.taksiRezervasyonMusteriBildirim = true,
+    this.taksiRezervasyonHatirlatmaDk = 30,
+    this.kiralamaYeniTalepBildirim = true,
+    this.kiralamaOnayRedBildirim = true,
+    this.hatirlatmaAktif = false,
+    this.hatirlatmaOnceAktif = true,
+    this.hatirlatmaSonraAktif = true,
+    this.hatirlatmaOnceDk = 60,
+    this.hatirlatmaSonraDk = 30,
+    this.hatirlatmaOnceBaslik,
+    this.hatirlatmaOnceSablon,
+    this.hatirlatmaSonraBaslik,
+    this.hatirlatmaSonraSablon,
+    this.onayBildirimAktif = true,
+    this.redBildirimAktif = true,
+    this.onayBaslik,
+    this.onaySablon,
+    this.redBaslik,
+    this.redSablon,
+    this.sadakatAktif = false,
+    this.sadakatAdet = 5,
+    this.sadakatYuzde = 10,
+    this.yapayZekaAktif = false,
+    this.tanitim = '',
+    this.logoUrl = '',
+    this.galeri = const [],
     this.puan = 0.0,
     this.yorumSayisi = 0,
   });
@@ -136,6 +216,50 @@ class EsnafModeli {
       minimumRandevuSuresi: data['minimumRandevuSuresi'] ?? 60,
       ajandayiKendimAyarlayacagim: data['ajandayiKendimAyarlayacagim'] ?? true,
       maksimumRandevuGunu: data['maksimumRandevuGunu'] ?? 30,
+      iptalSinirSaati: data['iptalSinirSaati'] ?? 0,
+      karaListeEsik: data['karaListeEsik'] ?? 0,
+      onGorusmeZorunlu: data['onGorusmeZorunlu'] ?? false,
+      sadeceOnGorusme: data['sadeceOnGorusme'] ?? false,
+      randevuSadeceYonetici: data['randevuSadeceYonetici'] ?? false,
+      yoneticiGecmiseRandevu: data['yoneticiGecmiseRandevu'] ?? false,
+      sureDolanOnaylanmasin: data['sureDolanOnaylanmasin'] ?? true,
+      taksiCagriBildirim: data['taksiCagriBildirim'] ?? true,
+      taksiNavigasyonOtomatik: data['taksiNavigasyonOtomatik'] == true,
+      taksiIptalTabanUcret: (data['taksiIptalTabanUcret'] is num) ? (data['taksiIptalTabanUcret'] as num).toDouble() : 0,
+      taksiIptalKmUcret: (data['taksiIptalKmUcret'] is num) ? (data['taksiIptalKmUcret'] as num).toDouble() : 0,
+      taksiIptalDakikaUcret: (data['taksiIptalDakikaUcret'] is num) ? (data['taksiIptalDakikaUcret'] as num).toDouble() : 0,
+      taksiRezervasyonEsnafBildirim: data['taksiRezervasyonEsnafBildirim'] ?? true,
+      taksiRezervasyonMusteriBildirim: data['taksiRezervasyonMusteriBildirim'] ?? true,
+      taksiRezervasyonHatirlatmaDk: data['taksiRezervasyonHatirlatmaDk'] ?? 30,
+      kiralamaYeniTalepBildirim: data['kiralamaYeniTalepBildirim'] ?? true,
+      kiralamaOnayRedBildirim: data['kiralamaOnayRedBildirim'] ?? true,
+      hatirlatmaAktif: data['hatirlatmaAktif'] ?? false,
+      hatirlatmaOnceAktif: data['hatirlatmaOnceAktif'] ?? true,
+      hatirlatmaSonraAktif: data['hatirlatmaSonraAktif'] ?? true,
+      hatirlatmaOnceDk: data['hatirlatmaOnceDk'] ?? 60,
+      hatirlatmaSonraDk: data['hatirlatmaSonraDk'] ?? 30,
+      hatirlatmaOnceBaslik: data['hatirlatmaOnceBaslik'],
+      hatirlatmaOnceSablon: data['hatirlatmaOnceSablon'],
+      hatirlatmaSonraBaslik: data['hatirlatmaSonraBaslik'],
+      hatirlatmaSonraSablon: data['hatirlatmaSonraSablon'],
+      onayBildirimAktif: data['onayBildirimAktif'] ?? true,
+      redBildirimAktif: data['redBildirimAktif'] ?? true,
+      onayBaslik: data['onayBaslik'],
+      onaySablon: data['onaySablon'],
+      redBaslik: data['redBaslik'],
+      redSablon: data['redSablon'],
+      sadakatAktif: data['sadakatAktif'] ?? false,
+      sadakatAdet: data['sadakatAdet'] ?? 5,
+      sadakatYuzde: data['sadakatYuzde'] ?? 10,
+      yapayZekaAktif: data['yapayZekaAktif'] == true,
+      tanitim: (data['tanitim'] ?? '').toString(),
+      logoUrl: (data['logoUrl'] ?? '').toString(),
+      galeri: (data['galeri'] as List?)
+              ?.map((e) => e.toString())
+              .where((e) => e.isNotEmpty)
+              .take(6)
+              .toList() ??
+          [],
       puan: (data['puan'] ?? 0.0).toDouble(),
       yorumSayisi: data['yorumSayisi'] ?? 0,
     );
@@ -180,6 +304,45 @@ class EsnafModeli {
       'minimumRandevuSuresi': minimumRandevuSuresi,
       'ajandayiKendimAyarlayacagim': ajandayiKendimAyarlayacagim,
       'maksimumRandevuGunu': maksimumRandevuGunu,
+      'iptalSinirSaati': iptalSinirSaati,
+      'karaListeEsik': karaListeEsik,
+      'onGorusmeZorunlu': onGorusmeZorunlu,
+      'sadeceOnGorusme': sadeceOnGorusme,
+      'randevuSadeceYonetici': randevuSadeceYonetici,
+      'yoneticiGecmiseRandevu': yoneticiGecmiseRandevu,
+      'sureDolanOnaylanmasin': sureDolanOnaylanmasin,
+      'taksiCagriBildirim': taksiCagriBildirim,
+      'taksiNavigasyonOtomatik': taksiNavigasyonOtomatik,
+      'taksiIptalTabanUcret': taksiIptalTabanUcret,
+      'taksiIptalKmUcret': taksiIptalKmUcret,
+      'taksiIptalDakikaUcret': taksiIptalDakikaUcret,
+      'taksiRezervasyonEsnafBildirim': taksiRezervasyonEsnafBildirim,
+      'taksiRezervasyonMusteriBildirim': taksiRezervasyonMusteriBildirim,
+      'taksiRezervasyonHatirlatmaDk': taksiRezervasyonHatirlatmaDk,
+      'kiralamaYeniTalepBildirim': kiralamaYeniTalepBildirim,
+      'kiralamaOnayRedBildirim': kiralamaOnayRedBildirim,
+      'hatirlatmaAktif': hatirlatmaAktif,
+      'hatirlatmaOnceAktif': hatirlatmaOnceAktif,
+      'hatirlatmaSonraAktif': hatirlatmaSonraAktif,
+      'hatirlatmaOnceDk': hatirlatmaOnceDk,
+      'hatirlatmaSonraDk': hatirlatmaSonraDk,
+      'hatirlatmaOnceBaslik': hatirlatmaOnceBaslik,
+      'hatirlatmaOnceSablon': hatirlatmaOnceSablon,
+      'hatirlatmaSonraBaslik': hatirlatmaSonraBaslik,
+      'hatirlatmaSonraSablon': hatirlatmaSonraSablon,
+      'onayBildirimAktif': onayBildirimAktif,
+      'redBildirimAktif': redBildirimAktif,
+      'onayBaslik': onayBaslik,
+      'onaySablon': onaySablon,
+      'redBaslik': redBaslik,
+      'redSablon': redSablon,
+      'sadakatAktif': sadakatAktif,
+      'sadakatAdet': sadakatAdet,
+      'sadakatYuzde': sadakatYuzde,
+      'yapayZekaAktif': yapayZekaAktif,
+      'tanitim': tanitim,
+      'logoUrl': logoUrl,
+      'galeri': galeri,
       'puan': puan,
       'yorumSayisi': yorumSayisi,
     };
@@ -224,6 +387,45 @@ class EsnafModeli {
     int? minimumRandevuSuresi,
     bool? ajandayiKendimAyarlayacagim,
     int? maksimumRandevuGunu,
+    int? iptalSinirSaati,
+    int? karaListeEsik,
+    bool? onGorusmeZorunlu,
+    bool? sadeceOnGorusme,
+    bool? randevuSadeceYonetici,
+    bool? yoneticiGecmiseRandevu,
+    bool? sureDolanOnaylanmasin,
+    bool? taksiCagriBildirim,
+    bool? taksiNavigasyonOtomatik,
+    double? taksiIptalTabanUcret,
+    double? taksiIptalKmUcret,
+    double? taksiIptalDakikaUcret,
+    bool? taksiRezervasyonEsnafBildirim,
+    bool? taksiRezervasyonMusteriBildirim,
+    int? taksiRezervasyonHatirlatmaDk,
+    bool? kiralamaYeniTalepBildirim,
+    bool? kiralamaOnayRedBildirim,
+    bool? hatirlatmaAktif,
+    bool? hatirlatmaOnceAktif,
+    bool? hatirlatmaSonraAktif,
+    int? hatirlatmaOnceDk,
+    int? hatirlatmaSonraDk,
+    String? hatirlatmaOnceBaslik,
+    String? hatirlatmaOnceSablon,
+    String? hatirlatmaSonraBaslik,
+    String? hatirlatmaSonraSablon,
+    bool? onayBildirimAktif,
+    bool? redBildirimAktif,
+    String? onayBaslik,
+    String? onaySablon,
+    String? redBaslik,
+    String? redSablon,
+    bool? sadakatAktif,
+    int? sadakatAdet,
+    int? sadakatYuzde,
+    bool? yapayZekaAktif,
+    String? tanitim,
+    String? logoUrl,
+    List<String>? galeri,
     double? puan,
     int? yorumSayisi,
   }) {
@@ -266,6 +468,45 @@ class EsnafModeli {
       minimumRandevuSuresi: minimumRandevuSuresi ?? this.minimumRandevuSuresi,
       ajandayiKendimAyarlayacagim: ajandayiKendimAyarlayacagim ?? this.ajandayiKendimAyarlayacagim,
       maksimumRandevuGunu: maksimumRandevuGunu ?? this.maksimumRandevuGunu,
+      iptalSinirSaati: iptalSinirSaati ?? this.iptalSinirSaati,
+      karaListeEsik: karaListeEsik ?? this.karaListeEsik,
+      onGorusmeZorunlu: onGorusmeZorunlu ?? this.onGorusmeZorunlu,
+      sadeceOnGorusme: sadeceOnGorusme ?? this.sadeceOnGorusme,
+      randevuSadeceYonetici: randevuSadeceYonetici ?? this.randevuSadeceYonetici,
+      yoneticiGecmiseRandevu: yoneticiGecmiseRandevu ?? this.yoneticiGecmiseRandevu,
+      sureDolanOnaylanmasin: sureDolanOnaylanmasin ?? this.sureDolanOnaylanmasin,
+      taksiCagriBildirim: taksiCagriBildirim ?? this.taksiCagriBildirim,
+      taksiNavigasyonOtomatik: taksiNavigasyonOtomatik ?? this.taksiNavigasyonOtomatik,
+      taksiIptalTabanUcret: taksiIptalTabanUcret ?? this.taksiIptalTabanUcret,
+      taksiIptalKmUcret: taksiIptalKmUcret ?? this.taksiIptalKmUcret,
+      taksiIptalDakikaUcret: taksiIptalDakikaUcret ?? this.taksiIptalDakikaUcret,
+      taksiRezervasyonEsnafBildirim: taksiRezervasyonEsnafBildirim ?? this.taksiRezervasyonEsnafBildirim,
+      taksiRezervasyonMusteriBildirim: taksiRezervasyonMusteriBildirim ?? this.taksiRezervasyonMusteriBildirim,
+      taksiRezervasyonHatirlatmaDk: taksiRezervasyonHatirlatmaDk ?? this.taksiRezervasyonHatirlatmaDk,
+      kiralamaYeniTalepBildirim: kiralamaYeniTalepBildirim ?? this.kiralamaYeniTalepBildirim,
+      kiralamaOnayRedBildirim: kiralamaOnayRedBildirim ?? this.kiralamaOnayRedBildirim,
+      hatirlatmaAktif: hatirlatmaAktif ?? this.hatirlatmaAktif,
+      hatirlatmaOnceAktif: hatirlatmaOnceAktif ?? this.hatirlatmaOnceAktif,
+      hatirlatmaSonraAktif: hatirlatmaSonraAktif ?? this.hatirlatmaSonraAktif,
+      hatirlatmaOnceDk: hatirlatmaOnceDk ?? this.hatirlatmaOnceDk,
+      hatirlatmaSonraDk: hatirlatmaSonraDk ?? this.hatirlatmaSonraDk,
+      hatirlatmaOnceBaslik: hatirlatmaOnceBaslik ?? this.hatirlatmaOnceBaslik,
+      hatirlatmaOnceSablon: hatirlatmaOnceSablon ?? this.hatirlatmaOnceSablon,
+      hatirlatmaSonraBaslik: hatirlatmaSonraBaslik ?? this.hatirlatmaSonraBaslik,
+      hatirlatmaSonraSablon: hatirlatmaSonraSablon ?? this.hatirlatmaSonraSablon,
+      onayBildirimAktif: onayBildirimAktif ?? this.onayBildirimAktif,
+      redBildirimAktif: redBildirimAktif ?? this.redBildirimAktif,
+      onayBaslik: onayBaslik ?? this.onayBaslik,
+      onaySablon: onaySablon ?? this.onaySablon,
+      redBaslik: redBaslik ?? this.redBaslik,
+      redSablon: redSablon ?? this.redSablon,
+      sadakatAktif: sadakatAktif ?? this.sadakatAktif,
+      sadakatAdet: sadakatAdet ?? this.sadakatAdet,
+      sadakatYuzde: sadakatYuzde ?? this.sadakatYuzde,
+      yapayZekaAktif: yapayZekaAktif ?? this.yapayZekaAktif,
+      tanitim: tanitim ?? this.tanitim,
+      logoUrl: logoUrl ?? this.logoUrl,
+      galeri: galeri ?? this.galeri,
       puan: puan ?? this.puan,
       yorumSayisi: yorumSayisi ?? this.yorumSayisi,
     );

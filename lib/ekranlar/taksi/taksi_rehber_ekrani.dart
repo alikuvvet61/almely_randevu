@@ -78,7 +78,7 @@ class TaksiRehberEkrani extends StatelessWidget {
               _rehberKarti(
                 renk: Colors.indigo,
                 baslik: "Mesai Saatleri",
-                icerik: "7/24 Çalışma Modu; İşletmenin 7/24 hizmet verdiğini gösterir. Bu işaretli olursa müşteri ekranında müşteri bunu görür. 7/24 işaretlendiğinde Nöbet Saatleri kısmı otomatik aktif olur. Bu durumda sistem sizden Nöbetçi saatleri belirlemenizi ister.\n\nGündüz Mesaisi; Bu tanım gündüz çalışan araçların çalışma saatleridir. Taksi Çağırma ekranında müşterilerin o gün çalışan araçları görmesini sağlar. NOT: İstirahatte olan araçlar müşteriye görünmezler.\n\nNöbetçi Saatleri; Nöbetçi aracin hangi saatler arasında çalıştığını belirleyebilirsiniz.",
+                icerik: "7/24 Çalışma Modu; İşletmenin 7/24 hizmet verdiğini gösterir. Bu işaretli olursa müşteri ekranında müşteri bunu görür. 7/24 işaretlendiğinde Nöbet Saatleri kısmı otomatik aktif olur. Bu durumda sistem sizden Nöbetçi saatleri belirlemenizi ister.\n\nGündüz Mesaisi; Bu tanım gündüz çalışan araçların çalışma saatleridir. Taksi İstiyorum ekranında müşterilerin o gün çalışan araçları görmesini sağlar. NOT: İstirahatte olan araçlar müşteriye görünmezler.\n\nNöbetçi Saatleri; Nöbetçi aracin hangi saatler arasında çalıştığını belirleyebilirsiniz.",
               ),
               if (bolum == null || bolum == 'gunler')
               _rehberKarti(
@@ -96,7 +96,7 @@ class TaksiRehberEkrani extends StatelessWidget {
               _rehberKarti(
                 renk: Colors.indigo,
                 baslik: "İşletme Profili",
-                icerik: "Profil Güncelleme; Durağın adı, resmi iletişim numaraları ve haritadaki merkez konumunu güncelleyebileceğiniz bölümdür.",
+                icerik: "Üst çubuktaki profil ikonu durağın adını, telefonunu, adresini ve konumunu açar. Zorunlu alan boşsa ikon titrer.",
               ),
               if (bolum == 'parametre') ...[
                 _rehberKarti(
@@ -155,7 +155,7 @@ class TaksiRehberEkrani extends StatelessWidget {
             if (mod == null || mod == 'yolcu') ...[
               _rehberKarti(
                 renk: Colors.blue,
-                baslik: "Taksi Çağırma & Rezervasyon",
+                baslik: "Taksi İstiyorum ve Rezervasyon",
                 icerik: "Gitmek istediğiniz yeri yazarak size en yakın müsait aracı çağırabilir veya ileri bir saat için taksi rezervasyonu oluşturabilirsiniz.",
               ),
               _rehberKarti(
